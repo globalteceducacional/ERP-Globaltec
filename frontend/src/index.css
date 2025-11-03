@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-neutral text-white min-h-screen;
+  font-family: 'Montserrat', sans-serif;
+}
+
+button {
+  @apply transition-colors duration-200;
+}

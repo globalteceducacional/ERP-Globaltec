@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Configuração do seed
+// Execute: npx prisma db seed
+
+enum Cargo {
+  DIRETOR
+  SUPERVISOR
+  EXECUTOR
+  COTADOR
+  PAGADOR
+}
+
+enum ProjetoStatus {
+  EM_ANDAMENTO
+  FINALIZADO
+}
+
+enum EtapaStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDA
+  APROVADA
+  REPROVADA
+}
+
+enum SubetapaStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDA
+}
+
+enum CompraStatus {
+  PENDENTE
+  APROVADA
+  REJEITADA
+  CONCLUIDA
+}
+
+enum EstoqueStatus {
+  DISPONIVEL
+  ALOCADO
+  RESERVADO
+}
+
+enum NotificacaoTipo {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+model Usuario {
+  id                   Int                   @id @default(autoincrement())
+  nome                 String
+  dataNascimento       DateTime?
+  formacao             String?
+  funcao               String?
+  cargo                Cargo                 @default(EXECUTOR)
+  email                String                @unique
+  telefone             String?
+  senha                String
+  ativo                Boolean               @default(false)
+  dataCadastro         DateTime              @default(now())
+  projetosResponsavel  ProjetoResponsavel[]
+  projetos             Projeto[]             @relation("Supervisor")
+  etapasExecutadas     Etapa[]               @relation("Executor")
+  ocorrenciasEnviadas  Ocorrencia[]          @relation("OcorrenciasEnviadas")
+  ocorrenciasRecebidas Ocorrencia[]          @relation("OcorrenciasRecebidas")
+  requerimentosEnviados  Requerimento[]      @relation("RequerimentosEnviados")
+  requerimentosRecebidos Requerimento[]      @relation("RequerimentosRecebidos")
+  notificacoes         Notificacao[]
+}
+
+model Projeto {
+  id            Int                  @id @default(autoincrement())
+  nome          String
+  resumo        String?
+  objetivo      String?
+  valorTotal    Float                @default(0)
+  valorInsumos  Float                @default(0)
+  status        ProjetoStatus        @default(EM_ANDAMENTO)
+  dataCriacao   DateTime             @default(now())
+  dataFinalizacao DateTime?
+  planilhaJson  Json?
+  supervisorId  Int?
+  supervisor    Usuario?             @relation("Supervisor", fields: [supervisorId], references: [id])
+  etapas        Etapa[]
+  responsaveis  ProjetoResponsavel[]
+  compras       Compra[]
+  estoqueItems  Estoque[]
+}
+
+model ProjetoResponsavel {
+  projetoId Int
+  usuarioId Int
+  projeto   Projeto @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@id([projetoId, usuarioId])
+}
+
+model Etapa {
+  id          Int           @id @default(autoincrement())
+  nome        String
+  descricao   String?
+  status      EtapaStatus   @default(PENDENTE)
+  dataInicio  DateTime?
+  dataFim     DateTime?
+  valorInsumos Float        @default(0)
+  iniciada    Boolean       @default(false)
+  projetoId   Int
+  projeto     Projeto       @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  executorId  Int
+  executor    Usuario       @relation("Executor", fields: [executorId], references: [id])
+  subetapas   Subetapa[]
+  requerimentos Requerimento[]
+  estoqueItens Estoque[]
+}
+
+model Subetapa {
+  id         Int            @id @default(autoincrement())
+  nome       String
+  descricao  String?
+  status     SubetapaStatus @default(PENDENTE)
+  dataInicio DateTime?
+  dataFim    DateTime?
+  etapaId    Int
+  etapa      Etapa          @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+}
+
+model Compra {
+  id              Int          @id @default(autoincrement())
+  item            String
+  descricao       String?
+  quantidade      Int
+  valorUnitario   Float        // Valor unitário da cotação selecionada
+  imagemUrl       String?
+  cotacoesJson    Json?        // Array de cotações: [{ valorUnitario, frete, impostos, link }]
+  status          CompraStatus @default(PENDENTE)
+  dataSolicitacao DateTime     @default(now())
+  dataConfirmacao DateTime?
+  projetoId       Int
+  projeto         Projeto      @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+}
+
+model Estoque {
+  id          Int           @id @default(autoincrement())
+  item        String
+  descricao   String?
+  quantidade  Int
+  valorUnitario Float
+  imagemUrl   String?
+  cotacoesJson Json?        // Array de cotações: [{ valorUnitario, frete, impostos, link }]
+  status      EstoqueStatus @default(DISPONIVEL)
+  projetoId   Int?
+  projeto     Projeto?      @relation(fields: [projetoId], references: [id])
+  etapaId     Int?
+  etapa       Etapa?        @relation(fields: [etapaId], references: [id])
+}
+
+model Ocorrencia {
+  id            Int       @id @default(autoincrement())
+  texto         String
+  anexo         String?
+  status        String    @default("pendente")
+  dataCriacao   DateTime  @default(now())
+  usuarioId     Int
+  destinatarioId Int?
+  usuario       Usuario   @relation("OcorrenciasEnviadas", fields: [usuarioId], references: [id])
+  destinatario  Usuario?  @relation("OcorrenciasRecebidas", fields: [destinatarioId], references: [id])
+}
+
+model Requerimento {
+  id             Int       @id @default(autoincrement())
+  texto          String
+  anexo          String?
+  anexoResposta  String?
+  resposta       String?
+  status         String    @default("pendente")
+  dataCriacao    DateTime  @default(now())
+  dataResposta   DateTime?
+  usuarioId      Int
+  destinatarioId Int?
+  etapaId        Int?
+  usuario        Usuario   @relation("RequerimentosEnviados", fields: [usuarioId], references: [id])
+  destinatario   Usuario?  @relation("RequerimentosRecebidos", fields: [destinatarioId], references: [id])
+  etapa          Etapa?    @relation(fields: [etapaId], references: [id])
+}
+
+model Notificacao {
+  id          Int             @id @default(autoincrement())
+  titulo      String
+  mensagem    String
+  tipo        NotificacaoTipo @default(INFO)
+  lida        Boolean         @default(false)
+  dataCriacao DateTime        @default(now())
+  usuarioId   Int
+  usuario     Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+}
