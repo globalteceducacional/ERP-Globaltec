@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateStockItemDto } from './dto/create-stock-item.dto';
 import { UpdateStockItemDto } from './dto/update-stock-item.dto';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
+import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 import { CompraStatus, EstoqueStatus } from '@prisma/client';
 
@@ -164,6 +165,12 @@ export class StockService {
     if (data.imagemUrl !== undefined && data.imagemUrl !== null) {
       createData.imagemUrl = data.imagemUrl;
     }
+    if (data.nfUrl !== undefined && data.nfUrl !== null) {
+      createData.nfUrl = data.nfUrl;
+    }
+    if (data.comprovantePagamentoUrl !== undefined && data.comprovantePagamentoUrl !== null) {
+      createData.comprovantePagamentoUrl = data.comprovantePagamentoUrl;
+    }
     if (data.cotacoes) {
       createData.cotacoesJson = data.cotacoes as any;
     }
@@ -176,19 +183,79 @@ export class StockService {
   async updatePurchaseStatus(id: number, data: UpdatePurchaseStatusDto) {
     await this.ensurePurchaseExists(id);
 
+    const updateData: any = {
+      status: data.status,
+    };
+
+    if (data.status === CompraStatus.COMPRADO_ACAMINHO || data.status === CompraStatus.ENTREGUE) {
+      updateData.dataConfirmacao = new Date();
+    }
+
     const compra = await this.prisma.compra.update({
       where: { id },
-      data: {
-        status: data.status,
-        dataConfirmacao: new Date(),
-      },
+      data: updateData,
     });
 
-    if (data.status === CompraStatus.CONCLUIDA) {
+    if (data.status === CompraStatus.ENTREGUE) {
       await this.appendToStock(compra);
     }
 
     return compra;
+  }
+
+  async updatePurchase(id: number, data: UpdatePurchaseDto) {
+    await this.ensurePurchaseExists(id);
+
+    const updateData: any = {};
+    
+    if (data.item !== undefined) {
+      updateData.item = data.item;
+    }
+    if (data.descricao !== undefined) {
+      updateData.descricao = data.descricao;
+    }
+    if (data.quantidade !== undefined) {
+      updateData.quantidade = data.quantidade;
+    }
+    if (data.valorUnitario !== undefined) {
+      updateData.valorUnitario = data.valorUnitario;
+    }
+    if (data.imagemUrl !== undefined) {
+      updateData.imagemUrl = data.imagemUrl;
+    }
+    if (data.nfUrl !== undefined) {
+      updateData.nfUrl = data.nfUrl;
+    }
+    if (data.comprovantePagamentoUrl !== undefined) {
+      updateData.comprovantePagamentoUrl = data.comprovantePagamentoUrl;
+    }
+    if (data.cotacoes !== undefined) {
+      if (Array.isArray(data.cotacoes) && data.cotacoes.length > 0) {
+        updateData.cotacoesJson = data.cotacoes as any;
+      } else if (data.cotacoes === null || (Array.isArray(data.cotacoes) && data.cotacoes.length === 0)) {
+        updateData.cotacoesJson = null;
+      }
+    }
+    if (data.status !== undefined) {
+      updateData.status = data.status;
+      if (data.status === CompraStatus.COMPRADO_ACAMINHO || data.status === CompraStatus.ENTREGUE) {
+        updateData.dataConfirmacao = new Date();
+      }
+      if (data.status === CompraStatus.ENTREGUE) {
+        const compra = await this.prisma.compra.findUnique({ where: { id } });
+        if (compra) {
+          await this.appendToStock(compra);
+        }
+      }
+    }
+
+    return this.prisma.compra.update({ where: { id }, data: updateData });
+  }
+
+  async deletePurchase(id: number) {
+    await this.ensurePurchaseExists(id);
+    await this.prisma.compra.delete({ where: { id } });
+    return { deleted: true };
   }
 
   private async appendToStock(compra: { projetoId: number; item: string; quantidade: number; valorUnitario: number }) {

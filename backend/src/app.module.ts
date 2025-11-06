@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
+import { CargosModule } from './modules/cargos/cargos.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { TasksModule } from './modules/tasks/tasks.module';
 import { StockModule } from './modules/stock/stock.module';
@@ -16,6 +17,7 @@ import { RequestsModule } from './modules/requests/requests.module';
     PrismaModule,
     AuthModule,
     UsersModule,
+    CargosModule,
     ProjectsModule,
     TasksModule,
     StockModule,

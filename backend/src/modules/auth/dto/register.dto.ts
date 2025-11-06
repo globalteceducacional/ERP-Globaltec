@@ -1,12 +1,11 @@
 import {
   IsDateString,
   IsEmail,
-  IsEnum,
   IsOptional,
   IsString,
   MinLength,
+  IsNumber,
 } from 'class-validator';
-import { Cargo } from '@prisma/client';
 
 export class RegisterDto {
   @IsString()
@@ -19,8 +18,8 @@ export class RegisterDto {
   @MinLength(6)
   senha: string;
 
-  @IsEnum(Cargo)
-  cargo: Cargo;
+  @IsString()
+  cargo: string; // Agora aceita string (nome do cargo) ou pode ser modificado para aceitar ID
 
   @IsOptional()
   @IsString()

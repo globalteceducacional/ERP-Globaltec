@@ -2,12 +2,11 @@ import {
   IsBoolean,
   IsDateString,
   IsEmail,
-  IsEnum,
   IsOptional,
   IsString,
   MinLength,
+  IsNumber,
 } from 'class-validator';
-import { Cargo } from '@prisma/client';
 
 export class UpdateUserDto {
   @IsOptional()
@@ -31,8 +30,8 @@ export class UpdateUserDto {
   funcao?: string;
 
   @IsOptional()
-  @IsEnum(Cargo)
-  cargo?: Cargo;
+  @IsNumber()
+  cargoId?: number;
 
   @IsOptional()
   @IsBoolean()
@@ -44,6 +43,5 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsString()
-  @MinLength(6)
   senha?: string;
 }

@@ -5,7 +5,19 @@ import {
   IsPositive,
   IsString,
   MaxLength,
+  IsArray,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class ChecklistItemDto {
+  @IsString()
+  @MaxLength(500)
+  texto: string;
+
+  @IsOptional()
+  concluido?: boolean;
+}
 
 export class CreateTaskDto {
   @IsInt()
@@ -33,4 +45,15 @@ export class CreateTaskDto {
   @IsOptional()
   @IsPositive()
   valorInsumos?: number;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChecklistItemDto)
+  checklist?: ChecklistItemDto[];
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  integrantesIds?: number[];
 }

@@ -8,8 +8,17 @@ import Stock from './pages/Stock';
 import Occurrences from './pages/Occurrences';
 import Requests from './pages/Requests';
 import Users from './pages/Users';
+import Cargos from './pages/Cargos';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
+import { useAuthStore } from './store/auth';
+import { getFirstAllowedPage } from './utils/getFirstAllowedPage';
+
+function DefaultRedirect() {
+  const user = useAuthStore((state) => state.user);
+  const firstPage = getFirstAllowedPage(user);
+  return <Navigate to={firstPage} replace />;
+}
 
 export default function App() {
   return (
@@ -18,7 +27,7 @@ export default function App() {
 
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<DefaultRedirect />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/projects" element={<Projects />} />
           <Route path="/projects/:id" element={<ProjectDetails />} />
@@ -27,10 +36,11 @@ export default function App() {
           <Route path="/occurrences" element={<Occurrences />} />
           <Route path="/requests" element={<Requests />} />
           <Route path="/users" element={<Users />} />
+          <Route path="/cargos" element={<Cargos />} />
         </Route>
       </Route>
 
-      <Route path="*" element={<Navigate to="/dashboard" replace />} />
+      <Route path="*" element={<DefaultRedirect />} />
     </Routes>
   );
 }

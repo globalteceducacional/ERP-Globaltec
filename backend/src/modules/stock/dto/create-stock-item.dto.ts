@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsNumber, IsOptional, IsPositive, IsString, MaxLength, IsArray, ValidateNested, ValidateIf } from 'class-validator';
+import { IsEnum, IsInt, IsNumber, IsOptional, IsPositive, IsString, MaxLength, IsArray, ValidateNested, ValidateIf, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { EstoqueStatus } from '@prisma/client';
 
@@ -8,11 +8,11 @@ export class CotacaoItemDto {
   valorUnitario: number;
 
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   frete: number;
 
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   impostos: number;
 
   @IsOptional()
@@ -40,7 +40,7 @@ export class CreateStockItemDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(2000)
+  @MaxLength(50000) // Suporta imagens base64 comprimidas (aproximadamente 37KB)
   imagemUrl?: string;
 
   @IsOptional()

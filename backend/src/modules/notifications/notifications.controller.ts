@@ -14,7 +14,6 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { Cargo } from '@prisma/client';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 
 @Controller('notifications')
@@ -42,7 +41,7 @@ export class NotificationsController {
   }
 
   @Post()
-  @Roles(Cargo.DIRETOR, Cargo.SUPERVISOR)
+  @Roles('DIRETOR', 'SUPERVISOR')
   create(@Body() body: CreateNotificationDto) {
     return this.notificationsService.create(body);
   }

@@ -15,7 +15,12 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       token: null,
       setCredentials: ({ user, token }) => set({ user, token }),
-      logout: () => set({ user: null, token: null }),
+      logout: () => {
+        // Limpar estado
+        set({ user: null, token: null });
+        // Limpar localStorage explicitamente
+        localStorage.removeItem('erp-auth');
+      },
     }),
     {
       name: 'erp-auth',

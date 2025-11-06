@@ -17,7 +17,7 @@ CREATE USER erp WITH PASSWORD 'senha123';
 GRANT ALL PRIVILEGES ON DATABASE erpdb TO erp;
 ```
 
-### 2. Configurar Backend
+### 2. Configurar Backend lkldkl
 
 ```bash
 cd ERP-New/backend

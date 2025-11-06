@@ -3,7 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UpdateResponsiblesDto } from './dto/update-responsibles.dto';
-import { ProjetoStatus } from '@prisma/client';
+import { EtapaStatus, ProjetoStatus } from '@prisma/client';
 
 @Injectable()
 export class ProjectsService {
@@ -23,15 +23,53 @@ export class ProjectsService {
       };
     }
 
-    return this.prisma.projeto.findMany({
+    const projects = await this.prisma.projeto.findMany({
       where,
       orderBy: { dataCriacao: 'desc' },
       include: {
         supervisor: true,
         responsaveis: { include: { usuario: true } },
         _count: { select: { etapas: true } },
+        etapas: { select: { status: true } },
       },
     });
+
+    // Atualizar status do projeto no banco se necessário e calcular progresso
+    const updatedProjects = await Promise.all(
+      projects.map(async ({ etapas, ...project }) => {
+        const totalEtapas = etapas.length;
+        const etapasConcluidas = etapas.filter(
+          (etapa) => {
+            const status = etapa.status as EtapaStatus;
+            return status === EtapaStatus.EM_ANALISE || status === EtapaStatus.APROVADA;
+          },
+        ).length;
+        const progress = totalEtapas > 0 ? Math.round((etapasConcluidas / totalEtapas) * 100) : 0;
+
+        let novoStatus = project.status;
+        if (progress === 100 && totalEtapas > 0) {
+          novoStatus = ProjetoStatus.FINALIZADO;
+        } else if (totalEtapas > 0) {
+          novoStatus = ProjetoStatus.EM_ANDAMENTO;
+        }
+
+        // Sincronizar status no banco se houver discrepância
+        if (novoStatus !== project.status) {
+          await this.prisma.projeto.update({
+            where: { id: project.id },
+            data: { status: novoStatus },
+          });
+        }
+
+        return {
+          ...project,
+          status: novoStatus,
+          progress: progress, // Garantir que progress seja sempre incluído
+        };
+      }),
+    );
+
+    return updatedProjects;
   }
 
   async findOne(id: number) {
@@ -40,7 +78,23 @@ export class ProjectsService {
       include: {
         supervisor: true,
         responsaveis: { include: { usuario: true } },
-        etapas: { include: { executor: true, subetapas: true } },
+        etapas: {
+          include: {
+            executor: true,
+            integrantes: { include: { usuario: true } },
+            subetapas: true,
+            entregas: {
+              orderBy: { dataEnvio: 'desc' },
+              include: { executor: true, avaliadoPor: true },
+            },
+            checklistEntregas: {
+              include: {
+                executor: true,
+                avaliadoPor: true,
+              },
+            },
+          },
+        },
         compras: true,
       },
     });
@@ -161,5 +215,11 @@ export class ProjectsService {
       where: { id },
       data: { status: ProjetoStatus.FINALIZADO, dataFinalizacao: new Date() },
     });
+  }
+
+  async remove(id: number) {
+    await this.findOne(id);
+
+    await this.prisma.projeto.delete({ where: { id } });
   }
 }

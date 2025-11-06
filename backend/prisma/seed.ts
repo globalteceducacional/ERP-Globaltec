@@ -6,6 +6,40 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Iniciando seed do banco de dados...');
 
+  // Verificar se os cargos já existem, se não, criar
+  let cargoDiretor = await prisma.cargo.findUnique({ where: { nome: 'DIRETOR' } });
+  if (!cargoDiretor) {
+    cargoDiretor = await prisma.cargo.create({
+      data: {
+        nome: 'DIRETOR',
+        descricao: 'Diretor com acesso total ao sistema',
+        ativo: true,
+      },
+    });
+  }
+
+  let cargoSupervisor = await prisma.cargo.findUnique({ where: { nome: 'SUPERVISOR' } });
+  if (!cargoSupervisor) {
+    cargoSupervisor = await prisma.cargo.create({
+      data: {
+        nome: 'SUPERVISOR',
+        descricao: 'Supervisor de projetos',
+        ativo: true,
+      },
+    });
+  }
+
+  let cargoExecutor = await prisma.cargo.findUnique({ where: { nome: 'EXECUTOR' } });
+  if (!cargoExecutor) {
+    cargoExecutor = await prisma.cargo.create({
+      data: {
+        nome: 'EXECUTOR',
+        descricao: 'Executor de tarefas',
+        ativo: true,
+      },
+    });
+  }
+
   // Criar usuário administrador padrão
   const senhaHash = await bcrypt.hash('admin123', 10);
 
@@ -16,7 +50,7 @@ async function main() {
       nome: 'Administrador',
       email: 'admin@globaltec.com',
       senha: senhaHash,
-      cargo: 'DIRETOR',
+      cargoId: cargoDiretor.id,
       ativo: true,
     },
   });
@@ -31,7 +65,7 @@ async function main() {
       nome: 'Supervisor Exemplo',
       email: 'supervisor@globaltec.com',
       senha: await bcrypt.hash('senha123', 10),
-      cargo: 'SUPERVISOR',
+      cargoId: cargoSupervisor.id,
       ativo: true,
     },
   });
@@ -43,7 +77,7 @@ async function main() {
       nome: 'Executor Exemplo',
       email: 'executor@globaltec.com',
       senha: await bcrypt.hash('senha123', 10),
-      cargo: 'EXECUTOR',
+      cargoId: cargoExecutor.id,
       ativo: true,
     },
   });
@@ -108,4 +142,3 @@ main()
   .finally(async () => {
     await prisma.$disconnect();
   });
-

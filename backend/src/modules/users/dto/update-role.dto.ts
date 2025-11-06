@@ -1,7 +1,6 @@
-import { Cargo } from '@prisma/client';
-import { IsEnum } from 'class-validator';
+import { IsNumber } from 'class-validator';
 
 export class UpdateRoleDto {
-  @IsEnum(Cargo)
-  cargo: Cargo;
+  @IsNumber()
+  cargoId: number; // ID do cargo
 }

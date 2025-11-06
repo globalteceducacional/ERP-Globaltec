@@ -10,12 +10,16 @@ datasource db {
 // Configuração do seed
 // Execute: npx prisma db seed
 
-enum Cargo {
-  DIRETOR
-  SUPERVISOR
-  EXECUTOR
-  COTADOR
-  PAGADOR
+model Cargo {
+  id          Int      @id @default(autoincrement())
+  nome        String   @unique
+  descricao   String?
+  ativo       Boolean  @default(true)
+  paginasPermitidas Json?  // Array de strings com as rotas permitidas: ["/dashboard", "/projects", ...]
+  dataCriacao DateTime @default(now())
+  usuarios    Usuario[]
+  
+  @@map("Cargo")
 }
 
 enum ProjetoStatus {
@@ -26,9 +30,22 @@ enum ProjetoStatus {
 enum EtapaStatus {
   PENDENTE
   EM_ANDAMENTO
-  CONCLUIDA
+  EM_ANALISE
   APROVADA
   REPROVADA
+}
+
+enum EtapaEntregaStatus {
+  EM_ANALISE
+  APROVADA
+  RECUSADA
+}
+
+enum ChecklistItemStatus {
+  PENDENTE
+  EM_ANALISE
+  APROVADO
+  REPROVADO
 }
 
 enum SubetapaStatus {
@@ -39,9 +56,8 @@ enum SubetapaStatus {
 
 enum CompraStatus {
   PENDENTE
-  APROVADA
-  REJEITADA
-  CONCLUIDA
+  COMPRADO_ACAMINHO
+  ENTREGUE
 }
 
 enum EstoqueStatus {
@@ -63,7 +79,8 @@ model Usuario {
   dataNascimento       DateTime?
   formacao             String?
   funcao               String?
-  cargo                Cargo                 @default(EXECUTOR)
+  cargoId              Int
+  cargo                Cargo                 @relation(fields: [cargoId], references: [id])
   email                String                @unique
   telefone             String?
   senha                String
@@ -72,11 +89,16 @@ model Usuario {
   projetosResponsavel  ProjetoResponsavel[]
   projetos             Projeto[]             @relation("Supervisor")
   etapasExecutadas     Etapa[]               @relation("Executor")
+  etapasIntegrantes    EtapaIntegrante[]
   ocorrenciasEnviadas  Ocorrencia[]          @relation("OcorrenciasEnviadas")
   ocorrenciasRecebidas Ocorrencia[]          @relation("OcorrenciasRecebidas")
   requerimentosEnviados  Requerimento[]      @relation("RequerimentosEnviados")
   requerimentosRecebidos Requerimento[]      @relation("RequerimentosRecebidos")
   notificacoes         Notificacao[]
+  entregasExecutadas   EtapaEntrega[]        @relation("EtapaEntregaExecutor")
+  entregasAvaliadas    EtapaEntrega[]        @relation("EtapaEntregaAvaliador")
+  checklistEntregasExecutadas ChecklistItemEntrega[] @relation("ChecklistItemEntregaExecutor")
+  checklistEntregasAvaliadas ChecklistItemEntrega[] @relation("ChecklistItemEntregaAvaliador")
 }
 
 model Projeto {
@@ -107,6 +129,15 @@ model ProjetoResponsavel {
   @@id([projetoId, usuarioId])
 }
 
+model EtapaIntegrante {
+  etapaId   Int
+  usuarioId Int
+  etapa     Etapa   @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@id([etapaId, usuarioId])
+}
+
 model Etapa {
   id          Int           @id @default(autoincrement())
   nome        String
@@ -116,13 +147,57 @@ model Etapa {
   dataFim     DateTime?
   valorInsumos Float        @default(0)
   iniciada    Boolean       @default(false)
+  checklistJson Json?       // Array de itens do checklist: [{ texto: string, concluido: boolean }]
   projetoId   Int
   projeto     Projeto       @relation(fields: [projetoId], references: [id], onDelete: Cascade)
   executorId  Int
   executor    Usuario       @relation("Executor", fields: [executorId], references: [id])
+  integrantes EtapaIntegrante[]
   subetapas   Subetapa[]
   requerimentos Requerimento[]
   estoqueItens Estoque[]
+  entregas    EtapaEntrega[]
+  checklistEntregas ChecklistItemEntrega[]
+}
+
+model EtapaEntrega {
+  id             Int                 @id @default(autoincrement())
+  descricao      String
+  imagemUrl      String?
+  status         EtapaEntregaStatus  @default(EM_ANALISE)
+  dataEnvio      DateTime            @default(now())
+  comentario     String?
+  etapaId        Int
+  executorId     Int
+  avaliadoPorId  Int?
+  dataAvaliacao  DateTime?
+
+  etapa          Etapa              @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  executor       Usuario            @relation("EtapaEntregaExecutor", fields: [executorId], references: [id])
+  avaliadoPor    Usuario?           @relation("EtapaEntregaAvaliador", fields: [avaliadoPorId], references: [id])
+}
+
+model ChecklistItemEntrega {
+  id             Int                 @id @default(autoincrement())
+  etapaId        Int
+  checklistIndex Int                 // Índice do item no array checklistJson
+  descricao      String
+  imagemUrl      String?
+  documentoUrl   String?             // URL do documento anexado
+  status         ChecklistItemStatus @default(PENDENTE)
+  dataEnvio      DateTime            @default(now())
+  comentario     String?
+  executorId     Int
+  avaliadoPorId  Int?
+  dataAvaliacao  DateTime?
+
+  etapa          Etapa              @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  executor       Usuario            @relation("ChecklistItemEntregaExecutor", fields: [executorId], references: [id])
+  avaliadoPor    Usuario?           @relation("ChecklistItemEntregaAvaliador", fields: [avaliadoPorId], references: [id])
+
+  @@unique([etapaId, checklistIndex])
+  @@index([etapaId])
+  @@index([executorId])
 }
 
 model Subetapa {
@@ -137,18 +212,20 @@ model Subetapa {
 }
 
 model Compra {
-  id              Int          @id @default(autoincrement())
-  item            String
-  descricao       String?
-  quantidade      Int
-  valorUnitario   Float        // Valor unitário da cotação selecionada
-  imagemUrl       String?
-  cotacoesJson    Json?        // Array de cotações: [{ valorUnitario, frete, impostos, link }]
-  status          CompraStatus @default(PENDENTE)
-  dataSolicitacao DateTime     @default(now())
-  dataConfirmacao DateTime?
-  projetoId       Int
-  projeto         Projeto      @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  id                   Int          @id @default(autoincrement())
+  item                 String
+  descricao            String?
+  quantidade           Int
+  valorUnitario        Float        // Valor unitário da cotação selecionada
+  imagemUrl            String?
+  cotacoesJson         Json?        // Array de cotações: [{ valorUnitario, frete, impostos, link }]
+  status               CompraStatus @default(PENDENTE)
+  dataSolicitacao      DateTime     @default(now())
+  dataConfirmacao      DateTime?
+  nfUrl                String?      // URL da Nota Fiscal (base64 ou URL)
+  comprovantePagamentoUrl String?   // URL do comprovante de pagamento (base64 ou URL)
+  projetoId            Int
+  projeto              Projeto      @relation(fields: [projetoId], references: [id], onDelete: Cascade)
 }
 
 model Estoque {

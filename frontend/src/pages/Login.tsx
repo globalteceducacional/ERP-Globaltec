@@ -1,17 +1,25 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
 import { Usuario } from '../types';
+import { getFirstAllowedPage } from '../utils/getFirstAllowedPage';
 
 export default function Login() {
   const navigate = useNavigate();
   const setCredentials = useAuthStore((state) => state.setCredentials);
+  const logout = useAuthStore((state) => state.logout);
 
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Garantir que o usuário está deslogado ao entrar na página de login
+  useEffect(() => {
+    logout();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -19,12 +27,17 @@ export default function Login() {
     setLoading(true);
 
     try {
+      // Limpar qualquer estado anterior antes de fazer login
+      logout();
+      
       const { data } = await api.post<{ token: string; user: Usuario }>('/auth/login', {
         email,
         senha,
       });
       setCredentials({ token: data.token, user: data.user });
-      navigate('/dashboard', { replace: true });
+      // Redirecionar para a primeira página permitida do usuário
+      const firstPage = getFirstAllowedPage(data.user);
+      navigate(firstPage, { replace: true });
     } catch (err: any) {
       setError(err.response?.data?.message ?? 'Erro ao realizar login');
     } finally {

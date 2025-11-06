@@ -1,18 +1,18 @@
-import { IsEnum, IsInt, IsNumber, IsOptional, IsPositive, IsString, MaxLength, IsArray, ValidateNested, ValidateIf } from 'class-validator';
+import { IsEnum, IsInt, IsNumber, IsOptional, IsPositive, IsString, MaxLength, IsArray, ValidateNested, ValidateIf, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CompraStatus } from '@prisma/client';
 
 export class CotacaoDto {
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   valorUnitario: number;
 
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   frete: number;
 
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   impostos: number;
 
   @IsOptional()
@@ -43,8 +43,18 @@ export class CreatePurchaseDto {
 
   @IsOptional()
   @IsString()
-  @MaxLength(2000)
+  @MaxLength(50000) // Suporta imagens base64 comprimidas (aproximadamente 37KB)
   imagemUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50000) // Suporta imagens base64 comprimidas (aproximadamente 37KB)
+  nfUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50000) // Suporta imagens base64 comprimidas (aproximadamente 37KB)
+  comprovantePagamentoUrl?: string;
 
   @IsOptional()
   @IsArray()

@@ -14,15 +14,16 @@ import { StockService } from './stock.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { Cargo, CompraStatus, EstoqueStatus } from '@prisma/client';
+import { CompraStatus, EstoqueStatus } from '@prisma/client';
 import { CreateStockItemDto } from './dto/create-stock-item.dto';
 import { UpdateStockItemDto } from './dto/update-stock-item.dto';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
+import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 
 @Controller('stock')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Cargo.DIRETOR, Cargo.COTADOR, Cargo.PAGADOR)
+@Roles('DIRETOR', 'COTADOR', 'PAGADOR')
 export class StockController {
   constructor(private readonly stockService: StockService) {}
 
@@ -71,5 +72,18 @@ export class StockController {
     @Body() body: UpdatePurchaseStatusDto,
   ) {
     return this.stockService.updatePurchaseStatus(id, body);
+  }
+
+  @Patch('purchases/:id')
+  updatePurchase(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdatePurchaseDto,
+  ) {
+    return this.stockService.updatePurchase(id, body);
+  }
+
+  @Delete('purchases/:id')
+  deletePurchase(@Param('id', ParseIntPipe) id: number) {
+    return this.stockService.deletePurchase(id);
   }
 }

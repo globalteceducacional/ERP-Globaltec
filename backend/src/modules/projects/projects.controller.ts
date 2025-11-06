@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -16,7 +18,7 @@ import { UpdateResponsiblesDto } from './dto/update-responsibles.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
-import { Cargo, ProjetoStatus } from '@prisma/client';
+import { ProjetoStatus } from '@prisma/client';
 
 @Controller('projects')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -24,7 +26,7 @@ export class ProjectsController {
   constructor(private readonly projectsService: ProjectsService) {}
 
   @Get()
-  @Roles(Cargo.DIRETOR)
+  @Roles('DIRETOR')
   findAll(
     @Query('status') status?: ProjetoStatus,
     @Query('search') search?: string,
@@ -38,19 +40,19 @@ export class ProjectsController {
   }
 
   @Post()
-  @Roles(Cargo.DIRETOR)
+  @Roles('DIRETOR')
   create(@Body() body: CreateProjectDto) {
     return this.projectsService.create(body);
   }
 
   @Patch(':id')
-  @Roles(Cargo.DIRETOR)
+  @Roles('DIRETOR')
   update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateProjectDto) {
     return this.projectsService.update(id, body);
   }
 
   @Patch(':id/responsibles')
-  @Roles(Cargo.DIRETOR)
+  @Roles('DIRETOR')
   updateResponsibles(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateResponsiblesDto,
@@ -59,8 +61,15 @@ export class ProjectsController {
   }
 
   @Patch(':id/finalize')
-  @Roles(Cargo.DIRETOR)
+  @Roles('DIRETOR')
   finalize(@Param('id', ParseIntPipe) id: number) {
     return this.projectsService.finalize(id);
+  }
+
+  @Delete(':id')
+  @Roles('DIRETOR')
+  @HttpCode(204)
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.projectsService.remove(id);
   }
 }

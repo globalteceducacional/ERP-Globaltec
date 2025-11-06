@@ -1,10 +1,9 @@
-import { Cargo } from '@prisma/client';
-import { IsEnum, IsOptional, IsBooleanString } from 'class-validator';
+import { IsOptional, IsBooleanString, IsString } from 'class-validator';
 
 export class FilterUsersDto {
   @IsOptional()
-  @IsEnum(Cargo)
-  cargo?: Cargo;
+  @IsString()
+  cargo?: string; // Nome do cargo para filtrar
 
   @IsOptional()
   @IsBooleanString()

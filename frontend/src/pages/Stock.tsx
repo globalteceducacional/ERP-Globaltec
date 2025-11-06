@@ -1,5 +1,6 @@
 import { useEffect, useState, FormEvent } from 'react';
 import { api } from '../services/api';
+import { jsPDF } from 'jspdf';
 
 interface Cotacao {
   valorUnitario: number;
@@ -30,6 +31,8 @@ interface Purchase {
   projetoId: number;
   descricao?: string | null;
   imagemUrl?: string | null;
+  nfUrl?: string | null;
+  comprovantePagamentoUrl?: string | null;
   cotacoesJson?: Cotacao[] | null;
 }
 
@@ -40,14 +43,18 @@ interface Projeto {
 
 interface CreateItemForm {
   item: string;
+  codigo?: string;
+  categoria?: string;
   descricao: string;
   quantidade: number;
+  valorUnitario: number;
+  unidadeMedida?: string;
+  estoqueMinimo?: number;
+  localizacao?: string;
   imagemUrl: string;
-  cotacoes: Cotacao[];
   projetoId?: number;
   etapaId?: number;
   status?: string;
-  selectedCotacaoIndex?: number; // Índice da cotação selecionada
 }
 
 export default function Stock() {
@@ -64,19 +71,38 @@ export default function Stock() {
   const [itemToDelete, setItemToDelete] = useState<StockItem | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editingPurchase, setEditingPurchase] = useState<Purchase | null>(null);
+  const [showEditPurchaseModal, setShowEditPurchaseModal] = useState(false);
+  const [purchaseToDelete, setPurchaseToDelete] = useState<Purchase | null>(null);
+  const [showDeletePurchaseModal, setShowDeletePurchaseModal] = useState(false);
+  const [deletingPurchase, setDeletingPurchase] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [purchaseToUpdateStatus, setPurchaseToUpdateStatus] = useState<Purchase | null>(null);
+  const [newStatus, setNewStatus] = useState<string>('');
+  const [selectedProjectFilter, setSelectedProjectFilter] = useState<number | 'all'>('all');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [selectedPurchases, setSelectedPurchases] = useState<number[]>([]);
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<'estoque' | 'compras'>('estoque');
   const [itemForm, setItemForm] = useState<CreateItemForm>({
     item: '',
+    codigo: '',
+    categoria: '',
     descricao: '',
     quantidade: 1,
+    valorUnitario: 0,
+    unidadeMedida: 'UN',
+    estoqueMinimo: 0,
+    localizacao: '',
     imagemUrl: '',
-    cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
-    selectedCotacaoIndex: 0,
   });
   const [purchaseForm, setPurchaseForm] = useState<CreateItemForm & { projetoId: number }>({
     item: '',
     descricao: '',
     quantidade: 1,
     imagemUrl: '',
+    nfUrl: '',
+    comprovantePagamentoUrl: '',
     cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
     projetoId: 0,
     selectedCotacaoIndex: 0,
@@ -101,18 +127,84 @@ export default function Stock() {
     load();
   }, []);
 
+  // Filtrar items baseado nos filtros
+  const filteredItems = items.filter((item) => {
+    // Filtro por projeto
+    if (selectedProjectFilter !== 'all') {
+      if (item.projetoId !== selectedProjectFilter) {
+        return false;
+      }
+    }
+    
+    // Filtro por busca
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      const itemName = item.item?.toLowerCase() || '';
+      const itemDesc = item.descricao?.toLowerCase() || '';
+      if (!itemName.includes(searchLower) && !itemDesc.includes(searchLower)) {
+        return false;
+      }
+    }
+    
+    return true;
+  });
+
+  // Filtrar purchases baseado nos filtros
+  const filteredPurchases = purchases.filter((purchase) => {
+    // Filtro por projeto
+    if (selectedProjectFilter !== 'all') {
+      if (purchase.projetoId !== selectedProjectFilter) {
+        return false;
+      }
+    }
+    
+    // Filtro por busca
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase();
+      const itemName = purchase.item?.toLowerCase() || '';
+      const itemDesc = purchase.descricao?.toLowerCase() || '';
+      if (!itemName.includes(searchLower) && !itemDesc.includes(searchLower)) {
+        return false;
+      }
+    }
+    
+    return true;
+  });
+
+  function getStatusLabel(status: string): string {
+    const labels: Record<string, string> = {
+      PENDENTE: 'Pendente',
+      COMPRADO_ACAMINHO: 'Comprado/A Caminho',
+      ENTREGUE: 'Entregue',
+    };
+    return labels[status] || status;
+  }
+
+  function getStatusColor(status: string): string {
+    switch (status) {
+      case 'PENDENTE':
+        return 'bg-yellow-500/20 text-yellow-300';
+      case 'COMPRADO_ACAMINHO':
+        return 'bg-blue-500/20 text-blue-300';
+      case 'ENTREGUE':
+        return 'bg-green-500/20 text-green-300';
+      default:
+        return 'bg-gray-500/20 text-gray-300';
+    }
+  }
+
   function calculateTotal(cotacao: Cotacao, quantidade: number): number {
     return (cotacao.valorUnitario + cotacao.frete + cotacao.impostos) * quantidade;
   }
 
-  function addCotacao<T extends CreateItemForm>(form: T, setForm: (f: T) => void) {
+  function addCotacao<T extends { cotacoes: Cotacao[] }>(form: T, setForm: (f: T) => void) {
     setForm({
       ...form,
       cotacoes: [...form.cotacoes, { valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
     });
   }
 
-  function removeCotacao<T extends CreateItemForm>(form: T, setForm: (f: T) => void, index: number) {
+  function removeCotacao<T extends { cotacoes: Cotacao[]; selectedCotacaoIndex?: number }>(form: T, setForm: (f: T) => void, index: number) {
     if (form.cotacoes.length > 1) {
       const newCotacoes = form.cotacoes.filter((_, i) => i !== index);
       setForm({
@@ -123,7 +215,7 @@ export default function Stock() {
     }
   }
 
-  function updateCotacao<T extends CreateItemForm>(
+  function updateCotacao<T extends { cotacoes: Cotacao[] }>(
     form: T,
     setForm: (f: T) => void,
     index: number,
@@ -135,8 +227,44 @@ export default function Stock() {
     setForm({ ...form, cotacoes: newCotacoes });
   }
 
+  function togglePurchaseSelection(purchaseId: number) {
+    setSelectedPurchases((prev) =>
+      prev.includes(purchaseId)
+        ? prev.filter((id) => id !== purchaseId)
+        : [...prev, purchaseId]
+    );
+  }
+
+  function toggleAllPurchases() {
+    if (selectedPurchases.length === filteredPurchases.length) {
+      setSelectedPurchases([]);
+    } else {
+      setSelectedPurchases(filteredPurchases.map((p) => p.id));
+    }
+  }
+
+  function getSelectedPurchasesData() {
+    return purchases.filter((p) => selectedPurchases.includes(p.id));
+  }
+
+  function calculateReportTotals() {
+    const selected = getSelectedPurchasesData();
+    const totalValor = selected.reduce((sum, p) => sum + (p.valorUnitario * (p.quantidade || 0)), 0);
+    const totalQuantidade = selected.reduce((sum, p) => sum + (p.quantidade || 0), 0);
+    const totalItens = selected.length;
+    
+    return {
+      totalValor,
+      totalQuantidade,
+      totalItens,
+      purchases: selected,
+    };
+  }
+
+
   // Função para comprimir imagem e garantir que fique dentro do limite
-  async function processImageUrl(imageUrl: string, maxLength: number = 2000): Promise<string> {
+  async function processImageUrl(imageUrl: string, maxLength: number = 50000): Promise<string> {
+    try {
     // Se for uma URL (não base64), apenas truncar se necessário
     if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
       if (imageUrl.length > maxLength) {
@@ -154,21 +282,37 @@ export default function Stock() {
       }
 
       // Tentar comprimir a imagem
-      return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
         const img = new Image();
+          
         img.onload = () => {
+            try {
           // Criar canvas e redimensionar/comprimir
           const canvas = document.createElement('canvas');
           const ctx = canvas.getContext('2d');
           if (!ctx) {
-            // Se não conseguir criar canvas, retornar vazio ou URL original truncada
-            resolve('');
+                console.error('Não foi possível criar contexto do canvas');
+                // Tentar retornar a imagem original mesmo que esteja grande
+                // Melhor ter uma imagem grande do que nenhuma
+                if (imageUrl.length <= maxLength * 3) {
+                  resolve(imageUrl);
+                } else {
+                  reject(new Error('Não foi possível processar a imagem. Canvas não disponível.'));
+                }
             return;
           }
 
           // Calcular tamanho máximo mantendo proporção
           let width = img.width;
           let height = img.height;
+              
+              // Garantir que as dimensões são válidas
+              if (width <= 0 || height <= 0 || !isFinite(width) || !isFinite(height)) {
+                console.error('Dimensões inválidas da imagem:', width, height);
+                reject(new Error('Dimensões inválidas da imagem'));
+                return;
+              }
+
           const maxDimension = 800; // Tamanho máximo para comprimir
           let quality = 0.8;
 
@@ -185,102 +329,157 @@ export default function Stock() {
 
           canvas.width = width;
           canvas.height = height;
+              
+              // Configurar suavização para melhor qualidade
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
+              
           ctx.drawImage(img, 0, 0, width, height);
 
           // Tentar comprimir até ficar dentro do limite
           let compressed = canvas.toDataURL('image/jpeg', quality);
           let attempts = 0;
-          const maxAttempts = 10;
-          let currentWidth = width;
-          let currentHeight = height;
+              const maxAttempts = 15;
 
           // Primeiro, tentar reduzir qualidade
           while (compressed.length > maxLength && attempts < maxAttempts && quality > 0.1) {
-            quality -= 0.1;
+                quality -= 0.05;
             compressed = canvas.toDataURL('image/jpeg', quality);
             attempts++;
           }
 
           // Se ainda estiver muito grande, reduzir o tamanho da imagem
           if (compressed.length > maxLength) {
-            let scale = 0.8; // Começar reduzindo para 80%
+                let scale = 0.7; // Começar reduzindo para 70%
             attempts = 0;
             
-            while (compressed.length > maxLength && attempts < 10 && scale > 0.1) {
-              currentWidth = Math.floor(width * scale);
-              currentHeight = Math.floor(height * scale);
+                while (compressed.length > maxLength && attempts < 15 && scale > 0.2) {
+                  const currentWidth = Math.floor(width * scale);
+                  const currentHeight = Math.floor(height * scale);
               
               // Garantir tamanho mínimo
-              if (currentWidth < 50 || currentHeight < 50) {
+                  if (currentWidth < 100 || currentHeight < 100) {
                 break;
               }
               
               canvas.width = currentWidth;
               canvas.height = currentHeight;
               ctx.drawImage(img, 0, 0, currentWidth, currentHeight);
-              compressed = canvas.toDataURL('image/jpeg', 0.6);
+                  compressed = canvas.toDataURL('image/jpeg', 0.5);
               scale -= 0.1;
               attempts++;
             }
           }
 
-          // Se AINDA estiver muito grande, usar PNG com qualidade muito baixa (último recurso)
-          // Mas nunca truncar a base64 pois isso quebra o formato
+              // Se ainda estiver muito grande, reduzir ainda mais
           if (compressed.length > maxLength) {
-            console.warn(`Imagem muito grande mesmo após compressão (${compressed.length} chars). Tentando PNG com qualidade mínima.`);
-            // Reduzir para tamanho muito pequeno
-            const finalWidth = Math.max(50, Math.floor(width * 0.3));
-            const finalHeight = Math.max(50, Math.floor(height * 0.3));
+                const finalWidth = Math.max(200, Math.floor(width * 0.4));
+                const finalHeight = Math.max(200, Math.floor(height * 0.4));
             canvas.width = finalWidth;
             canvas.height = finalHeight;
             ctx.drawImage(img, 0, 0, finalWidth, finalHeight);
-            compressed = canvas.toDataURL('image/jpeg', 0.5);
+                compressed = canvas.toDataURL('image/jpeg', 0.4);
+              }
             
-            // Se ainda assim exceder, retornar vazio para não salvar imagem inválida
+              // Se ainda assim exceder muito, retornar a versão comprimida mesmo assim
+              // Melhor ter uma imagem comprimida do que nenhuma
             if (compressed.length > maxLength) {
-              console.error(`Imagem impossível de comprimir para ${maxLength} chars. Tamanho final: ${compressed.length}. Retornando vazio.`);
-              resolve('');
+                console.warn(`Imagem comprimida ainda excede o limite (${compressed.length} > ${maxLength} chars), mas será aceita.`);
+                resolve(compressed);
               return;
-            }
           }
 
           resolve(compressed);
+            } catch (error) {
+              console.error('Erro ao processar imagem:', error);
+              // Em caso de erro, tentar retornar a imagem original se estiver dentro de um limite razoável
+              if (imageUrl.length <= maxLength * 2) {
+                resolve(imageUrl);
+              } else {
+                reject(error);
+              }
+            }
+          };
+          
+          img.onerror = (error) => {
+            console.error('Erro ao carregar imagem:', error);
+            reject(new Error('Não foi possível carregar a imagem. Verifique se o arquivo é uma imagem válida.'));
         };
-        img.onerror = () => {
-          // Se houver erro ao carregar, retornar vazio
-          resolve('');
-        };
+          
         img.src = imageUrl;
       });
     }
 
     // Se não for nem URL nem base64, retornar como está (truncado se necessário)
     return imageUrl.length > maxLength ? imageUrl.substring(0, maxLength) : imageUrl;
+    } catch (error) {
+      console.error('Erro geral ao processar imagem:', error);
+      throw error;
+    }
   }
 
   async function handleImageChange(event: React.ChangeEvent<HTMLInputElement>, setForm: (f: any) => void, form: any) {
     const file = event.target.files?.[0];
-    if (file) {
-      // Limitar tamanho do arquivo (ex: 5MB)
+    if (!file) {
+      return;
+    }
+
+    // Validar tipo de arquivo (imagens ou PDF)
+    const isValidType = file.type.startsWith('image/') || file.type === 'application/pdf';
+    if (!isValidType) {
+      setError('Por favor, selecione um arquivo de imagem ou PDF válido.');
+      event.target.value = ''; // Limpar o input
+      return;
+    }
+
+    // Limitar tamanho do arquivo (5MB)
       const maxFileSize = 5 * 1024 * 1024; // 5MB
       if (file.size > maxFileSize) {
-        setError('Imagem muito grande. Por favor, escolha uma imagem menor que 5MB.');
+      setError('Arquivo muito grande. Por favor, escolha um arquivo menor que 5MB.');
+      event.target.value = ''; // Limpar o input
         return;
       }
 
+    // Limpar erros anteriores
+    setError(null);
+
       const reader = new FileReader();
+    
       reader.onloadend = async () => {
+      try {
         const base64 = reader.result as string;
+        if (!base64) {
+          setError('Erro ao ler o arquivo. Por favor, tente novamente.');
+          return;
+        }
+
+        // Se for PDF, apenas adicionar ao formulário sem processar
+        if (file.type === 'application/pdf') {
+          setForm({ ...form, imagemUrl: base64 });
+          setError(null);
+          return;
+        }
+
         // Processar e comprimir a imagem
         const processed = await processImageUrl(base64);
-        if (processed) {
+        if (processed && processed.length > 0) {
           setForm({ ...form, imagemUrl: processed });
+          setError(null); // Limpar erros em caso de sucesso
         } else {
-          setError('Erro ao processar imagem. Por favor, tente novamente.');
+          setError('Erro ao processar imagem. Por favor, tente novamente com outra imagem.');
+        }
+      } catch (err: any) {
+        console.error('Erro ao processar imagem:', err);
+        setError(err.message || 'Erro ao processar imagem. Por favor, tente novamente.');
         }
       };
+    
+    reader.onerror = () => {
+      setError('Erro ao ler o arquivo. Por favor, tente novamente.');
+      event.target.value = ''; // Limpar o input
+    };
+    
       reader.readAsDataURL(file);
-    }
   }
 
   async function handleDeleteItem() {
@@ -322,12 +521,36 @@ export default function Stock() {
         payload.item = itemForm.item.trim();
       }
       
+      if (itemForm.codigo !== undefined && itemForm.codigo.trim().length > 0) {
+        payload.codigo = itemForm.codigo.trim();
+      }
+      
+      if (itemForm.categoria !== undefined && itemForm.categoria.trim().length > 0) {
+        payload.categoria = itemForm.categoria.trim();
+      }
+      
       if (itemForm.descricao && itemForm.descricao.trim().length > 0) {
         payload.descricao = itemForm.descricao.trim();
       }
       
       if (itemForm.quantidade && itemForm.quantidade > 0) {
         payload.quantidade = Number(itemForm.quantidade);
+      }
+      
+      if (itemForm.valorUnitario !== undefined) {
+        payload.valorUnitario = Number(itemForm.valorUnitario);
+      }
+      
+      if (itemForm.unidadeMedida !== undefined && itemForm.unidadeMedida.trim().length > 0) {
+        payload.unidadeMedida = itemForm.unidadeMedida.trim();
+      }
+      
+      if (itemForm.estoqueMinimo !== undefined && itemForm.estoqueMinimo !== null) {
+        payload.estoqueMinimo = Number(itemForm.estoqueMinimo);
+      }
+      
+      if (itemForm.localizacao !== undefined && itemForm.localizacao.trim().length > 0) {
+        payload.localizacao = itemForm.localizacao.trim();
       }
       
       if (itemForm.imagemUrl && itemForm.imagemUrl.trim().length > 0) {
@@ -349,44 +572,21 @@ export default function Stock() {
         payload.status = itemForm.status;
       }
       
-      if (itemForm.cotacoes && itemForm.cotacoes.length > 0) {
-        const cotacoesFiltradas = itemForm.cotacoes
-          .map((cot) => {
-            const valorUnitario = Number(cot.valorUnitario) || 0;
-            const frete = Number(cot.frete) || 0;
-            const impostos = Number(cot.impostos) || 0;
-            
-            if (valorUnitario > 0 && frete >= 0 && impostos >= 0) {
-              const cotacao: any = {
-                valorUnitario,
-                frete,
-                impostos,
-              };
-              if (cot.link && cot.link.trim().length > 0) {
-                cotacao.link = cot.link.trim();
-              }
-              return cotacao;
-            }
-            return null;
-          })
-          .filter((cot) => cot !== null);
-        
-        if (cotacoesFiltradas.length > 0) {
-          payload.cotacoes = cotacoesFiltradas;
-        }
-      }
-
       await api.patch(`/stock/items/${editingItem.id}`, payload);
       
       setShowEditModal(false);
       setEditingItem(null);
       setItemForm({
         item: '',
+        codigo: '',
+        categoria: '',
         descricao: '',
         quantidade: 1,
+        valorUnitario: 0,
+        unidadeMedida: 'UN',
+        estoqueMinimo: 0,
+        localizacao: '',
         imagemUrl: '',
-        cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
-        selectedCotacaoIndex: 0,
       });
       load();
     } catch (err: any) {
@@ -420,159 +620,74 @@ export default function Stock() {
     setSubmitting(true);
 
     try {
-      console.log('=== INÍCIO: Criar Item ===');
-      console.log('Form completo:', itemForm);
-      
-      const selectedCotacao = itemForm.cotacoes[itemForm.selectedCotacaoIndex ?? 0];
-      if (!selectedCotacao) {
-        setError('Selecione uma cotação');
-        setSubmitting(false);
-        return;
-      }
-
-      console.log('Cotação selecionada:', selectedCotacao);
-
-      const totalPorUnidade = selectedCotacao.valorUnitario + selectedCotacao.frete + selectedCotacao.impostos;
-      console.log('Total por unidade calculado:', totalPorUnidade);
-
-      // Preparar payload removendo campos undefined/vazios
+      // Preparar payload
       const payload: any = {
         item: itemForm.item.trim(),
         quantidade: Number(itemForm.quantidade),
-        valorUnitario: Number(totalPorUnidade.toFixed(2)),
+        valorUnitario: Number(itemForm.valorUnitario) || 0,
       };
 
-      console.log('Payload base criado:', payload);
+      // Adicionar campos opcionais apenas se tiverem valor válido
+      if (itemForm.codigo && itemForm.codigo.trim().length > 0) {
+        payload.codigo = itemForm.codigo.trim();
+      }
 
-      // Adicionar campos opcionais apenas se tiverem valor válido (não vazio)
+      if (itemForm.categoria && itemForm.categoria.trim().length > 0) {
+        payload.categoria = itemForm.categoria.trim();
+      }
+      
       if (itemForm.descricao && itemForm.descricao.trim().length > 0) {
         payload.descricao = itemForm.descricao.trim();
-        console.log('✓ descricao adicionada:', payload.descricao);
-      } else {
-        console.log('✗ descricao omitida (vazia ou undefined)');
+      }
+      
+      if (itemForm.unidadeMedida && itemForm.unidadeMedida.trim().length > 0) {
+        payload.unidadeMedida = itemForm.unidadeMedida.trim();
+              }
+      
+      if (itemForm.estoqueMinimo !== undefined && itemForm.estoqueMinimo !== null && itemForm.estoqueMinimo > 0) {
+        payload.estoqueMinimo = Number(itemForm.estoqueMinimo);
+      }
+      
+      if (itemForm.localizacao && itemForm.localizacao.trim().length > 0) {
+        payload.localizacao = itemForm.localizacao.trim();
       }
       
       if (itemForm.imagemUrl && itemForm.imagemUrl.trim().length > 0) {
-        // Processar imagem para garantir que fique dentro do limite
         const processedImageUrl = await processImageUrl(itemForm.imagemUrl.trim());
         if (processedImageUrl && processedImageUrl.length > 0) {
           payload.imagemUrl = processedImageUrl;
-          console.log('✓ imagemUrl processada e adicionada:', payload.imagemUrl.substring(0, 50) + '...', `(${payload.imagemUrl.length} chars)`);
-        } else {
-          console.log('✗ imagemUrl omitida após processamento (vazia ou inválida)');
         }
-      } else {
-        console.log('✗ imagemUrl omitida (vazia ou undefined)');
       }
       
       if (itemForm.projetoId && itemForm.projetoId > 0) {
         payload.projetoId = Number(itemForm.projetoId);
-        console.log('✓ projetoId adicionado:', payload.projetoId);
-      } else {
-        console.log('✗ projetoId omitido');
       }
       
       if (itemForm.etapaId && itemForm.etapaId > 0) {
         payload.etapaId = Number(itemForm.etapaId);
-        console.log('✓ etapaId adicionado:', payload.etapaId);
-      } else {
-        console.log('✗ etapaId omitido');
       }
       
-      // Sempre enviar cotações (array com pelo menos uma cotação)
-      if (itemForm.cotacoes && itemForm.cotacoes.length > 0) {
-        const cotacoesFiltradas = itemForm.cotacoes
-          .map((cot, index) => {
-            const valorUnitario = Number(cot.valorUnitario) || 0;
-            const frete = Number(cot.frete) || 0;
-            const impostos = Number(cot.impostos) || 0;
-            
-            console.log(`Cotação ${index + 1} raw:`, { valorUnitario: cot.valorUnitario, frete: cot.frete, impostos: cot.impostos });
-            
-            // Só incluir se todos os valores forem válidos (maiores que 0)
-            if (valorUnitario > 0 && frete >= 0 && impostos >= 0) {
-              const cotacao: any = {
-                valorUnitario,
-                frete,
-                impostos,
-              };
-              if (cot.link && cot.link.trim().length > 0) {
-                cotacao.link = cot.link.trim();
-              }
-              console.log(`✓ Cotação ${index + 1} válida:`, cotacao);
-              return cotacao;
-            }
-            console.log(`✗ Cotação ${index + 1} inválida (valorUnitario: ${valorUnitario})`);
-            return null;
-          })
-          .filter((cot) => cot !== null); // Remove cotações inválidas
-        
-        if (cotacoesFiltradas.length > 0) {
-          payload.cotacoes = cotacoesFiltradas;
-          console.log('✓ cotações adicionadas:', cotacoesFiltradas.length, 'cotação(ões)');
-        } else {
-          console.log('✗ Nenhuma cotação válida encontrada');
-        }
-      } else {
-        console.log('✗ Sem cotações no formulário');
+      if (itemForm.status) {
+        payload.status = itemForm.status;
       }
 
-      // Limpar propriedades undefined/null do payload final
-      const cleanPayload = Object.keys(payload).reduce((acc: Record<string, any>, key) => {
-        if (payload[key] !== undefined && payload[key] !== null) {
-          acc[key] = payload[key];
-        } else {
-          console.log(`⚠ Removido campo ${key} com valor ${payload[key]}`);
-        }
-        return acc;
-      }, {});
-
-      console.log('=== PAYLOAD FINAL (LIMPO) ===');
-      console.log(JSON.stringify(cleanPayload, null, 2));
-      console.log('Campos incluídos:', Object.keys(cleanPayload));
-      console.log('Tipos dos campos:', {
-        item: typeof cleanPayload.item,
-        quantidade: typeof cleanPayload.quantidade,
-        valorUnitario: typeof cleanPayload.valorUnitario,
-        descricao: cleanPayload.descricao ? typeof cleanPayload.descricao : 'NÃO INCLUÍDO',
-        imagemUrl: cleanPayload.imagemUrl ? typeof cleanPayload.imagemUrl : 'NÃO INCLUÍDO',
-        cotacoes: cleanPayload.cotacoes ? typeof cleanPayload.cotacoes + ' (length: ' + cleanPayload.cotacoes.length + ')' : 'NÃO INCLUÍDO',
-      });
-
-      const response = await api.post('/stock/items', cleanPayload);
-      console.log('=== SUCESSO ===');
-      console.log('Resposta do servidor:', response.data);
-
+      await api.post('/stock/items', payload);
+      
       setShowItemModal(false);
       setItemForm({
         item: '',
+        codigo: '',
+        categoria: '',
         descricao: '',
         quantidade: 1,
+        valorUnitario: 0,
+        unidadeMedida: 'UN',
+        estoqueMinimo: 0,
+        localizacao: '',
         imagemUrl: '',
-        cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
-        selectedCotacaoIndex: 0,
       });
       load();
     } catch (err: any) {
-      console.error('=== ERRO AO CRIAR ITEM ===');
-      console.error('Erro completo:', err);
-      console.error('Status:', err.response?.status);
-      console.error('Status Text:', err.response?.statusText);
-      console.error('Headers:', err.response?.headers);
-      console.error('Data completa:', err.response?.data);
-      
-      if (err.response?.data) {
-        console.error('Mensagem de erro:', err.response.data.message);
-        console.error('Erros de validação:', err.response.data.message);
-        if (Array.isArray(err.response.data.message)) {
-          console.error('Array de erros:', err.response.data.message);
-          err.response.data.message.forEach((msg: any, index: number) => {
-            console.error(`  Erro ${index + 1}:`, msg);
-          });
-        }
-      }
-      
-      // Formatar mensagem de erro de forma mais clara
       let errorMessage = 'Erro ao criar item';
       if (err.response?.data?.message) {
         if (Array.isArray(err.response.data.message)) {
@@ -591,12 +706,9 @@ export default function Stock() {
       } else if (err.message) {
         errorMessage = err.message;
       }
-      
-      console.error('Mensagem formatada para exibição:', errorMessage);
       setError(errorMessage);
     } finally {
       setSubmitting(false);
-      console.log('=== FIM: Criar Item ===');
     }
   }
 
@@ -614,7 +726,7 @@ export default function Stock() {
         setSubmitting(false);
         return;
       }
-
+      
       const selectedCotacao = purchaseForm.cotacoes[purchaseForm.selectedCotacaoIndex ?? 0];
       if (!selectedCotacao) {
         setError('Selecione uma cotação');
@@ -656,6 +768,32 @@ export default function Stock() {
         }
       } else {
         console.log('✗ imagemUrl omitida (vazia ou undefined)');
+      }
+      
+      if (purchaseForm.nfUrl && purchaseForm.nfUrl.trim().length > 0) {
+        // Processar NF para garantir que fique dentro do limite
+        const processedNfUrl = await processImageUrl(purchaseForm.nfUrl.trim());
+        if (processedNfUrl && processedNfUrl.length > 0) {
+          payload.nfUrl = processedNfUrl;
+          console.log('✓ nfUrl processada e adicionada:', payload.nfUrl.substring(0, 50) + '...', `(${payload.nfUrl.length} chars)`);
+      } else {
+          console.log('✗ nfUrl omitida após processamento (vazia ou inválida)');
+        }
+      } else {
+        console.log('✗ nfUrl omitida (vazia ou undefined)');
+      }
+      
+      if (purchaseForm.comprovantePagamentoUrl && purchaseForm.comprovantePagamentoUrl.trim().length > 0) {
+        // Processar comprovante para garantir que fique dentro do limite
+        const processedComprovanteUrl = await processImageUrl(purchaseForm.comprovantePagamentoUrl.trim());
+        if (processedComprovanteUrl && processedComprovanteUrl.length > 0) {
+          payload.comprovantePagamentoUrl = processedComprovanteUrl;
+          console.log('✓ comprovantePagamentoUrl processada e adicionada:', payload.comprovantePagamentoUrl.substring(0, 50) + '...', `(${payload.comprovantePagamentoUrl.length} chars)`);
+      } else {
+          console.log('✗ comprovantePagamentoUrl omitida após processamento (vazia ou inválida)');
+        }
+      } else {
+        console.log('✗ comprovantePagamentoUrl omitida (vazia ou undefined)');
       }
       
       // Sempre enviar cotações (array com pelo menos uma cotação)
@@ -729,6 +867,8 @@ export default function Stock() {
         descricao: '',
         quantidade: 1,
         imagemUrl: '',
+        nfUrl: '',
+        comprovantePagamentoUrl: '',
         cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
         projetoId: 0,
         selectedCotacaoIndex: 0,
@@ -781,10 +921,281 @@ export default function Stock() {
     }
   }
 
+  async function handleDeletePurchase() {
+    if (!purchaseToDelete) return;
+    
+    setDeletingPurchase(true);
+    setError(null);
+
+    try {
+      await api.delete(`/stock/purchases/${purchaseToDelete.id}`);
+      setShowDeletePurchaseModal(false);
+      setPurchaseToDelete(null);
+      load();
+    } catch (err: any) {
+      let errorMessage = 'Erro ao remover compra';
+      if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      setError(errorMessage);
+    } finally {
+      setDeletingPurchase(false);
+    }
+  }
+
+  async function handleUpdatePurchaseStatus() {
+    if (!purchaseToUpdateStatus || !newStatus) return;
+    
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      await api.patch(`/stock/purchases/${purchaseToUpdateStatus.id}/status`, {
+        status: newStatus,
+      });
+      setShowStatusModal(false);
+      setPurchaseToUpdateStatus(null);
+      setNewStatus('');
+      load();
+    } catch (err: any) {
+      let errorMessage = 'Erro ao atualizar status';
+      if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      setError(errorMessage);
+    } finally {
+        setSubmitting(false);
+    }
+  }
+
+  async function handleUpdatePurchase(event: FormEvent) {
+    event.preventDefault();
+    if (!editingPurchase) return;
+    
+    setError(null);
+    setSubmitting(true);
+
+    try {
+      const payload: any = {};
+      
+      if (purchaseForm.item && purchaseForm.item.trim().length > 0) {
+        payload.item = purchaseForm.item.trim();
+      }
+      
+      if (purchaseForm.descricao && purchaseForm.descricao.trim().length > 0) {
+        payload.descricao = purchaseForm.descricao.trim();
+      }
+      
+      if (purchaseForm.quantidade && purchaseForm.quantidade > 0) {
+        payload.quantidade = Number(purchaseForm.quantidade);
+      }
+      
+      // Recalcular valorUnitario baseado na cotação selecionada
+      if (purchaseForm.cotacoes && purchaseForm.cotacoes.length > 0) {
+        const selectedCotacao = purchaseForm.cotacoes[purchaseForm.selectedCotacaoIndex ?? 0];
+        if (selectedCotacao) {
+          const valorUnitario = Number(selectedCotacao.valorUnitario) || 0;
+          const frete = Number(selectedCotacao.frete) || 0;
+          const impostos = Number(selectedCotacao.impostos) || 0;
+          const totalPorUnidade = valorUnitario + frete + impostos;
+          
+          // Só atualizar valorUnitario se o total for maior que zero
+          // Caso contrário, manter o valor existente
+          if (totalPorUnidade > 0) {
+            payload.valorUnitario = Number(totalPorUnidade.toFixed(2));
+          }
+        }
+      }
+      
+      if (purchaseForm.imagemUrl && purchaseForm.imagemUrl.trim().length > 0) {
+        const processedImageUrl = await processImageUrl(purchaseForm.imagemUrl.trim());
+        if (processedImageUrl && processedImageUrl.length > 0) {
+          payload.imagemUrl = processedImageUrl;
+        }
+      }
+      
+      if (purchaseForm.nfUrl && purchaseForm.nfUrl.trim().length > 0) {
+        const processedNfUrl = await processImageUrl(purchaseForm.nfUrl.trim());
+        if (processedNfUrl && processedNfUrl.length > 0) {
+          payload.nfUrl = processedNfUrl;
+        }
+      }
+      
+      if (purchaseForm.comprovantePagamentoUrl && purchaseForm.comprovantePagamentoUrl.trim().length > 0) {
+        const processedComprovanteUrl = await processImageUrl(purchaseForm.comprovantePagamentoUrl.trim());
+        if (processedComprovanteUrl && processedComprovanteUrl.length > 0) {
+          payload.comprovantePagamentoUrl = processedComprovanteUrl;
+        }
+      }
+      
+      if (purchaseForm.cotacoes && purchaseForm.cotacoes.length > 0) {
+        const cotacoesFiltradas = purchaseForm.cotacoes
+          .map((cot) => {
+            const valorUnitario = Number(cot.valorUnitario) || 0;
+            const frete = Number(cot.frete) || 0;
+            const impostos = Number(cot.impostos) || 0;
+            
+            // Aceitar todas as cotações válidas (valores >= 0)
+            // Mesmo cotações com valores zerados são válidas
+            if (valorUnitario >= 0 && frete >= 0 && impostos >= 0 && 
+                !isNaN(valorUnitario) && !isNaN(frete) && !isNaN(impostos)) {
+              const cotacao: any = {
+                valorUnitario,
+                frete,
+                impostos,
+              };
+              if (cot.link && cot.link.trim().length > 0) {
+                cotacao.link = cot.link.trim();
+              }
+              return cotacao;
+            }
+            return null;
+          })
+          .filter((cot) => cot !== null);
+        
+        // Sempre enviar cotações se houver pelo menos uma válida
+        if (cotacoesFiltradas.length > 0) {
+          payload.cotacoes = cotacoesFiltradas;
+        }
+      }
+
+      // Garantir que há pelo menos um campo no payload
+      if (Object.keys(payload).length === 0) {
+        setError('É necessário alterar pelo menos um campo');
+        setSubmitting(false);
+        return;
+      }
+
+      console.log('Atualizando compra ID:', editingPurchase.id);
+      console.log('Payload enviado:', payload);
+
+      await api.patch(`/stock/purchases/${editingPurchase.id}`, payload);
+
+      setShowEditPurchaseModal(false);
+      setEditingPurchase(null);
+      setPurchaseForm({
+        item: '',
+        descricao: '',
+        quantidade: 1,
+        imagemUrl: '',
+        nfUrl: '',
+        comprovantePagamentoUrl: '',
+        cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
+        projetoId: 0,
+        selectedCotacaoIndex: 0,
+      });
+      load();
+    } catch (err: any) {
+      let errorMessage = 'Erro ao atualizar compra';
+      
+      if (err.response) {
+        // Erro de resposta do servidor
+        if (err.response.status === 404) {
+          errorMessage = 'Compra não encontrada';
+        } else if (err.response.status === 400) {
+          errorMessage = 'Dados inválidos. Verifique os campos preenchidos.';
+        } else if (err.response.data?.message) {
+        if (Array.isArray(err.response.data.message)) {
+          errorMessage = err.response.data.message
+            .map((msg: any) => {
+              if (typeof msg === 'string') return msg;
+              if (msg.constraints) {
+                return Object.values(msg.constraints).join(', ');
+              }
+              return JSON.stringify(msg);
+            })
+            .join('. ');
+        } else {
+          errorMessage = err.response.data.message;
+        }
+        } else if (err.response.statusText) {
+          errorMessage = `${err.response.statusText}. Status: ${err.response.status}`;
+        }
+      } else if (err.request) {
+        // Requisição foi feita mas não houve resposta
+        errorMessage = 'Não foi possível conectar ao servidor. Verifique sua conexão.';
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
+      console.error('Erro ao atualizar compra:', err);
+      setError(errorMessage);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     <div className="space-y-8">
       {error && <p className="text-danger bg-danger/20 border border-danger/50 px-4 py-3 rounded-md">{error}</p>}
 
+      {/* Abas */}
+      <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+        <div className="flex border-b border-white/10">
+          <button
+            onClick={() => setActiveTab('estoque')}
+            className={`flex-1 px-6 py-4 text-sm font-semibold transition-colors ${
+              activeTab === 'estoque'
+                ? 'bg-primary text-white border-b-2 border-primary'
+                : 'text-white/70 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Estoque
+          </button>
+          <button
+            onClick={() => setActiveTab('compras')}
+            className={`flex-1 px-6 py-4 text-sm font-semibold transition-colors ${
+              activeTab === 'compras'
+                ? 'bg-primary text-white border-b-2 border-primary'
+                : 'text-white/70 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Compras
+          </button>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="bg-white/5 rounded-xl border border-white/10 p-4">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-white/70 mb-2">
+              Buscar
+            </label>
+            <input
+              type="text"
+              placeholder="Buscar por nome ou descrição..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-4 py-2 rounded-md bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            />
+          </div>
+          <div className="flex-1">
+            <label className="block text-sm font-medium text-white/70 mb-2">
+              Filtrar por Projeto
+            </label>
+            <select
+              value={selectedProjectFilter}
+              onChange={(e) => setSelectedProjectFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+              className="w-full px-4 py-2 rounded-md bg-white/10 border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            >
+              <option value="all" className="bg-neutral text-white">Todos os Projetos</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id} className="bg-neutral text-white">
+                  {project.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Conteúdo da aba Estoque */}
+      {activeTab === 'estoque' && (
       <section>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-semibold">Estoque</h3>
@@ -801,21 +1212,19 @@ export default function Stock() {
               <tr>
                 <th className="px-4 py-3 text-left">Item</th>
                 <th className="px-4 py-3 text-left">Quantidade</th>
-                <th className="px-4 py-3 text-left">Cotações</th>
                 <th className="px-4 py-3 text-left">Status</th>
                 <th className="px-4 py-3 text-left">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {items.length === 0 ? (
+              {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-white/50">
-                    Nenhum item no estoque
+                  <td colSpan={4} className="px-4 py-8 text-center text-white/50">
+                    {items.length === 0 ? 'Nenhum item no estoque' : 'Nenhum item encontrado com os filtros aplicados'}
                   </td>
                 </tr>
               ) : (
-                items.map((item) => {
-                  const cotacoes = item.cotacoesJson && Array.isArray(item.cotacoesJson) ? item.cotacoesJson : [];
+                filteredItems.map((item) => {
                   return (
                     <tr key={item.id} className="border-t border-white/5 hover:bg-white/5">
                       <td className="px-4 py-3">
@@ -840,43 +1249,6 @@ export default function Stock() {
                         </div>
                       </td>
                       <td className="px-4 py-3">{item.quantidade || 0}</td>
-                      <td className="px-4 py-3">
-                        {cotacoes.length > 0 ? (
-                          <div className="space-y-1">
-                            {cotacoes.map((cotacao: Cotacao, index: number) => {
-                              const total = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0);
-                              const totalComQuantidade = total * (item.quantidade || 1);
-                              return (
-                                <div key={index} className="text-sm">
-                                  <span className="text-white/70">Cotação {index + 1}: </span>
-                                  {cotacao.link ? (
-                                    <a
-                                      href={cotacao.link}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="font-semibold text-primary hover:text-primary/80 underline cursor-pointer"
-                                    >
-                                      {totalComQuantidade.toLocaleString('pt-BR', {
-                                        style: 'currency',
-                                        currency: 'BRL',
-                                      })}
-                                    </a>
-                                  ) : (
-                                    <span className="font-semibold text-primary">
-                                      {totalComQuantidade.toLocaleString('pt-BR', {
-                                        style: 'currency',
-                                        currency: 'BRL',
-                                      })}
-                                    </span>
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <span className="text-white/50 text-sm">Sem cotações</span>
-                        )}
-                      </td>
                       <td className="px-4 py-3">{item.status || 'DISPONIVEL'}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -901,16 +1273,18 @@ export default function Stock() {
                             
                             setItemForm({
                               item: item.item || '',
+                              codigo: (item as any).codigo || '',
+                              categoria: (item as any).categoria || '',
                               descricao: item.descricao || '',
                               quantidade: item.quantidade || 1,
+                              valorUnitario: item.valorUnitario || 0,
+                              unidadeMedida: (item as any).unidadeMedida || 'UN',
+                              estoqueMinimo: (item as any).estoqueMinimo || 0,
+                              localizacao: (item as any).localizacao || '',
                               imagemUrl: item.imagemUrl || '',
-                              cotacoes: item.cotacoesJson && Array.isArray(item.cotacoesJson) 
-                                ? item.cotacoesJson 
-                                : [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
                               projetoId: item.projetoId || undefined,
                               etapaId: item.etapaId || undefined,
                               status: item.status || 'DISPONIVEL',
-                              selectedCotacaoIndex: 0,
                             });
                             setShowEditModal(true);
                           }}
@@ -937,36 +1311,70 @@ export default function Stock() {
           </table>
         </div>
       </section>
+      )}
 
+      {/* Conteúdo da aba Compras */}
+      {activeTab === 'compras' && (
       <section>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-semibold">Compras</h3>
+            <div className="flex items-center gap-2">
+              {selectedPurchases.length > 0 && (
+                <button
+                  onClick={() => setShowReportModal(true)}
+                  className="px-4 py-2 rounded-md bg-green-600 hover:bg-green-700 text-sm font-semibold"
+                >
+                  Gerar Relatório ({selectedPurchases.length})
+                </button>
+              )}
           <button
             onClick={() => setShowPurchaseModal(true)}
             className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-sm font-semibold"
           >
             Nova Compra
           </button>
+            </div>
         </div>
         <div className="overflow-x-auto rounded-xl border border-white/10">
           <table className="min-w-full text-sm">
             <thead className="bg-white/5 text-white/70">
               <tr>
+                <th className="px-4 py-3 text-left">
+                  <input
+                    type="checkbox"
+                    checked={filteredPurchases.length > 0 && selectedPurchases.length === filteredPurchases.length}
+                    onChange={toggleAllPurchases}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10 text-primary focus:ring-primary"
+                  />
+                </th>
                 <th className="px-4 py-3 text-left">Item</th>
                 <th className="px-4 py-3 text-left">Quantidade</th>
+                <th className="px-4 py-3 text-left">Cotações</th>
                 <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {purchases.length === 0 ? (
+              {filteredPurchases.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="px-4 py-8 text-center text-white/50">
-                    Nenhuma compra cadastrada
+                  <td colSpan={6} className="px-4 py-8 text-center text-white/50">
+                    {purchases.length === 0 ? 'Nenhuma compra cadastrada' : 'Nenhuma compra encontrada com os filtros aplicados'}
                   </td>
                 </tr>
               ) : (
-                purchases.map((purchase) => (
-                  <tr key={purchase.id} className="border-t border-white/5 hover:bg-white/5">
+                filteredPurchases.map((purchase) => {
+                  const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
+                  const isSelected = selectedPurchases.includes(purchase.id);
+                  return (
+                  <tr key={purchase.id} className={`border-t border-white/5 hover:bg-white/5 ${isSelected ? 'bg-primary/10' : ''}`}>
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => togglePurchaseSelection(purchase.id)}
+                        className="w-4 h-4 rounded border-white/30 bg-white/10 text-primary focus:ring-primary"
+                      />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center space-x-3">
                         {purchase.imagemUrl && (
@@ -989,14 +1397,105 @@ export default function Stock() {
                       </div>
                     </td>
                     <td className="px-4 py-3">{purchase.quantidade || 0}</td>
-                    <td className="px-4 py-3">{purchase.status || 'PENDENTE'}</td>
+                    <td className="px-4 py-3">
+                      {cotacoes.length > 0 ? (
+                        <div className="space-y-1">
+                          {cotacoes.map((cotacao: Cotacao, index: number) => {
+                            const total = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0);
+                            const totalComQuantidade = total * (purchase.quantidade || 1);
+                            return (
+                              <div key={index} className="text-sm">
+                                <span className="text-white/70">Cotação {index + 1}: </span>
+                                {cotacao.link ? (
+                                  <a
+                                    href={cotacao.link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-semibold text-primary hover:text-primary/80 underline cursor-pointer"
+                                  >
+                                    {totalComQuantidade.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })}
+                                  </a>
+                                ) : (
+                                  <span className="font-semibold text-primary">
+                                    {totalComQuantidade.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <span className="text-white/50 text-sm">Sem cotações</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-1 rounded text-xs ${getStatusColor(purchase.status)}`}>
+                        {getStatusLabel(purchase.status)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setPurchaseToUpdateStatus(purchase);
+                            setNewStatus(purchase.status);
+                            setShowStatusModal(true);
+                          }}
+                          className="px-3 py-1.5 text-sm rounded-md bg-green-600 hover:bg-green-700 text-white"
+                          title="Alterar Status"
+                        >
+                          Status
+                        </button>
+                        <button
+                          onClick={() => {
+                            setEditingPurchase(purchase);
+                            setPurchaseForm({
+                              item: purchase.item || '',
+                              descricao: purchase.descricao || '',
+                              quantidade: purchase.quantidade || 1,
+                              imagemUrl: purchase.imagemUrl || '',
+                              nfUrl: purchase.nfUrl || '',
+                              comprovantePagamentoUrl: purchase.comprovantePagamentoUrl || '',
+                              cotacoes: purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) 
+                                ? purchase.cotacoesJson 
+                                : [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
+                              projetoId: purchase.projetoId,
+                              selectedCotacaoIndex: 0,
+                            });
+                            setShowEditPurchaseModal(true);
+                          }}
+                          className="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                          title="Editar Compra"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          onClick={() => {
+                            setPurchaseToDelete(purchase);
+                            setShowDeletePurchaseModal(true);
+                          }}
+                          className="px-3 py-1.5 text-sm rounded-md bg-red-600 hover:bg-red-700 text-white"
+                          title="Remover Compra"
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </section>
+      )}
 
       {/* Modal Adicionar Item ao Estoque */}
       {showItemModal && (
@@ -1015,6 +1514,7 @@ export default function Stock() {
               </button>
             </div>
             <form onSubmit={handleCreateItem} className="p-8 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Nome do Item *</label>
                 <input
@@ -1023,7 +1523,20 @@ export default function Stock() {
                   value={itemForm.item}
                   onChange={(e) => setItemForm({ ...itemForm, item: e.target.value })}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="Ex: Parafuso M6x20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Código/SKU</label>
+                  <input
+                    type="text"
+                    value={itemForm.codigo || ''}
+                    onChange={(e) => setItemForm({ ...itemForm, codigo: e.target.value })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="Ex: PRF-M6-20"
                 />
+                </div>
               </div>
 
               <div>
@@ -1033,12 +1546,94 @@ export default function Stock() {
                   onChange={(e) => setItemForm({ ...itemForm, descricao: e.target.value })}
                   rows={3}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="Descrição detalhada do item..."
                 />
               </div>
 
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Imagem</label>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Categoria</label>
                 <input
+                    type="text"
+                    value={itemForm.categoria || ''}
+                    onChange={(e) => setItemForm({ ...itemForm, categoria: e.target.value })}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="Ex: Parafusos, Ferramentas"
+                />
+              </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Unidade de Medida *</label>
+                  <select
+                    value={itemForm.unidadeMedida || 'UN'}
+                    onChange={(e) => setItemForm({ ...itemForm, unidadeMedida: e.target.value })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  >
+                    <option value="UN" className="bg-neutral text-white">UN (Unidade)</option>
+                    <option value="KG" className="bg-neutral text-white">KG (Quilograma)</option>
+                    <option value="M" className="bg-neutral text-white">M (Metro)</option>
+                    <option value="M2" className="bg-neutral text-white">M² (Metro Quadrado)</option>
+                    <option value="M3" className="bg-neutral text-white">M³ (Metro Cúbico)</option>
+                    <option value="L" className="bg-neutral text-white">L (Litro)</option>
+                    <option value="CX" className="bg-neutral text-white">CX (Caixa)</option>
+                    <option value="PC" className="bg-neutral text-white">PC (Peça)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Localização</label>
+                            <input
+                    type="text"
+                    value={itemForm.localizacao || ''}
+                    onChange={(e) => setItemForm({ ...itemForm, localizacao: e.target.value })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="Ex: Prateleira A-3"
+                  />
+                        </div>
+                      </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Quantidade *</label>
+                          <input
+                            type="number"
+                    required
+                    min="1"
+                    value={itemForm.quantidade}
+                    onChange={(e) => setItemForm({ ...itemForm, quantidade: Number(e.target.value) })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          />
+                        </div>
+
+                        <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Valor Unitário (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                    value={itemForm.valorUnitario}
+                    onChange={(e) => setItemForm({ ...itemForm, valorUnitario: Number(e.target.value) })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="0.00"
+                          />
+                        </div>
+
+                        <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Estoque Mínimo</label>
+                          <input
+                            type="number"
+                            min="0"
+                    value={itemForm.estoqueMinimo || 0}
+                    onChange={(e) => setItemForm({ ...itemForm, estoqueMinimo: Number(e.target.value) })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="0"
+                          />
+                        </div>
+              </div>
+
+                        <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Imagem</label>
+                          <input
                   type="file"
                   accept="image/*"
                   onChange={(e) => handleImageChange(e, setItemForm, itemForm)}
@@ -1046,164 +1641,7 @@ export default function Stock() {
                 />
                 {itemForm.imagemUrl && (
                   <img src={itemForm.imagemUrl} alt="Preview" className="mt-2 w-32 h-32 object-cover rounded border border-white/20" />
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Quantidade *</label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  value={itemForm.quantidade}
-                  onChange={(e) => setItemForm({ ...itemForm, quantidade: Number(e.target.value) })}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                />
-              </div>
-
-              <div className="border-t border-white/10 pt-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">Cotações</h3>
-                  <button
-                    type="button"
-                    onClick={() => addCotacao(itemForm, setItemForm)}
-                    className="px-3 py-1 rounded-md bg-primary/20 hover:bg-primary/30 text-sm"
-                  >
-                    + Adicionar Cotação
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  {itemForm.cotacoes.map((cotacao, index) => (
-                    <div key={index} className="bg-white/10 border border-white/30 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="font-semibold text-sm text-white">Cotação {index + 1}</span>
-                        <div className="flex items-center gap-4">
-                          {itemForm.cotacoes.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeCotacao(itemForm, setItemForm, index)}
-                              className="text-danger hover:text-danger/80 text-sm font-medium"
-                            >
-                              Remover
-                            </button>
                           )}
-                          <label className="flex items-center space-x-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="selectedCotacao"
-                              checked={itemForm.selectedCotacaoIndex === index}
-                              onChange={() => setItemForm({ ...itemForm, selectedCotacaoIndex: index })}
-                              className="w-4 h-4 text-primary focus:ring-primary"
-                            />
-                            <span className="text-sm text-white/90">Usar esta cotação</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-white/90 mb-2">Valor Unitário (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={cotacao.valorUnitario}
-                            onChange={(e) =>
-                              updateCotacao(itemForm, setItemForm, index, 'valorUnitario', Number(e.target.value))
-                            }
-                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-white/90 mb-2">Frete (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={cotacao.frete}
-                            onChange={(e) =>
-                              updateCotacao(itemForm, setItemForm, index, 'frete', Number(e.target.value))
-                            }
-                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-white/90 mb-2">Impostos (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={cotacao.impostos}
-                            onChange={(e) =>
-                              updateCotacao(itemForm, setItemForm, index, 'impostos', Number(e.target.value))
-                            }
-                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-white/90 mb-2">Link</label>
-                          <input
-                            type="url"
-                            value={cotacao.link || ''}
-                            onChange={(e) => updateCotacao(itemForm, setItemForm, index, 'link', e.target.value)}
-                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                            placeholder="https://..."
-                          />
-                        </div>
-                      </div>
-
-                      <div className="mt-3 pt-3 border-t border-white/10">
-                        <div className="text-sm text-white/70">
-                          Total por unidade:{' '}
-                          {cotacao.link ? (
-                            <a
-                              href={cotacao.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-semibold text-white hover:text-primary underline cursor-pointer"
-                            >
-                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos).toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              })}
-                            </a>
-                          ) : (
-                            <span className="font-semibold text-white">
-                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos).toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              })}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-sm text-white/70">
-                          Total ({itemForm.quantidade} unidades):{' '}
-                          {cotacao.link ? (
-                            <a
-                              href={cotacao.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-semibold text-primary hover:text-primary/80 underline cursor-pointer"
-                            >
-                              {calculateTotal(cotacao, itemForm.quantidade).toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              })}
-                            </a>
-                          ) : (
-                            <span className="font-semibold text-primary">
-                              {calculateTotal(cotacao, itemForm.quantidade).toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              })}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
               </div>
 
               {error && (
@@ -1262,6 +1700,7 @@ export default function Stock() {
               </button>
             </div>
             <form onSubmit={handleUpdateItem} className="p-8 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Nome do Item *</label>
                 <input
@@ -1270,7 +1709,20 @@ export default function Stock() {
                   value={itemForm.item}
                   onChange={(e) => setItemForm({ ...itemForm, item: e.target.value })}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="Ex: Parafuso M6x20"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Código/SKU</label>
+                  <input
+                    type="text"
+                    value={itemForm.codigo || ''}
+                    onChange={(e) => setItemForm({ ...itemForm, codigo: e.target.value })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="Ex: PRF-M6-20"
                 />
+                </div>
               </div>
 
               <div>
@@ -1280,7 +1732,89 @@ export default function Stock() {
                   onChange={(e) => setItemForm({ ...itemForm, descricao: e.target.value })}
                   rows={3}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="Descrição detalhada do item..."
                 />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Categoria</label>
+                  <input
+                    type="text"
+                    value={itemForm.categoria || ''}
+                    onChange={(e) => setItemForm({ ...itemForm, categoria: e.target.value })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="Ex: Parafusos, Ferramentas"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Unidade de Medida *</label>
+                  <select
+                    value={itemForm.unidadeMedida || 'UN'}
+                    onChange={(e) => setItemForm({ ...itemForm, unidadeMedida: e.target.value })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  >
+                    <option value="UN" className="bg-neutral text-white">UN (Unidade)</option>
+                    <option value="KG" className="bg-neutral text-white">KG (Quilograma)</option>
+                    <option value="M" className="bg-neutral text-white">M (Metro)</option>
+                    <option value="M2" className="bg-neutral text-white">M² (Metro Quadrado)</option>
+                    <option value="M3" className="bg-neutral text-white">M³ (Metro Cúbico)</option>
+                    <option value="L" className="bg-neutral text-white">L (Litro)</option>
+                    <option value="CX" className="bg-neutral text-white">CX (Caixa)</option>
+                    <option value="PC" className="bg-neutral text-white">PC (Peça)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Localização</label>
+                  <input
+                    type="text"
+                    value={itemForm.localizacao || ''}
+                    onChange={(e) => setItemForm({ ...itemForm, localizacao: e.target.value })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="Ex: Prateleira A-3"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Quantidade *</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    value={itemForm.quantidade}
+                    onChange={(e) => setItemForm({ ...itemForm, quantidade: Number(e.target.value) })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Valor Unitário (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={itemForm.valorUnitario}
+                    onChange={(e) => setItemForm({ ...itemForm, valorUnitario: Number(e.target.value) })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="0.00"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Estoque Mínimo</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={itemForm.estoqueMinimo || 0}
+                    onChange={(e) => setItemForm({ ...itemForm, estoqueMinimo: Number(e.target.value) })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="0"
+                  />
+                </div>
               </div>
 
               <div>
@@ -1300,18 +1834,6 @@ export default function Stock() {
                     <img src={editingItem.imagemUrl} alt="Atual" className="w-32 h-32 object-cover rounded border border-white/20" />
                   </div>
                 )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Quantidade *</label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  value={itemForm.quantidade}
-                  onChange={(e) => setItemForm({ ...itemForm, quantidade: Number(e.target.value) })}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                />
               </div>
 
               <div>
@@ -1377,151 +1899,6 @@ export default function Stock() {
                 </div>
               )}
 
-              <div className="border-t border-white/10 pt-4">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold">Cotações</h3>
-                  <button
-                    type="button"
-                    onClick={() => addCotacao(itemForm, setItemForm)}
-                    className="px-3 py-1 rounded-md bg-primary/20 hover:bg-primary/30 text-sm"
-                  >
-                    + Adicionar Cotação
-                  </button>
-                </div>
-
-                <div className="space-y-4">
-                  {itemForm.cotacoes.map((cotacao, index) => (
-                    <div key={index} className="bg-white/10 border border-white/30 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="font-semibold text-sm text-white">Cotação {index + 1}</span>
-                        <div className="flex items-center gap-4">
-                          {itemForm.cotacoes.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => removeCotacao(itemForm, setItemForm, index)}
-                              className="text-danger hover:text-danger/80 text-sm font-medium"
-                            >
-                              Remover
-                            </button>
-                          )}
-                          <label className="flex items-center space-x-2 cursor-pointer">
-                            <input
-                              type="radio"
-                              name="selectedCotacaoEdit"
-                              checked={itemForm.selectedCotacaoIndex === index}
-                              onChange={() => setItemForm({ ...itemForm, selectedCotacaoIndex: index })}
-                              className="w-4 h-4 text-primary focus:ring-primary"
-                            />
-                            <span className="text-sm text-white/90">Usar esta cotação</span>
-                          </label>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-white/90 mb-2">Valor Unitário (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={cotacao.valorUnitario}
-                            onChange={(e) =>
-                              updateCotacao(itemForm, setItemForm, index, 'valorUnitario', Number(e.target.value))
-                            }
-                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-white/90 mb-2">Frete (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={cotacao.frete}
-                            onChange={(e) =>
-                              updateCotacao(itemForm, setItemForm, index, 'frete', Number(e.target.value))
-                            }
-                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-white/90 mb-2">Impostos (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={cotacao.impostos}
-                            onChange={(e) =>
-                              updateCotacao(itemForm, setItemForm, index, 'impostos', Number(e.target.value))
-                            }
-                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-medium text-white/90 mb-2">Link</label>
-                          <input
-                            type="url"
-                            value={cotacao.link || ''}
-                            onChange={(e) => updateCotacao(itemForm, setItemForm, index, 'link', e.target.value)}
-                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                            placeholder="https://..."
-                          />
-                        </div>
-                      </div>
-
-                      <div className="mt-3 pt-3 border-t border-white/10">
-                        <div className="text-sm text-white/70">
-                          Total por unidade:{' '}
-                          {cotacao.link ? (
-                            <a
-                              href={cotacao.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-semibold text-white hover:text-primary underline cursor-pointer"
-                            >
-                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos).toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              })}
-                            </a>
-                          ) : (
-                            <span className="font-semibold text-white">
-                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos).toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              })}
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-sm text-white/70">
-                          Total ({itemForm.quantidade} unidades):{' '}
-                          {cotacao.link ? (
-                            <a
-                              href={cotacao.link}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="font-semibold text-primary hover:text-primary/80 underline cursor-pointer"
-                            >
-                              {calculateTotal(cotacao, itemForm.quantidade).toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              })}
-                            </a>
-                          ) : (
-                            <span className="font-semibold text-primary">
-                              {calculateTotal(cotacao, itemForm.quantidade).toLocaleString('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              })}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
               {error && (
                 <div className="bg-danger/20 border border-danger/50 text-danger px-4 py-3 rounded-md text-sm">
                   {error}
@@ -1537,11 +1914,15 @@ export default function Stock() {
                     setError(null);
                     setItemForm({
                       item: '',
+                      codigo: '',
+                      categoria: '',
                       descricao: '',
                       quantidade: 1,
+                      valorUnitario: 0,
+                      unidadeMedida: 'UN',
+                      estoqueMinimo: 0,
+                      localizacao: '',
                       imagemUrl: '',
-                      cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
-                      selectedCotacaoIndex: 0,
                     });
                   }}
                   className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm font-semibold transition-colors"
@@ -1676,6 +2057,106 @@ export default function Stock() {
                 />
                 {purchaseForm.imagemUrl && (
                   <img src={purchaseForm.imagemUrl} alt="Preview" className="mt-2 w-32 h-32 object-cover rounded border border-white/20" />
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Nota Fiscal (NF)</label>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    
+                    const isValidType = file.type.startsWith('image/') || file.type === 'application/pdf';
+                    if (!isValidType) {
+                      setError('Por favor, selecione um arquivo de imagem ou PDF válido.');
+                      return;
+                    }
+                    
+                    const maxFileSize = 5 * 1024 * 1024;
+                    if (file.size > maxFileSize) {
+                      setError('Arquivo muito grande. Por favor, escolha um arquivo menor que 5MB.');
+                      return;
+                    }
+                    
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                      const base64 = reader.result as string;
+                      if (base64) {
+                        if (file.type === 'application/pdf') {
+                          setPurchaseForm({ ...purchaseForm, nfUrl: base64 });
+                        } else {
+                          const processed = await processImageUrl(base64);
+                          if (processed && processed.length > 0) {
+                            setPurchaseForm({ ...purchaseForm, nfUrl: processed });
+                          }
+                        }
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                />
+                {purchaseForm.nfUrl && (
+                  <div className="mt-2">
+                    {purchaseForm.nfUrl.startsWith('data:image/') ? (
+                      <img src={purchaseForm.nfUrl} alt="Preview NF" className="w-32 h-32 object-cover rounded border border-white/20" />
+                    ) : (
+                      <p className="text-sm text-white/70">Arquivo selecionado</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Comprovante de Pagamento</label>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    
+                    const isValidType = file.type.startsWith('image/') || file.type === 'application/pdf';
+                    if (!isValidType) {
+                      setError('Por favor, selecione um arquivo de imagem ou PDF válido.');
+                      return;
+                    }
+                    
+                    const maxFileSize = 5 * 1024 * 1024;
+                    if (file.size > maxFileSize) {
+                      setError('Arquivo muito grande. Por favor, escolha um arquivo menor que 5MB.');
+                      return;
+                    }
+                    
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                      const base64 = reader.result as string;
+                      if (base64) {
+                        if (file.type === 'application/pdf') {
+                          setPurchaseForm({ ...purchaseForm, comprovantePagamentoUrl: base64 });
+                        } else {
+                          const processed = await processImageUrl(base64);
+                          if (processed && processed.length > 0) {
+                            setPurchaseForm({ ...purchaseForm, comprovantePagamentoUrl: processed });
+                          }
+                        }
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                />
+                {purchaseForm.comprovantePagamentoUrl && (
+                  <div className="mt-2">
+                    {purchaseForm.comprovantePagamentoUrl.startsWith('data:image/') ? (
+                      <img src={purchaseForm.comprovantePagamentoUrl} alt="Preview Comprovante" className="w-32 h-32 object-cover rounded border border-white/20" />
+                    ) : (
+                      <p className="text-sm text-white/70">Arquivo selecionado</p>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -1865,6 +2346,874 @@ export default function Stock() {
           </div>
         </div>
       )}
+
+      {/* Modal Editar Compra */}
+      {showEditPurchaseModal && editingPurchase && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-8 py-6 flex items-center justify-between">
+              <h2 className="text-2xl font-bold">Editar Compra</h2>
+              <button
+                onClick={() => {
+                  setShowEditPurchaseModal(false);
+                  setEditingPurchase(null);
+                  setError(null);
+                  setPurchaseForm({
+                    item: '',
+                    descricao: '',
+                    quantidade: 1,
+                    imagemUrl: '',
+                    nfUrl: '',
+                    comprovantePagamentoUrl: '',
+                    cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
+                    projetoId: 0,
+                    selectedCotacaoIndex: 0,
+                  });
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleUpdatePurchase} className="p-8 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Nome do Item *</label>
+                <input
+                  type="text"
+                  required
+                  value={purchaseForm.item}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, item: e.target.value })}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Descrição</label>
+                <textarea
+                  value={purchaseForm.descricao}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, descricao: e.target.value })}
+                  rows={3}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Imagem</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => handleImageChange(e, setPurchaseForm, purchaseForm)}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                />
+                {purchaseForm.imagemUrl && (
+                  <img src={purchaseForm.imagemUrl} alt="Preview" className="mt-2 w-32 h-32 object-cover rounded border border-white/20" />
+                )}
+                {editingPurchase.imagemUrl && !purchaseForm.imagemUrl && (
+                  <div className="mt-2">
+                    <p className="text-sm text-white/60 mb-2">Imagem atual:</p>
+                    <img src={editingPurchase.imagemUrl} alt="Atual" className="w-32 h-32 object-cover rounded border border-white/20" />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Nota Fiscal (NF)</label>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const isValidType = file.type.startsWith('image/') || file.type === 'application/pdf';
+                    if (!isValidType) {
+                      setError('Por favor, selecione um arquivo de imagem ou PDF válido.');
+                      return;
+                    }
+                    const maxFileSize = 5 * 1024 * 1024;
+                    if (file.size > maxFileSize) {
+                      setError('Arquivo muito grande. Por favor, escolha um arquivo menor que 5MB.');
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                      const base64 = reader.result as string;
+                      if (base64) {
+                        if (file.type === 'application/pdf') {
+                          setPurchaseForm({ ...purchaseForm, nfUrl: base64 });
+                        } else {
+                          const processed = await processImageUrl(base64);
+                          if (processed && processed.length > 0) {
+                            setPurchaseForm({ ...purchaseForm, nfUrl: processed });
+                          }
+                        }
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                />
+                {purchaseForm.nfUrl && (
+                  <div className="mt-2">
+                    {purchaseForm.nfUrl.startsWith('data:image/') ? (
+                      <img src={purchaseForm.nfUrl} alt="Preview NF" className="w-32 h-32 object-cover rounded border border-white/20" />
+                    ) : (
+                      <p className="text-sm text-white/70">Arquivo selecionado</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Comprovante de Pagamento</label>
+                <input
+                  type="file"
+                  accept="image/*,.pdf"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const isValidType = file.type.startsWith('image/') || file.type === 'application/pdf';
+                    if (!isValidType) {
+                      setError('Por favor, selecione um arquivo de imagem ou PDF válido.');
+                      return;
+                    }
+                    const maxFileSize = 5 * 1024 * 1024;
+                    if (file.size > maxFileSize) {
+                      setError('Arquivo muito grande. Por favor, escolha um arquivo menor que 5MB.');
+                      return;
+                    }
+                    const reader = new FileReader();
+                    reader.onloadend = async () => {
+                      const base64 = reader.result as string;
+                      if (base64) {
+                        if (file.type === 'application/pdf') {
+                          setPurchaseForm({ ...purchaseForm, comprovantePagamentoUrl: base64 });
+                        } else {
+                          const processed = await processImageUrl(base64);
+                          if (processed && processed.length > 0) {
+                            setPurchaseForm({ ...purchaseForm, comprovantePagamentoUrl: processed });
+                          }
+                        }
+                      }
+                    };
+                    reader.readAsDataURL(file);
+                  }}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                />
+                {purchaseForm.comprovantePagamentoUrl && (
+                  <div className="mt-2">
+                    {purchaseForm.comprovantePagamentoUrl.startsWith('data:image/') ? (
+                      <img src={purchaseForm.comprovantePagamentoUrl} alt="Preview Comprovante" className="w-32 h-32 object-cover rounded border border-white/20" />
+                    ) : (
+                      <p className="text-sm text-white/70">Arquivo selecionado</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Quantidade *</label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={purchaseForm.quantidade}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, quantidade: Number(e.target.value) })}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                />
+              </div>
+
+              <div className="border-t border-white/10 pt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">Cotações</h3>
+                  <button
+                    type="button"
+                    onClick={() => addCotacao(purchaseForm, setPurchaseForm)}
+                    className="px-3 py-1 rounded-md bg-primary/20 hover:bg-primary/30 text-sm"
+                  >
+                    + Adicionar Cotação
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {purchaseForm.cotacoes.map((cotacao, index) => (
+                    <div key={index} className="bg-white/10 border border-white/30 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="font-semibold text-sm text-white">Cotação {index + 1}</span>
+                        <div className="flex items-center gap-4">
+                          {purchaseForm.cotacoes.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeCotacao(purchaseForm, setPurchaseForm, index)}
+                              className="text-danger hover:text-danger/80 text-sm font-medium"
+                            >
+                              Remover
+                            </button>
+                          )}
+                          <label className="flex items-center space-x-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="selectedCotacaoEditPurchase"
+                              checked={purchaseForm.selectedCotacaoIndex === index}
+                              onChange={() => setPurchaseForm({ ...purchaseForm, selectedCotacaoIndex: index })}
+                              className="w-4 h-4 text-primary focus:ring-primary"
+                            />
+                            <span className="text-sm text-white/90">Usar esta cotação</span>
+                          </label>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-white/90 mb-2">Valor Unitário (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={cotacao.valorUnitario}
+                            onChange={(e) =>
+                              updateCotacao(purchaseForm, setPurchaseForm, index, 'valorUnitario', Number(e.target.value))
+                            }
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-white/90 mb-2">Frete (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={cotacao.frete}
+                            onChange={(e) =>
+                              updateCotacao(purchaseForm, setPurchaseForm, index, 'frete', Number(e.target.value))
+                            }
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-white/90 mb-2">Impostos (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={cotacao.impostos}
+                            onChange={(e) =>
+                              updateCotacao(purchaseForm, setPurchaseForm, index, 'impostos', Number(e.target.value))
+                            }
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-white/90 mb-2">Link</label>
+                          <input
+                            type="url"
+                            value={cotacao.link || ''}
+                            onChange={(e) => updateCotacao(purchaseForm, setPurchaseForm, index, 'link', e.target.value)}
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                            placeholder="https://..."
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-3 pt-3 border-t border-white/10">
+                        <div className="text-sm text-white/70">
+                          Total por unidade:{' '}
+                          {cotacao.link ? (
+                            <a
+                              href={cotacao.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-semibold text-white hover:text-primary underline cursor-pointer"
+                            >
+                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos).toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })}
+                            </a>
+                          ) : (
+                            <span className="font-semibold text-white">
+                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos).toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm text-white/70">
+                          Total ({purchaseForm.quantidade} unidades):{' '}
+                          {cotacao.link ? (
+                            <a
+                              href={cotacao.link}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-semibold text-primary hover:text-primary/80 underline cursor-pointer"
+                            >
+                              {calculateTotal(cotacao, purchaseForm.quantidade).toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })}
+                            </a>
+                          ) : (
+                            <span className="font-semibold text-primary">
+                              {calculateTotal(cotacao, purchaseForm.quantidade).toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {error && (
+                <div className="bg-danger/20 border border-danger/50 text-danger px-4 py-3 rounded-md text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex justify-end space-x-4 pt-4 border-t border-white/20">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditPurchaseModal(false);
+                    setEditingPurchase(null);
+                    setError(null);
+                    setPurchaseForm({
+                      item: '',
+                      descricao: '',
+                      quantidade: 1,
+                      imagemUrl: '',
+                      nfUrl: '',
+                      comprovantePagamentoUrl: '',
+                      cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
+                      projetoId: 0,
+                      selectedCotacaoIndex: 0,
+                    });
+                  }}
+                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm font-semibold transition-colors"
+                  disabled={submitting}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Confirmar Exclusão de Compra */}
+      {showDeletePurchaseModal && purchaseToDelete && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
+            <div className="px-8 py-6 border-b border-white/20">
+              <h2 className="text-2xl font-bold text-white">Confirmar Exclusão</h2>
+    </div>
+            <div className="p-8">
+              <p className="text-white/90 mb-2">
+                Tem certeza que deseja remover a compra:
+              </p>
+              <p className="text-xl font-semibold text-white mb-6">
+                "{purchaseToDelete.item}"
+              </p>
+              <p className="text-sm text-white/70 mb-6">
+                Esta ação não pode ser desfeita.
+              </p>
+              {error && (
+                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md mb-4 text-sm">
+                  {error}
+                </div>
+              )}
+              <div className="flex justify-end space-x-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDeletePurchaseModal(false);
+                    setPurchaseToDelete(null);
+                    setError(null);
+                  }}
+                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  disabled={deletingPurchase}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeletePurchase}
+                  className="px-6 py-2.5 rounded-md bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={deletingPurchase}
+                >
+                  {deletingPurchase ? 'Removendo...' : 'Confirmar Remoção'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Alterar Status */}
+      {showStatusModal && purchaseToUpdateStatus && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
+            <div className="px-8 py-6 border-b border-white/20">
+              <h2 className="text-2xl font-bold text-white">Alterar Status</h2>
+            </div>
+            <div className="p-8">
+              <p className="text-white/90 mb-4">
+                Item: <span className="font-semibold">{purchaseToUpdateStatus.item}</span>
+              </p>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-white/90 mb-2">Novo Status *</label>
+                <select
+                  value={newStatus}
+                  onChange={(e) => setNewStatus(e.target.value)}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                >
+                  <option value="PENDENTE" className="bg-neutral">Pendente</option>
+                  <option value="COMPRADO_ACAMINHO" className="bg-neutral">Comprado/A Caminho</option>
+                  <option value="ENTREGUE" className="bg-neutral">Entregue</option>
+                </select>
+              </div>
+              {error && (
+                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md mb-4 text-sm">
+                  {error}
+                </div>
+              )}
+              <div className="flex justify-end space-x-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowStatusModal(false);
+                    setPurchaseToUpdateStatus(null);
+                    setNewStatus('');
+                    setError(null);
+                  }}
+                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  disabled={submitting}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUpdatePurchaseStatus}
+                  className="px-6 py-2.5 rounded-md bg-green-600 hover:bg-green-700 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={submitting || !newStatus}
+                >
+                  {submitting ? 'Atualizando...' : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Relatório de Compras */}
+      {showReportModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-8 py-6 flex items-center justify-between">
+              <h2 className="text-2xl font-bold text-white">Relatório de Compras</h2>
+              <button
+                onClick={() => {
+                  setShowReportModal(false);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-8">
+              {(() => {
+                const reportData = calculateReportTotals();
+                const projetoGroups: Record<number, Purchase[]> = {};
+                reportData.purchases.forEach((purchase) => {
+                  const projetoId = purchase.projetoId || 0;
+                  if (!projetoGroups[projetoId]) {
+                    projetoGroups[projetoId] = [];
+                  }
+                  projetoGroups[projetoId].push(purchase);
+                });
+
+                return (
+                  <div className="space-y-6">
+                    {/* Resumo Geral */}
+                    <div className="bg-white/5 rounded-lg p-6 border border-white/10">
+                      <h3 className="text-xl font-semibold text-white mb-4">Resumo Geral</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="bg-white/5 rounded-lg p-4">
+                          <div className="text-sm text-white/70 mb-1">Total de Itens</div>
+                          <div className="text-2xl font-bold text-white">{reportData.totalItens}</div>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-4">
+                          <div className="text-sm text-white/70 mb-1">Quantidade Total</div>
+                          <div className="text-2xl font-bold text-white">{reportData.totalQuantidade}</div>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-4">
+                          <div className="text-sm text-white/70 mb-1">Valor Total</div>
+                          <div className="text-2xl font-bold text-primary">
+                            {reportData.totalValor.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL',
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Detalhamento por Projeto */}
+                    {Object.keys(projetoGroups).length > 0 && (
+                      <div className="space-y-4">
+                        <h3 className="text-xl font-semibold text-white">Detalhamento por Projeto</h3>
+                        {Object.entries(projetoGroups).map(([projetoId, projetoPurchases]) => {
+                          const projeto = projects.find((p) => p.id === Number(projetoId));
+                          const projetoTotal = projetoPurchases.reduce(
+                            (sum, p) => sum + (p.valorUnitario * (p.quantidade || 0)),
+                            0
+                          );
+                          const projetoQuantidade = projetoPurchases.reduce(
+                            (sum, p) => sum + (p.quantidade || 0),
+                            0
+                          );
+
+                          return (
+                            <div key={projetoId} className="bg-white/5 rounded-lg p-6 border border-white/10">
+                              <div className="flex items-center justify-between mb-4">
+                                <h4 className="text-lg font-semibold text-white">
+                                  {projeto ? projeto.nome : 'Sem Projeto'}
+                                </h4>
+                                <div className="text-right">
+                                  <div className="text-sm text-white/70">Total do Projeto</div>
+                                  <div className="text-xl font-bold text-primary">
+                                    {projetoTotal.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })}
+                                  </div>
+                                  <div className="text-sm text-white/70 mt-1">
+                                    {projetoQuantidade} unidade(s)
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="space-y-2">
+                                {projetoPurchases.map((purchase) => {
+                                  const valorTotal = purchase.valorUnitario * (purchase.quantidade || 0);
+                                  return (
+                                    <div
+                                      key={purchase.id}
+                                      className="bg-white/5 rounded-lg p-4 border border-white/5"
+                                    >
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex-1">
+                                          <div className="font-medium text-white">{purchase.item}</div>
+                                          {purchase.descricao && (
+                                            <div className="text-sm text-white/60 mt-1">
+                                              {purchase.descricao}
+                                            </div>
+                                          )}
+                                          <div className="flex items-center gap-4 mt-2 text-sm text-white/70">
+                                            <span>
+                                              Quantidade: <span className="font-semibold text-white">{purchase.quantidade}</span>
+                                            </span>
+                                            <span>
+                                              Valor Unitário:{' '}
+                                              <span className="font-semibold text-white">
+                                                {purchase.valorUnitario.toLocaleString('pt-BR', {
+                                                  style: 'currency',
+                                                  currency: 'BRL',
+                                                })}
+                                              </span>
+                                            </span>
+                                            <span className={`px-2 py-1 rounded text-xs ${getStatusColor(purchase.status)}`}>
+                                              {getStatusLabel(purchase.status)}
+                                            </span>
+                                          </div>
+                                        </div>
+                                        <div className="text-right ml-4">
+                                          <div className="text-sm text-white/70">Total</div>
+                                          <div className="text-lg font-bold text-primary">
+                                            {valorTotal.toLocaleString('pt-BR', {
+                                              style: 'currency',
+                                              currency: 'BRL',
+                                            })}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Botões de Ação */}
+                    <div className="flex justify-end gap-4 pt-4 border-t border-white/20">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowReportModal(false);
+                          setSelectedPurchases([]);
+                        }}
+                        className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                      >
+                        Fechar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const reportData = calculateReportTotals();
+                          const doc = new jsPDF();
+                          
+                          // Configurações
+                          const pageWidth = doc.internal.pageSize.getWidth();
+                          const pageHeight = doc.internal.pageSize.getHeight();
+                          const margin = 20;
+                          let yPosition = margin;
+                          
+                          // Função para adicionar nova página se necessário
+                          const checkPageBreak = (requiredHeight: number) => {
+                            if (yPosition + requiredHeight > pageHeight - margin - 60) {
+                              doc.addPage();
+                              yPosition = margin;
+                            }
+                          };
+                          
+                          // Título
+                          doc.setFontSize(20);
+                          doc.setTextColor(0, 0, 0);
+                          doc.text('RELATÓRIO DE COMPRAS', pageWidth / 2, yPosition, { align: 'center' });
+                          yPosition += 10;
+                          
+                          // Data
+                          doc.setFontSize(10);
+                          doc.setTextColor(100, 100, 100);
+                          doc.text(`Data: ${new Date().toLocaleString('pt-BR')}`, pageWidth / 2, yPosition, { align: 'center' });
+                          yPosition += 15;
+                          
+                          // Resumo Geral
+                          doc.setFontSize(16);
+                          doc.setTextColor(0, 0, 0);
+                          doc.text('RESUMO GERAL', margin, yPosition);
+                          yPosition += 10;
+                          
+                          doc.setFontSize(11);
+                          doc.setTextColor(0, 0, 0);
+                          doc.text(`Total de Itens: ${reportData.totalItens}`, margin, yPosition);
+                          yPosition += 7;
+                          doc.text(`Quantidade Total: ${reportData.totalQuantidade}`, margin, yPosition);
+                          yPosition += 7;
+                          doc.setFontSize(12);
+                          doc.setTextColor(0, 100, 0);
+                          doc.text(
+                            `Valor Total: ${reportData.totalValor.toLocaleString('pt-BR', {
+                              style: 'currency',
+                              currency: 'BRL',
+                            })}`,
+                            margin,
+                            yPosition
+                          );
+                          yPosition += 15;
+                          
+                          // Agrupar por projeto
+                          const projetoGroups: Record<number, Purchase[]> = {};
+                          reportData.purchases.forEach((purchase) => {
+                            const projetoId = purchase.projetoId || 0;
+                            if (!projetoGroups[projetoId]) {
+                              projetoGroups[projetoId] = [];
+                            }
+                            projetoGroups[projetoId].push(purchase);
+                          });
+                          
+                          // Detalhamento por Projeto
+                          Object.entries(projetoGroups).forEach(([projetoId, projetoPurchases]) => {
+                            checkPageBreak(40);
+                            
+                            const projeto = projects.find((p) => p.id === Number(projetoId));
+                            const projetoTotal = projetoPurchases.reduce(
+                              (sum, p) => sum + (p.valorUnitario * (p.quantidade || 0)),
+                              0
+                            );
+                            const projetoQuantidade = projetoPurchases.reduce(
+                              (sum, p) => sum + (p.quantidade || 0),
+                              0
+                            );
+                            
+                            // Título do Projeto
+                            doc.setFontSize(14);
+                            doc.setTextColor(0, 0, 0);
+                            doc.text(
+                              projeto ? projeto.nome : 'Sem Projeto',
+                              margin,
+                              yPosition
+                            );
+                            yPosition += 8;
+                            
+                            doc.setFontSize(10);
+                            doc.setTextColor(100, 100, 100);
+                            doc.text(
+                              `Total: ${projetoTotal.toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })} | Quantidade: ${projetoQuantidade} unidade(s)`,
+                              margin,
+                              yPosition
+                            );
+                            yPosition += 10;
+                            
+                            // Lista de compras do projeto
+                            projetoPurchases.forEach((purchase, idx) => {
+                              checkPageBreak(35);
+                              
+                              const valorTotal = purchase.valorUnitario * (purchase.quantidade || 0);
+                              const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
+                              
+                              doc.setFontSize(11);
+                              doc.setTextColor(0, 0, 0);
+                              doc.text(`${idx + 1}. ${purchase.item}`, margin + 5, yPosition);
+                              yPosition += 6;
+                              
+                              doc.setFontSize(9);
+                              doc.setTextColor(80, 80, 80);
+                              if (purchase.descricao) {
+                                const descLines = doc.splitTextToSize(
+                                  `   Descrição: ${purchase.descricao}`,
+                                  pageWidth - margin * 2 - 10
+                                );
+                                descLines.forEach((line: string) => {
+                                  checkPageBreak(6);
+                                  doc.text(line, margin + 5, yPosition);
+                                  yPosition += 5;
+                                });
+                              }
+                              
+                              // Cotações
+                              if (cotacoes.length > 0) {
+                                checkPageBreak(8);
+                                doc.setFontSize(9);
+                                doc.setTextColor(60, 60, 60);
+                                doc.text('   Cotações:', margin + 5, yPosition);
+                                yPosition += 6;
+                                
+                                cotacoes.forEach((cotacao, cotIdx) => {
+                                  checkPageBreak(6);
+                                  const cotacaoTotal = cotacao.valorUnitario + cotacao.frete + cotacao.impostos;
+                                  const cotacaoTotalComQuantidade = cotacaoTotal * (purchase.quantidade || 0);
+                                  const cotacaoText = `     Cotação ${cotIdx + 1}: Valor Unitário: ${cotacao.valorUnitario.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })} | Frete: ${cotacao.frete.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })} | Impostos: ${cotacao.impostos.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })} | Total por unidade: ${cotacaoTotal.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })}`;
+                                  
+                                  const cotacaoLines = doc.splitTextToSize(cotacaoText, pageWidth - margin * 2 - 15);
+                                  cotacaoLines.forEach((line: string) => {
+                                    checkPageBreak(5);
+                                    doc.text(line, margin + 5, yPosition);
+                                    yPosition += 5;
+                                  });
+                                });
+                              }
+                              
+                              const details = [
+                                `   Quantidade: ${purchase.quantidade}`,
+                                `   Valor Unitário (selecionado): ${purchase.valorUnitario.toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                })}`,
+                                `   Valor Total: ${valorTotal.toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                })}`,
+                                `   Status: ${getStatusLabel(purchase.status)}`,
+                              ];
+                              
+                              details.forEach((detail) => {
+                                checkPageBreak(5);
+                                doc.text(detail, margin + 5, yPosition);
+                                yPosition += 5;
+                              });
+                              
+                              yPosition += 3;
+                            });
+                            
+                            yPosition += 5;
+                          });
+                          
+                          // Campo de Assinatura
+                          checkPageBreak(50);
+                          yPosition += 10;
+                          
+                          // Linha de separação
+                          doc.setDrawColor(200, 200, 200);
+                          doc.line(margin, yPosition, pageWidth - margin, yPosition);
+                          yPosition += 15;
+                          
+                          // Título da seção de assinatura
+                          doc.setFontSize(12);
+                          doc.setTextColor(0, 0, 0);
+                          doc.text('ASSINATURA DO ADMINISTRADOR', margin, yPosition);
+                          yPosition += 15;
+                          
+                          // Campo de assinatura
+                          doc.setDrawColor(100, 100, 100);
+                          doc.setLineWidth(0.5);
+                          const signatureWidth = pageWidth - margin * 2;
+                          const signatureHeight = 30;
+                          doc.rect(margin, yPosition, signatureWidth, signatureHeight);
+                          
+                          // Texto abaixo do campo
+                          yPosition += signatureHeight + 8;
+                          doc.setFontSize(9);
+                          doc.setTextColor(120, 120, 120);
+                          doc.text('Nome e Assinatura do Administrador', margin, yPosition);
+                          
+                          // Rodapé
+                          const totalPages = doc.getNumberOfPages();
+                          for (let i = 1; i <= totalPages; i++) {
+                            doc.setPage(i);
+                            doc.setFontSize(8);
+                            doc.setTextColor(150, 150, 150);
+                            doc.text(
+                              `Página ${i} de ${totalPages}`,
+                              pageWidth / 2,
+                              pageHeight - 10,
+                              { align: 'center' }
+                            );
+                          }
+                          
+                          // Salvar PDF
+                          doc.save(`relatorio-compras-${new Date().toISOString().split('T')[0]}.pdf`);
+                        }}
+                        className="px-6 py-2.5 rounded-md bg-primary hover:bg-primary/80 text-white font-semibold transition-colors"
+                      >
+                        Exportar PDF
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
