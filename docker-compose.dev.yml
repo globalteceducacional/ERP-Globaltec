@@ -1,9 +1,12 @@
 version: '3.8'
 
+# Docker Compose para desenvolvimento
+# Use: docker-compose -f docker-compose.dev.yml up
+
 services:
   db:
     image: postgres:15-alpine
-    container_name: erp-db
+    container_name: erp-db-dev
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-erp}
@@ -12,34 +15,36 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
-      - db_data:/var/lib/postgresql/data
+      - db_data_dev:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-erp}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - erp-network
+      - erp-network-dev
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: erp-backend
+    container_name: erp-backend-dev
     restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-erp}:${POSTGRES_PASSWORD:-senha123}@db:5432/${POSTGRES_DB:-erpdb}
-      JWT_SECRET: ${JWT_SECRET:-super-segredo-alterar-em-producao}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key}
       PORT: ${BACKEND_PORT:-3000}
-      NODE_ENV: ${NODE_ENV:-production}
+      NODE_ENV: development
     ports:
       - "${BACKEND_PORT:-3000}:3000"
     volumes:
-      # Montar apenas o necessário para desenvolvimento (opcional)
+      # Montar código fonte para hot reload (desenvolvimento)
+      - ./backend/src:/app/src:ro
       - ./backend/prisma:/app/prisma:ro
+      - ./backend/package.json:/app/package.json:ro
     command: >
       sh -c "
         echo '⏳ Aguardando banco de dados...' &&
@@ -48,17 +53,11 @@ services:
         npx prisma migrate deploy &&
         echo '🌱 Executando seed (se necessário)...' &&
         npx prisma db seed || echo 'Seed não executado (pode ser normal)' &&
-        echo '🚀 Iniciando servidor...' &&
-        node dist/main.js
+        echo '🚀 Iniciando servidor em modo desenvolvimento...' &&
+        npm run start:dev
       "
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
     networks:
-      - erp-network
+      - erp-network-dev
 
   frontend:
     build:
@@ -66,23 +65,24 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
-    container_name: erp-frontend
+    container_name: erp-frontend-dev
     restart: unless-stopped
     depends_on:
       - backend
     ports:
       - "${FRONTEND_PORT:-5173}:80"
     volumes:
-      # Para desenvolvimento, você pode montar o código fonte
-      # - ./frontend/src:/app/src:ro
-      # - ./frontend/public:/app/public:ro
+      # Para desenvolvimento com hot reload
+      - ./frontend/src:/app/src:ro
+      - ./frontend/public:/app/public:ro
     networks:
-      - erp-network
+      - erp-network-dev
 
 volumes:
-  db_data:
+  db_data_dev:
     driver: local
 
 networks:
-  erp-network:
+  erp-network-dev:
     driver: bridge
+

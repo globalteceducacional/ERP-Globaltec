@@ -1,12 +1,13 @@
 # Etapa de build
 FROM node:20-alpine AS builder
+
 WORKDIR /app
 
 # Copiar arquivos de dependências
-COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./
+COPY package.json package-lock.json* ./
 
 # Instalar dependências
-RUN if [ -f package-lock.json ]; then npm ci; elif [ -f pnpm-lock.yaml ]; then npm install -g pnpm && pnpm install; elif [ -f yarn.lock ]; then yarn install --frozen-lockfile; else npm install; fi
+RUN npm ci
 
 # Copiar schema do Prisma e gerar o client
 COPY prisma ./prisma
@@ -16,49 +17,54 @@ RUN npx prisma generate
 COPY tsconfig.json tsconfig.build.json nest-cli.json ./
 COPY src ./src
 
-# Fazer build e verificar
-RUN echo "=== Executando build ===" && npm run build
-RUN echo "=== Verificando estrutura do dist/ ===" && ls -la dist/ || echo "dist/ não existe!"
-RUN echo "=== Procurando main.js ===" && find . -name "main.js" -type f 2>/dev/null | head -5 || echo "main.js não encontrado!"
-RUN echo "=== Todos os arquivos .js em dist/ ===" && find dist -name "*.js" -type f 2>/dev/null | head -10 || echo "Nenhum .js encontrado!"
+# Fazer build
+RUN npm run build
 
-# Verificar se main.js existe em dist/ ou dist/src/
-RUN if [ -f dist/main.js ]; then \
-      echo "✅ main.js encontrado em dist/main.js"; \
-    elif [ -f dist/src/main.js ]; then \
-      echo "✅ main.js encontrado em dist/src/main.js - movendo para dist/"; \
-      mv dist/src/main.js dist/main.js; \
-    else \
-      echo "❌ ERRO: main.js não encontrado!"; \
-      echo "=== Estrutura completa do dist/ ==="; \
-      find dist -type f -o -type d | head -30; \
-      exit 1; \
-    fi
+# Verificar se o build foi bem-sucedido
+RUN test -f dist/main.js || (echo "❌ ERRO: main.js não encontrado após build!" && exit 1)
 
 # Etapa final (produção)
 FROM node:20-alpine
+
 WORKDIR /app
 
+# Instalar dependências do sistema necessárias
+RUN apk add --no-cache wget
+
 # Copiar arquivos de dependências
-COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./
+COPY package.json package-lock.json* ./
 
 # Instalar apenas dependências de produção
-RUN if [ -f package-lock.json ]; then npm ci --omit=dev; elif [ -f pnpm-lock.yaml ]; then npm install -g pnpm && pnpm install --prod; elif [ -f yarn.lock ]; then yarn install --production; else npm install --omit=dev; fi
+RUN npm ci --omit=dev
+
+# Instalar Prisma CLI globalmente para migrations
+RUN npm install -g prisma@latest
 
 # Copiar schema do Prisma
 COPY prisma ./prisma
 
-# Gerar Prisma Client (instalar Prisma CLI temporariamente se necessário)
-RUN npm install -g prisma@latest && prisma generate
+# Gerar Prisma Client
+RUN prisma generate
 
 # Copiar código compilado do builder
 COPY --from=builder /app/dist ./dist
 
 # Verificar se os arquivos foram copiados corretamente
-RUN ls -la dist/ && test -f dist/main.js || (echo "❌ main.js not found in dist!" && exit 1)
+RUN test -f dist/main.js || (echo "❌ main.js não encontrado!" && exit 1)
+
+# Criar usuário não-root para segurança
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 && \
+    chown -R nodejs:nodejs /app
+
+USER nodejs
 
 # Expor porta
 EXPOSE 3000
+
+# Health check endpoint (será adicionado no main.ts)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
 # Comando para iniciar
 CMD ["node", "dist/main.js"]

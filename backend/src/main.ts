@@ -22,6 +22,8 @@ async function bootstrap() {
   const port = configService.get<number>('PORT', 3000);
   const nodeEnv = configService.get<string>('NODE_ENV', 'development');
 
+  // Health check endpoint está em HealthController
+
   await app.listen(port);
   console.log(`🚀 Backend ERP rodando na porta ${port}`);
   console.log(`📦 Ambiente: ${nodeEnv}`);

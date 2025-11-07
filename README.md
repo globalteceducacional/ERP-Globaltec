@@ -27,6 +27,41 @@ ERP-New/
 
 ## 🚀 Quickstart
 
+### 🐳 Setup com Docker (Recomendado para Produção)
+
+**A forma mais fácil de executar o sistema completo!**
+
+```powershell
+# 1. Copiar arquivo de ambiente (se ainda não existir)
+Copy-Item env.example .env
+
+# 2. Editar .env com suas configurações (opcional)
+
+# 3. Iniciar todos os serviços
+.\docker-start.ps1
+
+# Ou manualmente:
+docker-compose up -d --build
+```
+
+**Acesse:**
+- Frontend: http://localhost:5173
+- Backend: http://localhost:3000
+- Health Check: http://localhost:3000/health
+
+**Ver logs:**
+```powershell
+docker-compose logs -f
+```
+
+**Parar serviços:**
+```powershell
+.\docker-stop.ps1
+# Ou: docker-compose down
+```
+
+📖 **Documentação completa do Docker:** Veja [DOCKER_SETUP.md](./DOCKER_SETUP.md)
+
 ### ✅ Setup Local (Recomendado para Desenvolvimento)
 
 **O sistema funciona perfeitamente localmente sem Docker!**
