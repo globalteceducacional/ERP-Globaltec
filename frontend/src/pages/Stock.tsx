@@ -1,6 +1,8 @@
-import { useEffect, useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent, useMemo } from 'react';
 import { api } from '../services/api';
 import { jsPDF } from 'jspdf';
+import { toast, formatApiError } from '../utils/toast';
+import { useFormValidation, validators, errorMessages } from '../utils/validation';
 
 interface Cotacao {
   valorUnitario: number;
@@ -118,6 +120,37 @@ export default function Stock() {
     projetoId: 0,
     selectedCotacaoIndex: 0,
   });
+
+  // Regras de validação para item de estoque
+  const itemValidationRules = useMemo(() => ({
+    item: [
+      { validator: validators.required, message: errorMessages.required },
+      { validator: validators.minLength(2), message: errorMessages.minLength(2) },
+    ],
+    quantidade: [
+      { validator: validators.required, message: errorMessages.required },
+      { validator: validators.positive, message: errorMessages.positive },
+    ],
+    valorUnitario: [
+      { validator: (v: number) => v >= 0, message: 'O valor deve ser maior ou igual a zero' },
+    ],
+  }), []);
+
+  // Regras de validação para compra
+  const purchaseValidationRules = useMemo(() => ({
+    item: [
+      { validator: validators.required, message: errorMessages.required },
+      { validator: validators.minLength(2), message: errorMessages.minLength(2) },
+    ],
+    quantidade: [
+      { validator: validators.required, message: errorMessages.required },
+      { validator: validators.positive, message: errorMessages.positive },
+    ],
+  }), []);
+
+  // Validação de formulários
+  const itemValidation = useFormValidation<CreateItemForm>(itemValidationRules);
+  const purchaseValidation = useFormValidation<CreateItemForm & { projetoId: number }>(purchaseValidationRules);
 
   async function load() {
     try {
@@ -526,14 +559,11 @@ export default function Stock() {
       setShowDeleteModal(false);
       setItemToDelete(null);
       load();
+      toast.success('Item de estoque removido com sucesso!');
     } catch (err: any) {
-      let errorMessage = 'Erro ao remover item';
-      if (err.response?.data?.message) {
-        errorMessage = err.response.data.message;
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = formatApiError(err);
       setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setDeleting(false);
     }
@@ -602,26 +632,11 @@ export default function Stock() {
         imagemUrl: '',
       });
       load();
+      toast.success('Item de estoque atualizado com sucesso!');
     } catch (err: any) {
-      let errorMessage = 'Erro ao atualizar item';
-      if (err.response?.data?.message) {
-        if (Array.isArray(err.response.data.message)) {
-          errorMessage = err.response.data.message
-            .map((msg: any) => {
-              if (typeof msg === 'string') return msg;
-              if (msg.constraints) {
-                return Object.values(msg.constraints).join(', ');
-              }
-              return JSON.stringify(msg);
-            })
-            .join('. ');
-        } else {
-          errorMessage = err.response.data.message;
-        }
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = formatApiError(err);
       setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -680,26 +695,12 @@ export default function Stock() {
         imagemUrl: '',
       });
       load();
+      itemValidation.reset();
+      toast.success('Item de estoque criado com sucesso!');
     } catch (err: any) {
-      let errorMessage = 'Erro ao criar item';
-      if (err.response?.data?.message) {
-        if (Array.isArray(err.response.data.message)) {
-          errorMessage = err.response.data.message
-            .map((msg: any) => {
-              if (typeof msg === 'string') return msg;
-              if (msg.constraints) {
-                return Object.values(msg.constraints).join(', ');
-              }
-              return JSON.stringify(msg);
-            })
-            .join('. ');
-        } else {
-          errorMessage = err.response.data.message;
-        }
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = formatApiError(err);
       setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -709,6 +710,12 @@ export default function Stock() {
     event.preventDefault();
     setError(null);
     setSubmitting(true);
+
+    // Validar todos os campos
+    if (!purchaseValidation.validateAll(purchaseForm)) {
+      setSubmitting(false);
+      return;
+    }
 
     try {
       console.log('=== INÍCIO: Criar Compra ===');
@@ -865,6 +872,7 @@ export default function Stock() {
         selectedCotacaoIndex: 0,
       });
       load();
+      toast.success('Compra criada com sucesso!');
     } catch (err: any) {
       console.error('=== ERRO AO CRIAR COMPRA ===');
       console.error('Erro completo:', err);
@@ -884,28 +892,9 @@ export default function Stock() {
         }
       }
       
-      // Formatar mensagem de erro de forma mais clara
-      let errorMessage = 'Erro ao criar compra';
-      if (err.response?.data?.message) {
-        if (Array.isArray(err.response.data.message)) {
-          errorMessage = err.response.data.message
-            .map((msg: any) => {
-              if (typeof msg === 'string') return msg;
-              if (msg.constraints) {
-                return Object.values(msg.constraints).join(', ');
-              }
-              return JSON.stringify(msg);
-            })
-            .join('. ');
-        } else {
-          errorMessage = err.response.data.message;
-        }
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
-      
-      console.error('Mensagem formatada para exibição:', errorMessage);
+      const errorMessage = formatApiError(err);
       setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
       console.log('=== FIM: Criar Compra ===');
@@ -923,14 +912,11 @@ export default function Stock() {
       setShowDeletePurchaseModal(false);
       setPurchaseToDelete(null);
       load();
+      toast.success('Compra removida com sucesso!');
     } catch (err: any) {
-      let errorMessage = 'Erro ao remover compra';
-      if (err.response?.data?.message) {
-        errorMessage = err.response.data.message;
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = formatApiError(err);
       setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setDeletingPurchase(false);
     }
@@ -950,14 +936,11 @@ export default function Stock() {
       setPurchaseToUpdateStatus(null);
       setNewStatus('');
       load();
+      toast.success('Status da compra atualizado com sucesso!');
     } catch (err: any) {
-      let errorMessage = 'Erro ao atualizar status';
-      if (err.response?.data?.message) {
-        errorMessage = err.response.data.message;
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = formatApiError(err);
       setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
         setSubmitting(false);
     }
@@ -1946,10 +1929,22 @@ export default function Stock() {
                     step="0.01"
                     min="0"
                     value={itemForm.valorUnitario}
-                    onChange={(e) => setItemForm({ ...itemForm, valorUnitario: Number(e.target.value) })}
-                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    onChange={(e) => {
+                      const value = Number(e.target.value);
+                      setItemForm({ ...itemForm, valorUnitario: value });
+                      itemValidation.handleChange('valorUnitario', value);
+                    }}
+                    onBlur={() => itemValidation.handleBlur('valorUnitario')}
+                    className={`w-full bg-white/10 border rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 ${
+                      itemValidation.hasError('valorUnitario')
+                        ? 'border-red-500 focus:ring-red-500'
+                        : 'border-white/30 focus:ring-primary focus:border-primary'
+                    }`}
                     placeholder="0.00"
                   />
+                  {itemValidation.hasError('valorUnitario') && (
+                    <p className="text-red-500 text-xs mt-1">{itemValidation.getFieldError('valorUnitario')}</p>
+                  )}
                 </div>
 
                 <div>
@@ -3696,8 +3691,11 @@ export default function Stock() {
                       setPurchaseToView(null);
                       setApproveCotacoes([{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }]);
                       setSelectedCotacaoIndex(0);
+                      toast.success('Solicitação de compra aprovada com sucesso!');
                     } catch (err: any) {
-                      setError(err.response?.data?.message ?? 'Erro ao aprovar solicitação');
+                      const errorMessage = formatApiError(err);
+                      setError(errorMessage);
+                      toast.error(errorMessage);
                     } finally {
                       setSubmitting(false);
                     }
@@ -3795,12 +3793,15 @@ export default function Stock() {
                       setPurchaseToReject(null);
                       setRejectReason('');
                       setError(null);
+                      toast.success('Solicitação de compra reprovada.');
                       // Redirecionar para o projeto se houver
                       if (purchaseToReject.projetoId) {
                         window.location.href = `/projects/${purchaseToReject.projetoId}`;
                       }
                     } catch (err: any) {
-                      setError(err.response?.data?.message ?? 'Erro ao reprovar solicitação');
+                      const errorMessage = formatApiError(err);
+                      setError(errorMessage);
+                      toast.error(errorMessage);
                     } finally {
                       setSubmitting(false);
                     }

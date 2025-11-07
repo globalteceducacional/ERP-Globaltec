@@ -43,12 +43,56 @@ export class ProjectsService {
     const updatedProjects = await Promise.all(
       projects.map(async ({ etapas, ...project }) => {
         const totalEtapas = etapas.length;
-        const etapasConcluidas = etapas.filter(
-          (etapa) => {
+        
+        // Buscar etapas completas com checklist para verificar se estão concluídas
+        const etapasCompletas = await Promise.all(
+          etapas.map(async (etapa) => {
+            const etapaCompleta = await this.prisma.etapa.findUnique({
+              where: { id: etapa.id },
+              include: {
+                checklistEntregas: true,
+              },
+            });
+            
+            if (!etapaCompleta) {
+              const status = etapa.status as EtapaStatus;
+              return status === EtapaStatus.EM_ANALISE || status === EtapaStatus.APROVADA;
+            }
+            
             const status = etapa.status as EtapaStatus;
-            return status === EtapaStatus.EM_ANALISE || status === EtapaStatus.APROVADA;
-          },
-        ).length;
+            // Etapas com status EM_ANALISE ou APROVADA são consideradas concluídas
+            if (status === EtapaStatus.EM_ANALISE || status === EtapaStatus.APROVADA) {
+              return true;
+            }
+            
+            // Se a etapa tem checklist, verificar se todos os itens foram aprovados
+            if (etapaCompleta.checklistJson && Array.isArray(etapaCompleta.checklistJson)) {
+              const checklist = etapaCompleta.checklistJson as Array<{ texto: string; concluido?: boolean }>;
+              const totalItens = checklist.length;
+              
+              if (totalItens > 0) {
+                // Verificar itens aprovados através das entregas do checklist
+                const itensAprovados = etapaCompleta.checklistEntregas?.filter(
+                  (entrega) => entrega.status === 'APROVADO'
+                ).length || 0;
+                
+                // Verificar itens marcados como concluídos no checklistJson
+                const itensMarcados = checklist.filter(
+                  (item) => item.concluido === true
+                ).length;
+                
+                // Se todos os itens foram aprovados OU marcados como concluídos, considerar concluída
+                if (itensAprovados === totalItens || itensMarcados === totalItens) {
+                  return true;
+                }
+              }
+            }
+            
+            return false;
+          })
+        );
+        
+        const etapasConcluidas = etapasCompletas.filter(e => e === true).length;
         const progress = totalEtapas > 0 ? Math.round((etapasConcluidas / totalEtapas) * 100) : 0;
 
         // Calcular valorInsumos como soma das etapas

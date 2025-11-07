@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
 import { Cargo } from '../types';
 import { buttonStyles } from '../utils/buttonStyles';
+import { toast, formatApiError } from '../utils/toast';
 
 interface Usuario {
   id: number;
@@ -381,7 +382,7 @@ export default function ProjectDetails() {
                   quantidade: estoqueItem.quantidade,
                 });
               }
-            } else {
+      } else {
               // Criar nova alocação
               await api.post('/stock/alocacoes', {
                 estoqueId: estoqueItem.itemId,
@@ -441,26 +442,11 @@ export default function ProjectDetails() {
       await refreshProject();
       // Recarregar estoque/compras da etapa
       await loadEtapaEstoqueCompras(etapaId);
+      toast.success(editingEtapa ? 'Etapa atualizada com sucesso!' : 'Etapa criada com sucesso!');
     } catch (err: any) {
-      let errorMessage = editingEtapa ? 'Erro ao atualizar etapa' : 'Erro ao criar etapa';
-      if (err.response?.data?.message) {
-        if (Array.isArray(err.response.data.message)) {
-          errorMessage = err.response.data.message
-            .map((msg: any) => {
-              if (typeof msg === 'string') return msg;
-              if (msg.constraints) {
-                return Object.values(msg.constraints).join(', ');
-              }
-              return JSON.stringify(msg);
-            })
-            .join('. ');
-        } else {
-          errorMessage = err.response.data.message;
-        }
-      } else if (err.message) {
-        errorMessage = err.message;
-      }
+      const errorMessage = formatApiError(err);
       setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -738,7 +724,38 @@ export default function ProjectDetails() {
   }
 
   const totalEtapas = project.etapas.length;
-  const etapasConcluidas = project.etapas.filter((e) => e.status === 'EM_ANALISE' || e.status === 'APROVADA').length;
+  
+  // Função para verificar se uma etapa está concluída
+  const isEtapaConcluida = (etapa: Etapa) => {
+    // Etapas com status EM_ANALISE ou APROVADA são consideradas concluídas
+    if (etapa.status === 'EM_ANALISE' || etapa.status === 'APROVADA') {
+      return true;
+    }
+    
+    // Se a etapa tem checklist, verificar se todos os itens foram aprovados
+    if (etapa.checklistJson && Array.isArray(etapa.checklistJson) && etapa.checklistJson.length > 0) {
+      const totalItens = etapa.checklistJson.length;
+      
+      // Verificar itens aprovados através das entregas do checklist
+      const itensAprovados = etapa.checklistEntregas?.filter(
+        (entrega) => entrega.status === 'APROVADO'
+      ).length || 0;
+      
+      // Verificar itens marcados como concluídos no checklistJson
+      const itensMarcados = etapa.checklistJson.filter(
+        (item) => item.concluido === true
+      ).length;
+      
+      // Se todos os itens do checklist foram aprovados OU marcados como concluídos, considerar a etapa concluída
+      if ((itensAprovados === totalItens || itensMarcados === totalItens) && totalItens > 0) {
+        return true;
+      }
+    }
+    
+    return false;
+  };
+  
+  const etapasConcluidas = project.etapas.filter(isEtapaConcluida).length;
   const progresso = totalEtapas > 0 ? Math.round((etapasConcluidas / totalEtapas) * 100) : 0;
 
   // Calcular valorInsumos como soma das etapas (garantia de que sempre está correto)
@@ -1327,7 +1344,7 @@ export default function ProjectDetails() {
 
       {/* Compras */}
       {/* Compras Relacionadas */}
-      <div className="bg-neutral/80 border border-white/10 rounded-xl p-6">
+        <div className="bg-neutral/80 border border-white/10 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold border-b border-white/10 pb-2">
             Compras Relacionadas ({project.compras.length})
@@ -1450,7 +1467,7 @@ export default function ProjectDetails() {
           </div>
         ) : (
           <p className="text-white/50 text-sm">Nenhuma compra relacionada a este projeto</p>
-        )}
+      )}
       </div>
       
       {/* Modal Enviar Entrega */}
@@ -1625,7 +1642,7 @@ export default function ProjectDetails() {
                                 // Base64 - criar blob e abrir
                                 const parts = url.split(',');
                                 if (parts.length < 2) {
-                                  alert('Formato de documento inválido');
+                                  toast.error('Formato de documento inválido');
                                   return;
                                 }
                                 const byteString = atob(parts[1]);
@@ -1639,7 +1656,7 @@ export default function ProjectDetails() {
                                 const blobUrl = URL.createObjectURL(blob);
                                 const newWindow = window.open(blobUrl, '_blank');
                                 if (!newWindow) {
-                                  alert('Por favor, permita pop-ups para visualizar o documento');
+                                  toast.warning('Por favor, permita pop-ups para visualizar o documento');
                                   URL.revokeObjectURL(blobUrl);
                                   return;
                                 }
@@ -1651,7 +1668,7 @@ export default function ProjectDetails() {
                               }
                             } catch (error) {
                               console.error('Erro ao abrir documento:', error);
-                              alert('Erro ao abrir documento. Tente novamente.');
+                              toast.error('Erro ao abrir documento. Tente novamente.');
                             }
                           }}
                           className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"

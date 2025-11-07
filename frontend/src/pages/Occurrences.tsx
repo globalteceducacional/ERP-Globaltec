@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { api } from '../services/api';
+import { toast, formatApiError } from '../utils/toast';
 
 interface Occurrence {
   id: number;
@@ -58,8 +59,11 @@ export default function Occurrences() {
       });
       setForm({ destinatarioId: 0, texto: '' });
       loadOccurrences('sent');
+      toast.success('Ocorrência registrada com sucesso!');
     } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Erro ao registrar ocorrência');
+      const errorMessage = formatApiError(err);
+      setError(errorMessage);
+      toast.error(errorMessage);
     }
   }
 

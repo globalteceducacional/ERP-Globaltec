@@ -11,6 +11,7 @@ import Users from './pages/Users';
 import Cargos from './pages/Cargos';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
+import { ToastContainer } from './components/ToastContainer';
 import { useAuthStore } from './store/auth';
 import { getFirstAllowedPage } from './utils/getFirstAllowedPage';
 
@@ -22,25 +23,28 @@ function DefaultRedirect() {
 
 export default function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
+    <>
+      <Routes>
+        <Route path="/login" element={<Login />} />
 
-      <Route element={<ProtectedRoute />}>
-        <Route element={<AppLayout />}>
-          <Route path="/" element={<DefaultRedirect />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/projects" element={<Projects />} />
-          <Route path="/projects/:id" element={<ProjectDetails />} />
-          <Route path="/tasks/my" element={<MyTasks />} />
-          <Route path="/stock" element={<Stock />} />
-          <Route path="/occurrences" element={<Occurrences />} />
-          <Route path="/requests" element={<Requests />} />
-          <Route path="/users" element={<Users />} />
-          <Route path="/cargos" element={<Cargos />} />
+        <Route element={<ProtectedRoute />}>
+          <Route element={<AppLayout />}>
+            <Route path="/" element={<DefaultRedirect />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/projects/:id" element={<ProjectDetails />} />
+            <Route path="/tasks/my" element={<MyTasks />} />
+            <Route path="/stock" element={<Stock />} />
+            <Route path="/occurrences" element={<Occurrences />} />
+            <Route path="/requests" element={<Requests />} />
+            <Route path="/users" element={<Users />} />
+            <Route path="/cargos" element={<Cargos />} />
+          </Route>
         </Route>
-      </Route>
 
-      <Route path="*" element={<DefaultRedirect />} />
-    </Routes>
+        <Route path="*" element={<DefaultRedirect />} />
+      </Routes>
+      <ToastContainer />
+    </>
   );
 }

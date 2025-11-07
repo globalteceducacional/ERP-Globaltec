@@ -28,6 +28,13 @@ export class TasksService {
       include: {
         supervisor: true,
         responsaveis: { include: { usuario: true } },
+        etapas: {
+          select: {
+            id: true,
+            status: true,
+            valorInsumos: true,
+          },
+        },
       },
     });
 
@@ -81,8 +88,72 @@ export class TasksService {
       orderBy: { dataInicio: 'asc' },
     });
 
+    // Calcular progresso para cada projeto
+    const projetosComProgresso = await Promise.all(
+      projetosResponsavel.map(async (projeto) => {
+        const totalEtapas = projeto.etapas.length;
+        
+        if (totalEtapas === 0) {
+          return { ...projeto, progress: 0 };
+        }
+        
+        // Buscar etapas completas com checklist para verificar se estão concluídas
+        const etapasCompletas = await Promise.all(
+          projeto.etapas.map(async (etapa) => {
+            const etapaCompleta = await this.prisma.etapa.findUnique({
+              where: { id: etapa.id },
+              include: {
+                checklistEntregas: true,
+              },
+            });
+            
+            if (!etapaCompleta) {
+              const status = etapa.status as EtapaStatus;
+              return status === EtapaStatus.EM_ANALISE || status === EtapaStatus.APROVADA;
+            }
+            
+            const status = etapa.status as EtapaStatus;
+            // Etapas com status EM_ANALISE ou APROVADA são consideradas concluídas
+            if (status === EtapaStatus.EM_ANALISE || status === EtapaStatus.APROVADA) {
+              return true;
+            }
+            
+            // Se a etapa tem checklist, verificar se todos os itens foram aprovados
+            if (etapaCompleta.checklistJson && Array.isArray(etapaCompleta.checklistJson)) {
+              const checklist = etapaCompleta.checklistJson as Array<{ texto: string; concluido?: boolean }>;
+              const totalItens = checklist.length;
+              
+              if (totalItens > 0) {
+                // Verificar itens aprovados através das entregas do checklist
+                const itensAprovados = etapaCompleta.checklistEntregas?.filter(
+                  (entrega) => entrega.status === 'APROVADO'
+                ).length || 0;
+                
+                // Verificar itens marcados como concluídos no checklistJson
+                const itensMarcados = checklist.filter(
+                  (item) => item.concluido === true
+                ).length;
+                
+                // Se todos os itens foram aprovados OU marcados como concluídos, considerar concluída
+                if (itensAprovados === totalItens || itensMarcados === totalItens) {
+                  return true;
+                }
+              }
+            }
+            
+            return false;
+          })
+        );
+        
+        const etapasConcluidas = etapasCompletas.filter(e => e === true).length;
+        const progress = Math.round((etapasConcluidas / totalEtapas) * 100);
+        
+        return { ...projeto, progress };
+      })
+    );
+
     return {
-      projetos: projetosResponsavel,
+      projetos: projetosComProgresso,
       etapasPendentes,
     };
   }
@@ -345,6 +416,79 @@ export class TasksService {
     if (updated) {
       await this.updateProjetoStatus(updated.projetoId);
     }
+
+    return updated;
+  }
+
+  async updateDelivery(etapaId: number, entregaId: number, userId: number, data: SubmitDeliveryDto) {
+    const etapa = await this.prisma.etapa.findUnique({
+      where: { id: etapaId },
+      include: {
+        entregas: {
+          where: { id: entregaId },
+          include: { executor: true },
+        },
+        integrantes: {
+          include: { usuario: true },
+        },
+      },
+    });
+
+    if (!etapa) {
+      throw new NotFoundException('Etapa não encontrada');
+    }
+
+    const entrega = etapa.entregas[0];
+    if (!entrega) {
+      throw new NotFoundException('Entrega não encontrada');
+    }
+
+    // Verificar se o usuário é executor OU integrante da etapa
+    const isExecutor = etapa.executorId === userId;
+    const isIntegrante = etapa.integrantes?.some(
+      (integrante) => integrante.usuarioId === userId,
+    ) || false;
+
+    if (!isExecutor && !isIntegrante) {
+      throw new UnauthorizedException('Somente o executor ou integrantes podem editar a entrega');
+    }
+
+    // Verificar se a entrega está em análise
+    if (entrega.status !== EtapaEntregaStatus.EM_ANALISE) {
+      throw new BadRequestException('Apenas entregas em análise podem ser editadas');
+    }
+
+    // Verificar se a etapa está em análise
+    if (etapa.status !== EtapaStatus.EM_ANALISE) {
+      throw new BadRequestException('A etapa deve estar em análise para editar a entrega');
+    }
+
+    if (!data.descricao || data.descricao.trim().length < 5) {
+      throw new BadRequestException('Descrição da entrega é obrigatória e deve ter pelo menos 5 caracteres');
+    }
+
+    // Atualizar a entrega
+    await this.prisma.etapaEntrega.update({
+      where: { id: entregaId },
+      data: {
+        descricao: data.descricao.trim(),
+        imagemUrl: data.imagem ? data.imagem.trim() : entrega.imagemUrl,
+      },
+    });
+
+    const updated = await this.prisma.etapa.findUnique({
+      where: { id: etapaId },
+      include: {
+        projeto: true,
+        subetapas: true,
+        executor: true,
+        integrantes: { include: { usuario: true } },
+        entregas: {
+          orderBy: { dataEnvio: 'desc' },
+          include: { executor: true, avaliadoPor: true },
+        },
+      },
+    });
 
     return updated;
   }

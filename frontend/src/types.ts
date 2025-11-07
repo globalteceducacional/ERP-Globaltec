@@ -85,3 +85,12 @@ export interface ChecklistItemEntrega {
   avaliadoPor?: Usuario | null;
   dataAvaliacao?: string | null;
 }
+
+export interface Notificacao {
+  id: number;
+  titulo: string;
+  mensagem: string;
+  tipo: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR';
+  lida: boolean;
+  dataCriacao: string;
+}

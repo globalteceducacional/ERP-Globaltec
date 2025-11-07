@@ -119,8 +119,11 @@ export default function Cargos() {
       setError(null);
       await api.patch(`/cargos/${cargo.id}`, { ativo: !cargo.ativo });
       await load();
+      toast.success(`Cargo ${!cargo.ativo ? 'ativado' : 'desativado'} com sucesso!`);
     } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Erro ao atualizar cargo');
+      const errorMessage = formatApiError(err);
+      setError(errorMessage);
+      toast.error(errorMessage);
     }
   }
 
@@ -130,11 +133,13 @@ export default function Cargos() {
     setModalError(null);
     setError(null);
 
+    // Validar todos os campos
+    if (!validation.validateAll(form)) {
+      setSubmitting(false);
+      return;
+    }
+
     try {
-      if (form.nome.trim().length === 0) {
-        setModalError('Nome é obrigatório');
-        return;
-      }
 
       const payload: any = {
         nome: form.nome.trim(),
@@ -166,10 +171,13 @@ export default function Cargos() {
         herdaPermissoes: true,
         permissions: [],
       });
+      validation.reset();
       await load();
+      toast.success(editingCargo ? 'Cargo atualizado com sucesso!' : 'Cargo criado com sucesso!');
     } catch (err: any) {
-      const message = err.response?.data?.message ?? 'Erro ao salvar cargo';
-      setModalError(typeof message === 'string' ? message : JSON.stringify(message));
+      const errorMessage = formatApiError(err);
+      setModalError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -186,6 +194,7 @@ export default function Cargos() {
       herdaPermissoes: true,
       permissions: [],
     });
+    validation.reset();
     setModalError(null);
     setShowModal(true);
   }
@@ -201,6 +210,7 @@ export default function Cargos() {
       herdaPermissoes: cargo.herdaPermissoes,
       permissions: (cargo.permissions ?? []).map((perm) => perm.chave),
     });
+    validation.reset();
     setModalError(null);
     setShowModal(true);
   }
@@ -359,11 +369,22 @@ export default function Cargos() {
                 <input
                   type="text"
                   value={form.nome}
-                  onChange={(e) => setForm((prev) => ({ ...prev, nome: e.target.value }))}
-                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, nome: e.target.value }));
+                    validation.handleChange('nome', e.target.value);
+                  }}
+                  onBlur={() => validation.handleBlur('nome')}
+                  className={`w-full bg-neutral/60 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${
+                    validation.hasError('nome')
+                      ? 'border-red-500 focus:ring-red-500'
+                      : 'border-white/10 focus:ring-primary'
+                  }`}
                   required
                   placeholder="Ex: GERENTE, ANALISTA, etc."
                 />
+                {validation.hasError('nome') && (
+                  <p className="text-red-500 text-xs mt-1">{validation.getFieldError('nome')}</p>
+                )}
               </div>
 
               <div>

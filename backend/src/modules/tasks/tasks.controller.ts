@@ -69,6 +69,17 @@ export class TasksController {
     return this.tasksService.deliver(id, user.userId, body);
   }
 
+  @Patch(':id/deliver/:entregaId')
+  @Roles('EXECUTOR', 'SUPERVISOR', 'DIRETOR')
+  updateDelivery(
+    @Param('id', ParseIntPipe) etapaId: number,
+    @Param('entregaId', ParseIntPipe) entregaId: number,
+    @CurrentUser() user: { userId: number },
+    @Body() body: SubmitDeliveryDto,
+  ) {
+    return this.tasksService.updateDelivery(etapaId, entregaId, user.userId, body);
+  }
+
   @Post(':id/approve')
   @Roles('DIRETOR', 'SUPERVISOR')
   approve(

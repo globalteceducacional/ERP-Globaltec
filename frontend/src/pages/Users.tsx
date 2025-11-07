@@ -1,8 +1,10 @@
-import { useEffect, useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent, useMemo } from 'react';
 import { api } from '../services/api';
 import { Cargo, Usuario } from '../types';
 import { buttonStyles } from '../utils/buttonStyles';
 import { useAuthStore } from '../store/auth';
+import { toast, formatApiError } from '../utils/toast';
+import { useFormValidation, validators, errorMessages } from '../utils/validation';
 
 interface CreateUserForm {
   nome: string;
@@ -48,6 +50,34 @@ export default function Users() {
       'nome' in user.cargo &&
       (user.cargo.nome === 'DIRETOR' || user.cargo.nome === 'GM'));
 
+  // Regras de validação (memoizadas para evitar recriação)
+  const validationRules = useMemo(() => ({
+    nome: [
+      { validator: validators.required, message: errorMessages.required },
+      { validator: validators.minLength(2), message: errorMessages.minLength(2) },
+    ],
+    email: [
+      { validator: validators.required, message: errorMessages.required },
+      { validator: validators.email, message: errorMessages.email },
+    ],
+    senha: editingUser
+      ? [] // Senha opcional na edição
+      : [
+          { validator: validators.required, message: errorMessages.required },
+          { validator: validators.minLength(6), message: errorMessages.minLength(6) },
+        ],
+    cargoId: [{ validator: (v: number) => v > 0, message: 'Selecione um cargo' }],
+    telefone: form.telefone && form.telefone.trim().length > 0
+      ? [{ validator: validators.phone, message: errorMessages.phone }]
+      : [],
+    dataNascimento: form.dataNascimento && form.dataNascimento.trim().length > 0
+      ? [{ validator: validators.date, message: errorMessages.date }]
+      : [],
+  }), [editingUser, form.telefone, form.dataNascimento]);
+
+  // Validação de formulário
+  const validation = useFormValidation<CreateUserForm>(validationRules);
+
   async function loadCargos() {
     try {
       const { data } = await api.get<Cargo[]>('/cargos');
@@ -85,8 +115,11 @@ export default function Users() {
         await api.patch(`/users/${user.id}/activate`);
       }
       load();
+      toast.success(`Usuário ${user.ativo ? 'desativado' : 'ativado'} com sucesso!`);
     } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Erro ao atualizar usuário');
+      const errorMessage = formatApiError(err);
+      setError(errorMessage);
+      toast.error(errorMessage);
     }
   }
 
@@ -106,21 +139,13 @@ export default function Users() {
     setModalError(null);
     setError(null);
 
+    // Validar todos os campos
+    if (!validation.validateAll(form)) {
+      setSubmitting(false);
+      return;
+    }
+
     try {
-      if (form.nome.trim().length === 0) {
-        setModalError('Nome é obrigatório');
-        return;
-      }
-
-      if (form.email.trim().length === 0) {
-        setModalError('E-mail é obrigatório');
-        return;
-      }
-
-      if (!editingUser && form.senha.length < 6) {
-        setModalError('Senha deve ter no mínimo 6 caracteres');
-        return;
-      }
 
       const payload: any = {
         nome: form.nome.trim(),
@@ -132,9 +157,9 @@ export default function Users() {
       if (!editingUser) {
         payload.senha = form.senha;
       } else if (form.senha && form.senha.length > 0) {
-        // Se estiver editando e forneceu senha, atualizar
-        if (form.senha.length < 6) {
-          setModalError('Senha deve ter no mínimo 6 caracteres');
+        // Se estiver editando e forneceu senha, validar e atualizar
+        if (!validation.validate('senha', form.senha)) {
+          setSubmitting(false);
           return;
         }
         payload.senha = form.senha;
@@ -182,10 +207,13 @@ export default function Users() {
         funcao: '',
         dataNascimento: '',
       });
+      validation.reset();
       await load();
+      toast.success(editingUser ? 'Usuário atualizado com sucesso!' : 'Usuário criado com sucesso!');
     } catch (err: any) {
-      const message = err.response?.data?.message ?? 'Erro ao criar usuário';
-      setModalError(typeof message === 'string' ? message : JSON.stringify(message));
+      const errorMessage = formatApiError(err);
+      setModalError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -219,6 +247,7 @@ export default function Users() {
       funcao: user.funcao || '',
       dataNascimento: user.dataNascimento || '',
     });
+    validation.reset();
     setModalError(null);
     setShowModal(true);
   }
@@ -245,8 +274,11 @@ export default function Users() {
       setUserToDelete(null);
       setDeleteConfirmName('');
       await load();
+      toast.success('Usuário excluído com sucesso!');
     } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Erro ao excluir usuário');
+      const errorMessage = formatApiError(err);
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setDeleting(false);
     }
@@ -380,10 +412,21 @@ export default function Users() {
                   <input
                     type="text"
                     value={form.nome}
-                    onChange={(e) => setForm((prev) => ({ ...prev, nome: e.target.value }))}
-                    className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                    onChange={(e) => {
+                      setForm((prev) => ({ ...prev, nome: e.target.value }));
+                      validation.handleChange('nome', e.target.value);
+                    }}
+                    onBlur={() => validation.handleBlur('nome')}
+                    className={`w-full bg-neutral/60 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${
+                      validation.hasError('nome')
+                        ? 'border-red-500 focus:ring-red-500'
+                        : 'border-white/10 focus:ring-primary'
+                    }`}
                     required
                   />
+                  {validation.hasError('nome') && (
+                    <p className="text-red-500 text-xs mt-1">{validation.getFieldError('nome')}</p>
+                  )}
                 </div>
 
                 <div>
@@ -393,10 +436,21 @@ export default function Users() {
                   <input
                     type="email"
                     value={form.email}
-                    onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
-                    className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                    onChange={(e) => {
+                      setForm((prev) => ({ ...prev, email: e.target.value }));
+                      validation.handleChange('email', e.target.value);
+                    }}
+                    onBlur={() => validation.handleBlur('email')}
+                    className={`w-full bg-neutral/60 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${
+                      validation.hasError('email')
+                        ? 'border-red-500 focus:ring-red-500'
+                        : 'border-white/10 focus:ring-primary'
+                    }`}
                     required
                   />
+                  {validation.hasError('email') && (
+                    <p className="text-red-500 text-xs mt-1">{validation.getFieldError('email')}</p>
+                  )}
                 </div>
               </div>
 
@@ -408,15 +462,33 @@ export default function Users() {
                   <input
                     type="password"
                     value={form.senha}
-                    onChange={(e) => setForm((prev) => ({ ...prev, senha: e.target.value }))}
-                    className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                    onChange={(e) => {
+                      setForm((prev) => ({ ...prev, senha: e.target.value }));
+                      if (!editingUser || e.target.value.length > 0) {
+                        validation.handleChange('senha', e.target.value);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (!editingUser || form.senha.length > 0) {
+                        validation.handleBlur('senha');
+                      }
+                    }}
+                    className={`w-full bg-neutral/60 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${
+                      validation.hasError('senha')
+                        ? 'border-red-500 focus:ring-red-500'
+                        : 'border-white/10 focus:ring-primary'
+                    }`}
                     required={!editingUser}
                     minLength={form.senha.length > 0 ? 6 : undefined}
                     placeholder={editingUser ? 'Deixe em branco para não alterar' : ''}
                   />
-                  <p className="text-xs text-white/50 mt-1">
-                    {editingUser ? 'Deixe em branco para não alterar a senha' : 'Mínimo de 6 caracteres'}
-                  </p>
+                  {validation.hasError('senha') ? (
+                    <p className="text-red-500 text-xs mt-1">{validation.getFieldError('senha')}</p>
+                  ) : (
+                    <p className="text-xs text-white/50 mt-1">
+                      {editingUser ? 'Deixe em branco para não alterar a senha' : 'Mínimo de 6 caracteres'}
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -425,8 +497,16 @@ export default function Users() {
                   </label>
                   <select
                     value={form.cargoId}
-                    onChange={(e) => setForm((prev) => ({ ...prev, cargoId: Number(e.target.value) }))}
-                    className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                    onChange={(e) => {
+                      setForm((prev) => ({ ...prev, cargoId: Number(e.target.value) }));
+                      validation.handleChange('cargoId', Number(e.target.value));
+                    }}
+                    onBlur={() => validation.handleBlur('cargoId')}
+                    className={`w-full bg-neutral/60 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${
+                      validation.hasError('cargoId')
+                        ? 'border-red-500 focus:ring-red-500'
+                        : 'border-white/10 focus:ring-primary'
+                    }`}
                     required
                   >
                     {cargos.length === 0 ? (
@@ -439,6 +519,9 @@ export default function Users() {
                       ))
                     )}
                   </select>
+                  {validation.hasError('cargoId') && (
+                    <p className="text-red-500 text-xs mt-1">{validation.getFieldError('cargoId')}</p>
+                  )}
                 </div>
               </div>
 
@@ -448,9 +531,26 @@ export default function Users() {
                   <input
                     type="tel"
                     value={form.telefone}
-                    onChange={(e) => setForm((prev) => ({ ...prev, telefone: e.target.value }))}
-                    className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                    onChange={(e) => {
+                      setForm((prev) => ({ ...prev, telefone: e.target.value }));
+                      if (e.target.value.length > 0) {
+                        validation.handleChange('telefone', e.target.value);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (form.telefone.length > 0) {
+                        validation.handleBlur('telefone');
+                      }
+                    }}
+                    className={`w-full bg-neutral/60 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${
+                      validation.hasError('telefone')
+                        ? 'border-red-500 focus:ring-red-500'
+                        : 'border-white/10 focus:ring-primary'
+                    }`}
                   />
+                  {validation.hasError('telefone') && (
+                    <p className="text-red-500 text-xs mt-1">{validation.getFieldError('telefone')}</p>
+                  )}
                 </div>
 
                 <div>
@@ -458,9 +558,26 @@ export default function Users() {
                   <input
                     type="date"
                     value={form.dataNascimento}
-                    onChange={(e) => setForm((prev) => ({ ...prev, dataNascimento: e.target.value }))}
-                    className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                    onChange={(e) => {
+                      setForm((prev) => ({ ...prev, dataNascimento: e.target.value }));
+                      if (e.target.value.length > 0) {
+                        validation.handleChange('dataNascimento', e.target.value);
+                      }
+                    }}
+                    onBlur={() => {
+                      if (form.dataNascimento.length > 0) {
+                        validation.handleBlur('dataNascimento');
+                      }
+                    }}
+                    className={`w-full bg-neutral/60 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${
+                      validation.hasError('dataNascimento')
+                        ? 'border-red-500 focus:ring-red-500'
+                        : 'border-white/10 focus:ring-primary'
+                    }`}
                   />
+                  {validation.hasError('dataNascimento') && (
+                    <p className="text-red-500 text-xs mt-1">{validation.getFieldError('dataNascimento')}</p>
+                  )}
                 </div>
               </div>
 

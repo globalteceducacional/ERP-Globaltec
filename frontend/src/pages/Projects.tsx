@@ -1,8 +1,10 @@
-import { useEffect, useState, FormEvent, useRef } from 'react';
+import { useEffect, useState, FormEvent, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { Projeto } from '../types';
 import { buttonStyles } from '../utils/buttonStyles';
+import { toast, formatApiError } from '../utils/toast';
+import { useFormValidation, validators, errorMessages } from '../utils/validation';
 
 interface SimpleUser {
   id: number;
@@ -48,6 +50,24 @@ export default function Projects() {
     { value: 'FINALIZADO', label: 'Finalizado' },
   ];
 
+  // Regras de validação
+  const validationRules = useMemo(() => ({
+    nome: [
+      { validator: validators.required, message: errorMessages.required },
+      { validator: validators.minLength(3), message: errorMessages.minLength(3) },
+      { validator: validators.maxLength(120), message: errorMessages.maxLength(120) },
+    ],
+    valorTotal: form.valorTotal !== undefined && form.valorTotal !== null
+      ? [{ validator: validators.positive, message: errorMessages.positive }]
+      : [],
+    supervisorId: form.supervisorId !== undefined && form.supervisorId !== null
+      ? [{ validator: (v: number) => v > 0, message: 'Selecione um supervisor' }]
+      : [],
+  }), [form.valorTotal, form.supervisorId]);
+
+  // Validação de formulário
+  const validation = useFormValidation<CreateProjectForm>(validationRules);
+
   async function loadProjects() {
     setLoading(true);
     try {
@@ -89,11 +109,13 @@ export default function Projects() {
     setModalError(null);
     setError(null);
 
+    // Validar todos os campos
+    if (!validation.validateAll(form)) {
+      setSubmitting(false);
+      return;
+    }
+
     try {
-      if (form.nome.trim().length === 0) {
-        setModalError('Nome do projeto é obrigatório');
-        return;
-      }
 
       if (editingProject) {
         const payload: any = {
@@ -139,10 +161,13 @@ export default function Projects() {
         responsavelIds: [],
         status: 'EM_ANDAMENTO',
       });
+      validation.reset();
       await loadProjects();
+      toast.success(editingProject ? 'Projeto atualizado com sucesso!' : 'Projeto criado com sucesso!');
     } catch (err: any) {
-      const message = err.response?.data?.message ?? 'Erro ao salvar projeto';
-      setModalError(typeof message === 'string' ? message : JSON.stringify(message));
+      const errorMessage = formatApiError(err);
+      setModalError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setSubmitting(false);
     }
@@ -160,6 +185,7 @@ export default function Projects() {
       responsavelIds: [],
       status: 'EM_ANDAMENTO',
     });
+    validation.reset();
     setModalError(null);
     setShowModal(true);
   }
@@ -175,6 +201,7 @@ export default function Projects() {
       responsavelIds: project.responsaveis ? project.responsaveis.map((r) => r.usuario.id) : [],
       status: project.status,
     });
+    validation.reset();
     setModalError(null);
     setShowModal(true);
   }
@@ -206,8 +233,11 @@ export default function Projects() {
       setProjectToDelete(null);
       setDeleteConfirmName('');
       await loadProjects();
+      toast.success('Projeto excluído com sucesso!');
     } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Erro ao excluir projeto');
+      const errorMessage = formatApiError(err);
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setDeletingId(null);
     }
@@ -371,11 +401,22 @@ export default function Projects() {
                 <input
                   type="text"
                   value={form.nome}
-                  onChange={(e) => setForm((prev) => ({ ...prev, nome: e.target.value }))}
-                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                  onChange={(e) => {
+                    setForm((prev) => ({ ...prev, nome: e.target.value }));
+                    validation.handleChange('nome', e.target.value);
+                  }}
+                  onBlur={() => validation.handleBlur('nome')}
+                  className={`w-full bg-neutral/60 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${
+                    validation.hasError('nome')
+                      ? 'border-red-500 focus:ring-red-500'
+                      : 'border-white/10 focus:ring-primary'
+                  }`}
                   required
                   maxLength={120}
                 />
+                {validation.hasError('nome') && (
+                  <p className="text-red-500 text-xs mt-1">{validation.getFieldError('nome')}</p>
+                )}
               </div>
 
               <div>
@@ -403,14 +444,27 @@ export default function Projects() {
                   step="0.01"
                   min="0"
                   value={typeof form.valorTotal === 'number' ? form.valorTotal : ''}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      valorTotal: e.target.value ? Number(e.target.value) : undefined,
-                    }))
-                  }
-                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                  onChange={(e) => {
+                    const value = e.target.value ? Number(e.target.value) : undefined;
+                    setForm((prev) => ({ ...prev, valorTotal: value }));
+                    if (value !== undefined) {
+                      validation.handleChange('valorTotal', value);
+                    }
+                  }}
+                  onBlur={() => {
+                    if (form.valorTotal !== undefined) {
+                      validation.handleBlur('valorTotal');
+                    }
+                  }}
+                  className={`w-full bg-neutral/60 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 ${
+                    validation.hasError('valorTotal')
+                      ? 'border-red-500 focus:ring-red-500'
+                      : 'border-white/10 focus:ring-primary'
+                  }`}
                 />
+                {validation.hasError('valorTotal') && (
+                  <p className="text-red-500 text-xs mt-1">{validation.getFieldError('valorTotal')}</p>
+                )}
               </div>
 
               {editingProject && (

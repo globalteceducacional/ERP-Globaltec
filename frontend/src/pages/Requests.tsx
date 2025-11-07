@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { api } from '../services/api';
+import { toast, formatApiError } from '../utils/toast';
 
 interface Request {
   id: number;
@@ -50,8 +51,11 @@ export default function Requests() {
       });
       setForm({ destinatarioId: 0, texto: '' });
       load('sent');
+      toast.success('Requerimento enviado com sucesso!');
     } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Erro ao enviar requerimento');
+      const errorMessage = formatApiError(err);
+      setError(errorMessage);
+      toast.error(errorMessage);
     }
   }
 
