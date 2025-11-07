@@ -31,12 +31,12 @@ export class CreateProjectDto {
   @IsPositive()
   valorInsumos?: number;
 
-  @IsOptional()
-  supervisorId?: number;
+  @IsNumber()
+  @IsPositive()
+  supervisorId: number;
 
   @IsOptional()
   @IsArray()
-  @ArrayNotEmpty()
   responsavelIds?: number[];
 
   @IsOptional()

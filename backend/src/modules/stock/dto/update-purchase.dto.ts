@@ -22,6 +22,11 @@ export class CotacaoUpdateDto {
 
 export class UpdatePurchaseDto {
   @IsOptional()
+  @IsInt()
+  @IsPositive()
+  etapaId?: number;
+
+  @IsOptional()
   @IsString()
   @MaxLength(120)
   item?: string;

@@ -1,6 +1,6 @@
-import { useEffect, useState, FormEvent } from 'react';
+import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { api } from '../services/api';
-import { Cargo } from '../types';
+import { Cargo, CargoNivel, CargoPermission } from '../types';
 import { buttonStyles } from '../utils/buttonStyles';
 import { useAuthStore } from '../store/auth';
 
@@ -9,6 +9,9 @@ interface CreateCargoForm {
   descricao?: string;
   ativo: boolean;
   paginasPermitidas: string[];
+  nivelAcesso: CargoNivel;
+  herdaPermissoes: boolean;
+  permissions: string[];
 }
 
 // Lista de todas as páginas disponíveis no sistema
@@ -22,6 +25,16 @@ const todasPaginas = [
   { value: '/users', label: 'Usuários' },
   { value: '/cargos', label: 'Cargos' },
 ];
+
+const nivelOptions: Array<{ value: CargoNivel; label: string }> = [
+  { value: 'NIVEL_0', label: 'Nível 0 - Executor / Estagiário' },
+  { value: 'NIVEL_1', label: 'Nível 1 - Supervisor' },
+  { value: 'NIVEL_2', label: 'Nível 2 - Compras & Estoque' },
+  { value: 'NIVEL_3', label: 'Nível 3 - Administrador' },
+  { value: 'NIVEL_4', label: 'Nível 4 - Gerente Master' },
+];
+
+const nivelLabels = Object.fromEntries(nivelOptions.map((item) => [item.value, item.label]));
 
 export default function Cargos() {
   const user = useAuthStore((state) => state.user);
@@ -37,15 +50,29 @@ export default function Cargos() {
     descricao: '',
     ativo: true,
     paginasPermitidas: [],
+    nivelAcesso: 'NIVEL_0' as CargoNivel,
+    herdaPermissoes: true,
+    permissions: [],
   });
+  const [permissionsCatalog, setPermissionsCatalog] = useState<CargoPermission[]>([]);
 
   // Verificar se o usuário é DIRETOR
-  const isDiretor = user?.cargo?.nome === 'DIRETOR' || (typeof user?.cargo === 'string' && user.cargo === 'DIRETOR');
+  const isDiretor =
+    user?.cargo?.nome === 'DIRETOR' ||
+    user?.cargo?.nome === 'GM' ||
+    (typeof user?.cargo === 'string' && (user.cargo === 'DIRETOR' || user.cargo === 'GM'));
 
   async function load() {
     try {
       const { data } = await api.get<Cargo[]>('/cargos/all');
-      setCargos(data);
+      const normalized = data.map((cargo) => ({
+        ...cargo,
+        permissions: (cargo.permissions ?? []).map((permission) => ({
+          ...permission,
+          chave: permission.chave ?? `${permission.modulo}:${permission.acao}`,
+        })),
+      }));
+      setCargos(normalized);
     } catch (err: any) {
       setError(err.response?.data?.message ?? 'Erro ao carregar cargos');
     } finally {
@@ -53,9 +80,39 @@ export default function Cargos() {
     }
   }
 
+  async function loadPermissions() {
+    try {
+      const { data } = await api.get<Array<{ id: number; modulo: string; acao: string; descricao?: string | null }>>('/cargos/permissions');
+      const normalized = data.map((permission) => ({
+        ...permission,
+        chave: `${permission.modulo}:${permission.acao}`,
+      }));
+      setPermissionsCatalog(normalized);
+    } catch (err) {
+      console.error('Erro ao carregar permissões', err);
+    }
+  }
+
   useEffect(() => {
     load();
+    loadPermissions();
   }, []);
+
+  const permissionsByModule = useMemo(() => {
+    const grouped = permissionsCatalog.reduce<Record<string, CargoPermission[]>>((acc, permission) => {
+      if (!acc[permission.modulo]) {
+        acc[permission.modulo] = [];
+      }
+      acc[permission.modulo].push(permission);
+      return acc;
+    }, {});
+
+    Object.values(grouped).forEach((list) => {
+      list.sort((a, b) => (a.descricao || a.acao).localeCompare(b.descricao || b.acao));
+    });
+
+    return grouped;
+  }, [permissionsCatalog]);
 
   async function toggleActive(cargo: Cargo) {
     try {
@@ -83,6 +140,9 @@ export default function Cargos() {
         nome: form.nome.trim(),
         ativo: form.ativo,
         paginasPermitidas: form.paginasPermitidas,
+        nivelAcesso: form.nivelAcesso,
+        herdaPermissoes: form.herdaPermissoes,
+        permissions: form.permissions,
       };
 
       if (form.descricao && form.descricao.trim().length > 0) {
@@ -102,6 +162,9 @@ export default function Cargos() {
         descricao: '',
         ativo: true,
         paginasPermitidas: [],
+        nivelAcesso: 'NIVEL_0' as CargoNivel,
+        herdaPermissoes: true,
+        permissions: [],
       });
       await load();
     } catch (err: any) {
@@ -119,6 +182,9 @@ export default function Cargos() {
       descricao: '',
       ativo: true,
       paginasPermitidas: [],
+      nivelAcesso: 'NIVEL_0' as CargoNivel,
+      herdaPermissoes: true,
+      permissions: [],
     });
     setModalError(null);
     setShowModal(true);
@@ -131,6 +197,9 @@ export default function Cargos() {
       descricao: cargo.descricao || '',
       ativo: cargo.ativo,
       paginasPermitidas: (cargo.paginasPermitidas as string[]) || [],
+      nivelAcesso: cargo.nivelAcesso,
+      herdaPermissoes: cargo.herdaPermissoes,
+      permissions: (cargo.permissions ?? []).map((perm) => perm.chave),
     });
     setModalError(null);
     setShowModal(true);
@@ -144,6 +213,16 @@ export default function Cargos() {
       } else {
         return { ...prev, paginasPermitidas: [...current, value] };
       }
+    });
+  }
+
+  function togglePermissao(value: string) {
+    setForm((prev) => {
+      const current = prev.permissions;
+      if (current.includes(value)) {
+        return { ...prev, permissions: current.filter((p) => p !== value) };
+      }
+      return { ...prev, permissions: [...current, value] };
     });
   }
 
@@ -193,6 +272,7 @@ export default function Cargos() {
           <thead className="bg-white/5 text-white/70">
             <tr>
               <th className="px-4 py-3 text-left">Nome</th>
+              <th className="px-4 py-3 text-left">Nível</th>
               <th className="px-4 py-3 text-left">Descrição</th>
               <th className="px-4 py-3 text-left">Usuários</th>
               <th className="px-4 py-3 text-left">Status</th>
@@ -203,6 +283,14 @@ export default function Cargos() {
             {cargos.map((cargo) => (
               <tr key={cargo.id} className="border-t border-white/5 hover:bg-white/5">
                 <td className="px-4 py-3 font-medium">{cargo.nome}</td>
+                <td className="px-4 py-3 text-white/70">
+                  {nivelLabels[cargo.nivelAcesso] || cargo.nivelAcesso}
+                  {!cargo.herdaPermissoes && (
+                    <span className="ml-2 text-xs px-2 py-0.5 rounded bg-warning/20 text-warning border border-warning/30">
+                      Sem herança
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-white/70">{cargo.descricao || '-'}</td>
                 <td className="px-4 py-3">{cargo._count?.usuarios || 0}</td>
                 <td className="px-4 py-3">
@@ -279,6 +367,26 @@ export default function Cargos() {
               </div>
 
               <div>
+                <label className="block text-sm text-white/70 mb-1">Nível de acesso</label>
+                <select
+                  value={form.nivelAcesso}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      nivelAcesso: e.target.value as CargoNivel,
+                    }))
+                  }
+                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary text-white"
+                >
+                  {nivelOptions.map((option) => (
+                    <option key={option.value} value={option.value} className="bg-neutral text-white">
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label className="block text-sm text-white/70 mb-1">Descrição</label>
                 <textarea
                   value={form.descricao}
@@ -316,16 +424,63 @@ export default function Cargos() {
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="ativo"
-                  checked={form.ativo}
-                  onChange={(e) => setForm((prev) => ({ ...prev, ativo: e.target.checked }))}
-                  className="w-4 h-4 rounded border-white/10 bg-neutral/60 text-primary focus:ring-2 focus:ring-primary"
-                />
-                <label htmlFor="ativo" className="text-sm text-white/70">
-                  Cargo ativo
+              <div>
+                <label className="block text-sm text-white/70 mb-2">
+                  Permissões do Sistema
+                </label>
+                <div className="bg-neutral/60 border border-white/10 rounded-md p-4 space-y-4 max-h-60 overflow-y-auto">
+                  {Object.keys(permissionsByModule).length === 0 && (
+                    <p className="text-xs text-white/50">Nenhuma permissão cadastrada. Cadastre pelo backend.</p>
+                  )}
+                  {Object.entries(permissionsByModule).map(([modulo, permissions]) => (
+                    <div key={modulo}>
+                      <p className="text-xs uppercase tracking-wide text-white/50 mb-2">{modulo}</p>
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        {permissions.map((permission) => (
+                          <label
+                            key={permission.id}
+                            className="flex items-start gap-2 bg-white/5 hover:bg-white/10 rounded-md p-2 transition-colors cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={form.permissions.includes(permission.chave)}
+                              onChange={() => togglePermissao(permission.chave)}
+                              className="mt-1 w-4 h-4 rounded border-white/10 bg-neutral/60 text-primary focus:ring-2 focus:ring-primary"
+                            />
+                            <span className="text-sm text-white/80">
+                              <span className="font-semibold block">{permission.descricao || permission.acao}</span>
+                              <span className="text-xs text-white/50">{permission.modulo}:{permission.acao}</span>
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-white/50 mt-2">
+                  Defina as permissões específicas deste cargo. Se "Herda permissões" estiver ativo, as permissões do nível anterior também serão aplicadas.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm text-white/70">Configurações</label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.ativo}
+                    onChange={(e) => setForm((prev) => ({ ...prev, ativo: e.target.checked }))}
+                    className="w-4 h-4 rounded border-white/10 bg-neutral/60 text-primary focus:ring-2 focus:ring-primary"
+                  />
+                  <span className="text-sm text-white/70">Cargo ativo</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={form.herdaPermissoes}
+                    onChange={(e) => setForm((prev) => ({ ...prev, herdaPermissoes: e.target.checked }))}
+                    className="w-4 h-4 rounded border-white/10 bg-neutral/60 text-primary focus:ring-2 focus:ring-primary"
+                  />
+                  <span className="text-sm text-white/70">Herda permissões do nível inferior</span>
                 </label>
               </div>
 

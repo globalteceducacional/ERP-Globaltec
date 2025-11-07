@@ -1,3 +1,13 @@
+export type CargoNivel = 'NIVEL_0' | 'NIVEL_1' | 'NIVEL_2' | 'NIVEL_3' | 'NIVEL_4';
+
+export interface CargoPermission {
+  id: number;
+  modulo: string;
+  acao: string;
+  chave: string;
+  descricao?: string | null;
+}
+
 export interface Cargo {
   id: number;
   nome: string;
@@ -5,6 +15,9 @@ export interface Cargo {
   ativo: boolean;
   paginasPermitidas?: string[];
   dataCriacao: string;
+  nivelAcesso: CargoNivel;
+  herdaPermissoes: boolean;
+  permissions?: CargoPermission[];
   _count?: {
     usuarios: number;
   };
@@ -55,4 +68,20 @@ export interface EtapaEntrega {
   dataAvaliacao?: string | null;
   executor: Usuario;
   avaliadoPor?: Usuario | null;
+}
+
+export interface ChecklistItemEntrega {
+  id: number;
+  checklistIndex: number;
+  descricao: string;
+  imagemUrl?: string | null; // Mantido para compatibilidade (deprecated)
+  documentoUrl?: string | null; // Mantido para compatibilidade (deprecated)
+  imagensUrls?: string[] | null; // Array de imagens (base64 ou URLs)
+  documentosUrls?: string[] | null; // Array de documentos (base64 ou URLs)
+  status: 'PENDENTE' | 'EM_ANALISE' | 'APROVADO' | 'REPROVADO';
+  dataEnvio: string;
+  comentario?: string | null;
+  executor?: Usuario | null;
+  avaliadoPor?: Usuario | null;
+  dataAvaliacao?: string | null;
 }

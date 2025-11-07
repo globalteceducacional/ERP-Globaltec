@@ -12,7 +12,15 @@ export class AuthService {
   async validateUser(email: string, senha: string) {
     const user = await this.prisma.usuario.findUnique({
       where: { email },
-      include: { cargo: true },
+      include: {
+        cargo: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
+      },
     });
     if (!user) {
       throw new UnauthorizedException('Credenciais inválidas');
@@ -27,17 +35,26 @@ export class AuthService {
       throw new UnauthorizedException('Usuário inativo. Aguarde aprovação.');
     }
 
-    return user;
+    return this.mapCargoPermissions(user);
   }
 
   async login(payload: LoginDto) {
     const user = await this.validateUser(payload.email, payload.senha);
     const userWithCargo = await this.prisma.usuario.findUnique({
       where: { id: user.id },
-      include: { cargo: true },
+      include: {
+        cargo: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
+      },
     });
-    const token = this.jwtService.sign({ sub: user.id, role: userWithCargo?.cargo.nome || 'EXECUTOR' });
-    return { token, user: userWithCargo };
+    const mappedUser = this.mapCargoPermissions(userWithCargo);
+    const token = this.jwtService.sign({ sub: user.id, role: mappedUser?.cargo?.nome || 'EXECUTOR' });
+    return { token, user: mappedUser };
   }
 
   async register(data: RegisterDto) {
@@ -73,9 +90,39 @@ export class AuthService {
         funcao: data.funcao,
         dataNascimento: data.dataNascimento ? new Date(data.dataNascimento) : undefined,
       },
-      include: { cargo: true },
+      include: {
+        cargo: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
+      },
     });
 
-    return { user };
+    return { user: this.mapCargoPermissions(user) };
+  }
+
+  private mapCargoPermissions(user: any) {
+    if (!user?.cargo) {
+      return user;
+    }
+
+    const permissions = user.cargo.permissions?.map((relation) => ({
+      id: relation.permissionId,
+      modulo: relation.permission.modulo,
+      acao: relation.permission.acao,
+      chave: `${relation.permission.modulo}:${relation.permission.acao}`,
+      descricao: relation.permission.descricao,
+    })) ?? [];
+
+    return {
+      ...user,
+      cargo: {
+        ...user.cargo,
+        permissions,
+      },
+    };
   }
 }

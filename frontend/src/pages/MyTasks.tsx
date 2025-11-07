@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
 import { buttonStyles } from '../utils/buttonStyles';
+import { ChecklistItemEntrega } from '../types';
 
 interface Projeto {
   id: number;
@@ -37,11 +38,7 @@ interface Etapa {
   projeto: Projeto;
   subetapas: any[];
   entregas?: EtapaEntrega[];
-  checklistEntregas?: Array<{
-    checklistIndex: number;
-    status: 'PENDENTE' | 'EM_ANALISE' | 'APROVADO' | 'REPROVADO';
-    comentario?: string | null;
-  }>;
+  checklistEntregas?: ChecklistItemEntrega[];
 }
 
 interface EtapaEntrega {
@@ -67,7 +64,6 @@ export default function MyTasks() {
   const [data, setData] = useState<MyTasksResponse>({ projetos: [], etapasPendentes: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [updatingChecklist, setUpdatingChecklist] = useState<number | null>(null);
   const [showEntregaModal, setShowEntregaModal] = useState(false);
   const [selectedEtapa, setSelectedEtapa] = useState<Etapa | null>(null);
   const [entregaDescricao, setEntregaDescricao] = useState('');
@@ -81,11 +77,13 @@ export default function MyTasks() {
   const [selectedChecklistEtapa, setSelectedChecklistEtapa] = useState<Etapa | null>(null);
   const [selectedChecklistIndex, setSelectedChecklistIndex] = useState<number | null>(null);
   const [objetivoDescricao, setObjetivoDescricao] = useState('');
-  const [objetivoImagem, setObjetivoImagem] = useState<string | null>(null);
-  const [objetivoDocumento, setObjetivoDocumento] = useState<string | null>(null);
-  const [objetivoPreview, setObjetivoPreview] = useState<string | null>(null);
+  const [objetivoImagens, setObjetivoImagens] = useState<string[]>([]);
+  const [objetivoDocumentos, setObjetivoDocumentos] = useState<string[]>([]);
+  const [objetivoPreviews, setObjetivoPreviews] = useState<{ url: string; name: string; type: 'image' | 'document' }[]>([]);
   const [objetivoLoading, setObjetivoLoading] = useState(false);
   const [objetivoError, setObjetivoError] = useState<string | null>(null);
+  const [showViewEntregaModal, setShowViewEntregaModal] = useState(false);
+  const [selectedViewEntrega, setSelectedViewEntrega] = useState<{ etapa: Etapa; index: number; entrega: ChecklistItemEntrega } | null>(null);
 
   // Verificar se o usuário tem acesso à página de projetos
   const hasProjectsAccess = useMemo(() => {
@@ -146,9 +144,9 @@ export default function MyTasks() {
 
   function resetChecklistForm() {
     setObjetivoDescricao('');
-    setObjetivoImagem(null);
-    setObjetivoDocumento(null);
-    setObjetivoPreview(null);
+    setObjetivoImagens([]);
+    setObjetivoDocumentos([]);
+    setObjetivoPreviews([]);
     setObjetivoError(null);
     setObjetivoLoading(false);
   }
@@ -199,42 +197,97 @@ export default function MyTasks() {
     reader.readAsDataURL(file);
   }
 
-  async function handleObjetivoImagemChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      setObjetivoImagem(null);
-      setObjetivoPreview(null);
+  async function handleObjetivoImagensChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) {
+      setObjetivoImagens([]);
+      setObjetivoPreviews(prev => prev.filter(p => p.type !== 'image'));
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : null;
-      setObjetivoImagem(result);
-      setObjetivoPreview(result);
-    };
-    reader.onerror = () => {
-      setObjetivoError('Falha ao carregar a imagem. Tente novamente.');
-    };
-    reader.readAsDataURL(file);
+    const newImages: string[] = [];
+    const newPreviews: { url: string; name: string; type: 'image' | 'document' }[] = [];
+
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) {
+        setObjetivoError(`O arquivo "${file.name}" não é uma imagem válida.`);
+        continue;
+      }
+
+      const reader = new FileReader();
+      await new Promise<void>((resolve, reject) => {
+        reader.onload = () => {
+          const result = typeof reader.result === 'string' ? reader.result : null;
+          if (result) {
+            newImages.push(result);
+            newPreviews.push({ url: result, name: file.name, type: 'image' });
+          }
+          resolve();
+        };
+        reader.onerror = () => {
+          setObjetivoError(`Falha ao carregar a imagem "${file.name}".`);
+          reject();
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    setObjetivoImagens(prev => [...prev, ...newImages]);
+    setObjetivoPreviews(prev => [...prev.filter(p => p.type !== 'image'), ...newPreviews]);
   }
 
-  async function handleObjetivoDocumentoChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) {
-      setObjetivoDocumento(null);
+  async function handleObjetivoDocumentosChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) {
+      setObjetivoDocumentos([]);
+      setObjetivoPreviews(prev => prev.filter(p => p.type !== 'document'));
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = typeof reader.result === 'string' ? reader.result : null;
-      setObjetivoDocumento(result);
-    };
-    reader.onerror = () => {
-      setObjetivoError('Falha ao carregar o documento. Tente novamente.');
-    };
-    reader.readAsDataURL(file);
+    const newDocuments: string[] = [];
+    const newPreviews: { url: string; name: string; type: 'image' | 'document' }[] = [];
+
+    for (const file of files) {
+      const isValidDocument = file.type === 'application/pdf' || file.type.startsWith('image/');
+      if (!isValidDocument) {
+        setObjetivoError(`O arquivo "${file.name}" não é um documento válido (PDF ou imagem).`);
+        continue;
+      }
+
+      const reader = new FileReader();
+      await new Promise<void>((resolve, reject) => {
+        reader.onload = () => {
+          const result = typeof reader.result === 'string' ? reader.result : null;
+          if (result) {
+            newDocuments.push(result);
+            newPreviews.push({ url: result, name: file.name, type: 'document' });
+          }
+          resolve();
+        };
+        reader.onerror = () => {
+          setObjetivoError(`Falha ao carregar o documento "${file.name}".`);
+          reject();
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    setObjetivoDocumentos(prev => [...prev, ...newDocuments]);
+    setObjetivoPreviews(prev => [...prev.filter(p => p.type !== 'document'), ...newPreviews]);
+  }
+
+  function removeObjetivoPreview(index: number) {
+    const preview = objetivoPreviews[index];
+    if (!preview) return;
+
+    if (preview.type === 'image') {
+      const imageIndex = objetivoPreviews.slice(0, index).filter(p => p.type === 'image').length;
+      setObjetivoImagens(prev => prev.filter((_, i) => i !== imageIndex));
+    } else {
+      const docIndex = objetivoPreviews.slice(0, index).filter(p => p.type === 'document').length;
+      setObjetivoDocumentos(prev => prev.filter((_, i) => i !== docIndex));
+    }
+    setObjetivoPreviews(prev => prev.filter((_, i) => i !== index));
   }
 
   async function handleSubmitChecklistEntrega(e: FormEvent) {
@@ -251,8 +304,8 @@ export default function MyTasks() {
       setObjetivoError(null);
       await api.post(`/tasks/${selectedChecklistEtapa.id}/checklist/${selectedChecklistIndex}/submit`, {
         descricao: objetivoDescricao.trim(),
-        imagem: objetivoImagem ?? undefined,
-        documento: objetivoDocumento ?? undefined,
+        imagens: objetivoImagens.length > 0 ? objetivoImagens : undefined,
+        documentos: objetivoDocumentos.length > 0 ? objetivoDocumentos : undefined,
       });
       handleCloseChecklistModal();
       await fetchTasks();
@@ -288,28 +341,6 @@ export default function MyTasks() {
     }
   }
 
-  async function handleChecklistUpdate(etapaId: number, checklistIndex: number, concluido: boolean) {
-    const etapa = data.etapasPendentes.find((e) => e.id === etapaId);
-    if (!etapa || !etapa.checklistJson) return;
-
-    const updatedChecklist = [...etapa.checklistJson];
-    updatedChecklist[checklistIndex] = {
-      ...updatedChecklist[checklistIndex],
-      concluido,
-    };
-
-    try {
-      setUpdatingChecklist(etapaId);
-      await api.patch(`/tasks/${etapaId}/checklist`, {
-        checklist: updatedChecklist,
-      });
-      await fetchTasks(); // Recarregar dados
-    } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Falha ao atualizar checklist');
-    } finally {
-      setUpdatingChecklist(null);
-    }
-  }
 
   function getStatusColor(status: string) {
     switch (status) {
@@ -460,7 +491,7 @@ export default function MyTasks() {
                   )}
                 </div>
 
-                <div className="space-y-4">
+    <div className="space-y-4">
                   {etapas.map((etapa) => {
                     // Verificar se o usuário é executor usando executorId ou executor.id como fallback
                     const executorId = etapa.executorId || etapa.executor?.id;
@@ -510,7 +541,7 @@ export default function MyTasks() {
                              !temItensMarcados && 
                              totalItens > 0 && (
                               <span className="text-xs text-yellow-400">
-                                Marque itens do checklist para enviar
+                                Marque itens do checklist na página de Projetos para enviar
                               </span>
                             )}
                             {canEnviarEntrega && (
@@ -528,16 +559,16 @@ export default function MyTasks() {
                         {latestEntrega ? (
                           <div className="mt-3 border border-white/10 rounded-md p-3 bg-white/5">
                             <div className="flex items-start justify-between gap-3 mb-2">
-                              <div>
+            <div>
                                 <span className="text-xs text-white/60 block">Última entrega</span>
                                 <span className="text-sm text-white/80">
                                   {new Date(latestEntrega.dataEnvio).toLocaleString('pt-BR')}
                                 </span>
-                              </div>
+            </div>
                               <span className={`px-2 py-1 rounded text-xs ${getEntregaStatusColor(latestEntrega.status)}`}>
                                 {getEntregaStatusLabel(latestEntrega.status)}
-                              </span>
-                            </div>
+            </span>
+          </div>
                             <p className="text-sm text-white/80 whitespace-pre-wrap">{latestEntrega.descricao}</p>
                             {latestEntrega.imagemUrl && (
                               <img
@@ -599,20 +630,20 @@ export default function MyTasks() {
                                     podeInteragir ? 'hover:bg-white/5' : ''
                                   }`}
                                 >
-                                  <input
-                                    type="checkbox"
-                                    checked={item.concluido || false}
-                                    onChange={(e) =>
-                                      handleChecklistUpdate(etapa.id, index, e.target.checked)
-                                    }
-                                    disabled={updatingChecklist === etapa.id || !podeInteragir}
-                                    className="w-5 h-5 rounded border-white/30 bg-white/10 text-primary focus:ring-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={
-                                      !podeInteragir
-                                        ? `Apenas o executor ou integrantes podem marcar este item. (Usuário: ${user?.id}, Executor: ${executorId})`
-                                        : undefined
-                                    }
-                                  />
+                                  <div
+                                    className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                                      item.concluido
+                                        ? 'bg-primary border-primary'
+                                        : 'border-white/30 bg-white/10'
+                                    }`}
+                                    title="Marque os itens na página de Projetos"
+                                  >
+                                    {item.concluido && (
+                                      <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                  </div>
                                   <span
                                     className={`flex-1 text-sm ${
                                       item.concluido
@@ -641,26 +672,39 @@ export default function MyTasks() {
                                       ? 'Aprovado'
                                       : 'Reprovado'}
                                   </span>
-                                  {podeEnviarObjetivo && (
+                                  {entregaItem && (
                                     <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
+                                        setShowViewEntregaModal(true);
+                                      }}
+                                      className="ml-2 px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                                      title="Ver detalhes da entrega"
+                                    >
+                                      Ver detalhes
+                                    </button>
+                                  )}
+                                  {podeEnviarObjetivo && (
+            <button
                                       type="button"
                                       onClick={() => handleOpenChecklistModal(etapa, index)}
                                       className="ml-2 px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
                                       title="Enviar objetivo para análise"
-                                    >
+            >
                                       Enviar
-                                    </button>
+            </button>
                                   )}
                                 </div>
                               );
                             })}
                           </div>
-                          {podeInteragir && 
-                           ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) && 
-                           !temItensMarcados && (
+                            {podeInteragir && 
+                             ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) && 
+                             !temItensMarcados && (
                             <div className="mt-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
                               <p className="text-xs text-yellow-300">
-                                💡 Marque pelo menos um item do checklist para poder enviar a entrega com descrição e imagem.
+                                💡 Marque pelo menos um item do checklist na página de Projetos para poder enviar a entrega com descrição e imagem.
                               </p>
                             </div>
                           )}
@@ -693,9 +737,9 @@ export default function MyTasks() {
                       </div>
                     );
                   })}
-                </div>
-              </div>
-            ))}
+          </div>
+        </div>
+      ))}
           </div>
         </div>
       ) : (
@@ -803,6 +847,12 @@ export default function MyTasks() {
                 <p className="text-sm text-white/60 mt-1">
                   {selectedChecklistEtapa.nome} • Objetivo #{selectedChecklistIndex + 1}
                 </p>
+                {selectedChecklistEtapa.checklistJson &&
+                  selectedChecklistEtapa.checklistJson[selectedChecklistIndex] && (
+                    <p className="text-xs text-white/40">
+                      {selectedChecklistEtapa.checklistJson[selectedChecklistIndex]?.texto}
+                    </p>
+                  )}
               </div>
               <button type="button" onClick={handleCloseChecklistModal} className="text-white/50 hover:text-white transition-colors text-2xl">✕</button>
             </div>
@@ -823,19 +873,67 @@ export default function MyTasks() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-white/90 mb-2">Imagem (opcional)</label>
-                  <input type="file" accept="image/*" onChange={handleObjetivoImagemChange} className="w-full text-sm text-white/80 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary/20 file:text-primary hover:file:bg-primary/30" />
-                  {objetivoPreview && (
-                    <img src={objetivoPreview} alt="Pré-visualização" className="mt-3 rounded-md border border-white/20 max-h-40 object-cover" />
-                  )}
+                  <label className="block text-sm font-medium text-white/90 mb-2">
+                    Imagens (opcional) - Você pode selecionar múltiplas imagens
+                  </label>
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    multiple
+                    onChange={handleObjetivoImagensChange} 
+                    className="w-full text-sm text-white/80 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary/20 file:text-primary hover:file:bg-primary/30" 
+                  />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-white/90 mb-2">Documento (opcional)</label>
-                  <input type="file" accept="application/pdf,image/*" onChange={handleObjetivoDocumentoChange} className="w-full text-sm text-white/80 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary/20 file:text-primary hover:file:bg-primary/30" />
+                  <label className="block text-sm font-medium text-white/90 mb-2">
+                    Documentos (opcional) - Você pode selecionar múltiplos documentos
+                  </label>
+                  <input 
+                    type="file" 
+                    accept="application/pdf,image/*" 
+                    multiple
+                    onChange={handleObjetivoDocumentosChange} 
+                    className="w-full text-sm text-white/80 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary/20 file:text-primary hover:file:bg-primary/30" 
+                  />
                   <p className="text-xs text-white/50 mt-1">PDF ou imagem.</p>
                 </div>
+
+                {/* Previews dos arquivos */}
+                {objetivoPreviews.length > 0 && (
+                  <div className="space-y-3 pt-2 border-t border-white/10">
+                    <label className="block text-sm font-medium text-white/90">Arquivos selecionados:</label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {objetivoPreviews.map((preview, index) => (
+                        <div key={index} className="flex items-start gap-2 p-2 bg-white/5 rounded-md border border-white/10">
+                          {preview.type === 'image' ? (
+                            <img 
+                              src={preview.url} 
+                              alt={preview.name} 
+                              className="w-16 h-16 rounded object-cover border border-white/20"
+                            />
+                          ) : (
+                            <div className="w-16 h-16 rounded bg-primary/20 border border-primary/30 flex items-center justify-center">
+                              <span className="text-2xl">📄</span>
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-white/80 truncate">{preview.name}</p>
+                            <p className="text-xs text-white/50">{preview.type === 'image' ? 'Imagem' : 'Documento'}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeObjetivoPreview(index)}
+                            className="px-2 py-1 text-xs bg-danger/20 hover:bg-danger/30 text-danger rounded border border-danger/30 transition-colors"
+                          >
+                            Remover
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {objetivoError && (
@@ -851,6 +949,208 @@ export default function MyTasks() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Visualizar Entrega */}
+      {showViewEntregaModal && selectedViewEntrega && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-white/20 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-white">Detalhes da Entrega</h2>
+                <p className="text-sm text-white/60 mt-1">
+                  {selectedViewEntrega.etapa.nome} • Objetivo #{selectedViewEntrega.index + 1}
+                </p>
+                {selectedViewEntrega.etapa.checklistJson && selectedViewEntrega.etapa.checklistJson[selectedViewEntrega.index] && (
+                  <p className="text-xs text-white/40 mt-1">
+                    {selectedViewEntrega.etapa.checklistJson[selectedViewEntrega.index]?.texto}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowViewEntregaModal(false);
+                  setSelectedViewEntrega(null);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
+                  Descrição
+                </label>
+                <div className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-3 text-white whitespace-pre-wrap min-h-[100px]">
+                  {selectedViewEntrega.entrega.descricao || 'Não informada'}
+                </div>
+              </div>
+
+              {/* Imagens - usar array se disponível, senão usar campo único (compatibilidade) */}
+              {(() => {
+                const imagens = selectedViewEntrega.entrega.imagensUrls && Array.isArray(selectedViewEntrega.entrega.imagensUrls) && selectedViewEntrega.entrega.imagensUrls.length > 0
+                  ? selectedViewEntrega.entrega.imagensUrls
+                  : selectedViewEntrega.entrega.imagemUrl
+                    ? [selectedViewEntrega.entrega.imagemUrl]
+                    : [];
+                
+                return imagens.length > 0 ? (
+                  <div>
+                    <label className="block text-sm font-medium text-white/90 mb-2">
+                      Imagens ({imagens.length})
+                    </label>
+                    <div className="space-y-3">
+                      {imagens.map((url, index) => (
+                        <img
+                          key={index}
+                          src={url}
+                          alt={`Imagem ${index + 1} da entrega`}
+                          className="w-full rounded-md border border-white/20 max-h-96 object-contain bg-white/5"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Documentos - usar array se disponível, senão usar campo único (compatibilidade) */}
+              {(() => {
+                const documentos = selectedViewEntrega.entrega.documentosUrls && Array.isArray(selectedViewEntrega.entrega.documentosUrls) && selectedViewEntrega.entrega.documentosUrls.length > 0
+                  ? selectedViewEntrega.entrega.documentosUrls
+                  : selectedViewEntrega.entrega.documentoUrl
+                    ? [selectedViewEntrega.entrega.documentoUrl]
+                    : [];
+                
+                return documentos.length > 0 ? (
+                  <div>
+                    <label className="block text-sm font-medium text-white/90 mb-2">
+                      Documentos ({documentos.length})
+                    </label>
+                    <div className="space-y-2">
+                      {documentos.map((url, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => {
+                            try {
+                              if (url.startsWith('data:')) {
+                                // Base64 - criar blob e abrir
+                                const parts = url.split(',');
+                                if (parts.length < 2) {
+                                  alert('Formato de documento inválido');
+                                  return;
+                                }
+                                const byteString = atob(parts[1]);
+                                const mimeString = parts[0].split(':')[1].split(';')[0];
+                                const ab = new ArrayBuffer(byteString.length);
+                                const ia = new Uint8Array(ab);
+                                for (let i = 0; i < byteString.length; i++) {
+                                  ia[i] = byteString.charCodeAt(i);
+                                }
+                                const blob = new Blob([ab], { type: mimeString });
+                                const blobUrl = URL.createObjectURL(blob);
+                                const newWindow = window.open(blobUrl, '_blank');
+                                if (!newWindow) {
+                                  alert('Por favor, permita pop-ups para visualizar o documento');
+                                  URL.revokeObjectURL(blobUrl);
+                                  return;
+                                }
+                                // Limpar após um tempo
+                                setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+                              } else {
+                                // URL externa - abrir diretamente
+                                window.open(url, '_blank');
+                              }
+                            } catch (error) {
+                              console.error('Erro ao abrir documento:', error);
+                              alert('Erro ao abrir documento. Tente novamente.');
+                            }
+                          }}
+                          className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                        >
+                          <span>📄</span>
+                          <span>Abrir documento {index + 1}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/20">
+                <div>
+                  <label className="block text-xs text-white/60 mb-1">Enviado por</label>
+                  <p className="text-sm text-white/90">
+                    {selectedViewEntrega.entrega.executor?.nome ?? 'Usuário'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs text-white/60 mb-1">Data de envio</label>
+                  <p className="text-sm text-white/90">
+                    {new Date(selectedViewEntrega.entrega.dataEnvio).toLocaleString('pt-BR')}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs text-white/60 mb-1">Status</label>
+                  <span
+                    className={`inline-block px-2 py-1 rounded text-xs ${
+                      selectedViewEntrega.entrega.status === 'EM_ANALISE'
+                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                        : selectedViewEntrega.entrega.status === 'APROVADO'
+                        ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                        : selectedViewEntrega.entrega.status === 'REPROVADO'
+                        ? 'bg-danger/20 text-danger border border-danger/40'
+                        : 'bg-white/10 text-white/70 border border-white/20'
+                    }`}
+                  >
+                    {selectedViewEntrega.entrega.status === 'PENDENTE'
+                      ? 'Pendente'
+                      : selectedViewEntrega.entrega.status === 'EM_ANALISE'
+                      ? 'Em análise'
+                      : selectedViewEntrega.entrega.status === 'APROVADO'
+                      ? 'Aprovado'
+                      : 'Reprovado'}
+                  </span>
+                </div>
+                {selectedViewEntrega.entrega.avaliadoPor && (
+                  <div>
+                    <label className="block text-xs text-white/60 mb-1">Avaliado por</label>
+                    <p className="text-sm text-white/90">
+                      {selectedViewEntrega.entrega.avaliadoPor.nome}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {selectedViewEntrega.entrega.comentario && (
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">
+                    Comentário da avaliação
+                  </label>
+                  <div className="w-full bg-warning/10 border border-warning/30 rounded-md px-4 py-3 text-warning whitespace-pre-wrap">
+                    {selectedViewEntrega.entrega.comentario}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end pt-4 border-t border-white/20">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowViewEntregaModal(false);
+                    setSelectedViewEntrega(null);
+                  }}
+                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

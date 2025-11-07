@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -71,6 +71,7 @@ export class TasksService {
           },
         },
         checklistEntregas: {
+          orderBy: { checklistIndex: 'asc' },
           include: {
             executor: true,
             avaliadoPor: true,
@@ -102,6 +103,7 @@ export class TasksService {
           },
         },
         checklistEntregas: {
+          orderBy: { checklistIndex: 'asc' },
           include: {
             executor: true,
             avaliadoPor: true,
@@ -363,15 +365,8 @@ export class TasksService {
 
     // Verificar se o usuário é executor OU integrante da etapa
     const isExecutor = etapa.executorId === userId;
-    const isIntegrante = etapa.integrantes?.some(
-      (integrante) => integrante.usuarioId === userId,
-    ) || false;
-    
-    // Debug: log para verificar valores
-    console.log(`[updateChecklist] etapaId: ${id}, userId: ${userId}`);
-    console.log(`[updateChecklist] executorId: ${etapa.executorId}, isExecutor: ${isExecutor}`);
-    console.log(`[updateChecklist] integrantes:`, etapa.integrantes?.map(i => ({ usuarioId: i.usuarioId, usuarioNome: i.usuario?.nome })));
-    console.log(`[updateChecklist] isIntegrante: ${isIntegrante}`);
+    const isIntegrante =
+      etapa.integrantes?.some((integrante) => integrante.usuarioId === userId) || false;
 
     if (!isExecutor && !isIntegrante) {
       throw new UnauthorizedException('Somente o executor ou integrantes podem atualizar o checklist');
@@ -454,6 +449,24 @@ export class TasksService {
       throw new BadRequestException('Descrição é obrigatória e deve ter pelo menos 5 caracteres');
     }
 
+    // Processar imagens: usar array se fornecido, senão usar campo único (compatibilidade)
+    let imagensUrls: string[] | null = null;
+    if (data.imagens && Array.isArray(data.imagens) && data.imagens.length > 0) {
+      imagensUrls = data.imagens.filter(img => img && img.trim().length > 0);
+    } else if (data.imagem && data.imagem.trim().length > 0) {
+      // Compatibilidade com formato antigo
+      imagensUrls = [data.imagem.trim()];
+    }
+
+    // Processar documentos: usar array se fornecido, senão usar campo único (compatibilidade)
+    let documentosUrls: string[] | null = null;
+    if (data.documentos && Array.isArray(data.documentos) && data.documentos.length > 0) {
+      documentosUrls = data.documentos.filter(doc => doc && doc.trim().length > 0);
+    } else if (data.documento && data.documento.trim().length > 0) {
+      // Compatibilidade com formato antigo
+      documentosUrls = [data.documento.trim()];
+    }
+
     // Criar ou atualizar a entrega do item do checklist
     const entrega = await this.prisma.checklistItemEntrega.upsert({
       where: {
@@ -466,15 +479,19 @@ export class TasksService {
         etapaId,
         checklistIndex,
         descricao: data.descricao.trim(),
-        imagemUrl: data.imagem?.trim() || null,
-        documentoUrl: data.documento?.trim() || null,
+        imagemUrl: imagensUrls && imagensUrls.length > 0 ? imagensUrls[0] : null, // Mantido para compatibilidade
+        documentoUrl: documentosUrls && documentosUrls.length > 0 ? documentosUrls[0] : null, // Mantido para compatibilidade
+        imagensUrls: imagensUrls && imagensUrls.length > 0 ? imagensUrls : undefined,
+        documentosUrls: documentosUrls && documentosUrls.length > 0 ? documentosUrls : undefined,
         status: ChecklistItemStatus.EM_ANALISE,
         executorId: userId,
       },
       update: {
         descricao: data.descricao.trim(),
-        imagemUrl: data.imagem?.trim() || null,
-        documentoUrl: data.documento?.trim() || null,
+        imagemUrl: imagensUrls && imagensUrls.length > 0 ? imagensUrls[0] : null, // Mantido para compatibilidade
+        documentoUrl: documentosUrls && documentosUrls.length > 0 ? documentosUrls[0] : null, // Mantido para compatibilidade
+        imagensUrls: imagensUrls && imagensUrls.length > 0 ? imagensUrls : undefined,
+        documentosUrls: documentosUrls && documentosUrls.length > 0 ? documentosUrls : undefined,
         status: ChecklistItemStatus.EM_ANALISE,
         dataEnvio: new Date(),
         comentario: null,
@@ -523,10 +540,10 @@ export class TasksService {
 
     const cargoNome = user.cargo.nome;
     const isSupervisor = cargoNome === 'SUPERVISOR' || etapa.projeto?.supervisor?.id === reviewerId;
-    const isDiretor = cargoNome === 'DIRETOR';
+    const isDiretor = cargoNome === 'DIRETOR' || cargoNome === 'GM';
 
     if (!isSupervisor && !isDiretor) {
-      throw new UnauthorizedException('Somente supervisores ou diretores podem avaliar entregas');
+      throw new ForbiddenException('Somente supervisores ou diretores podem avaliar entregas');
     }
 
     const entrega = await this.prisma.checklistItemEntrega.findUnique({
@@ -709,10 +726,18 @@ export class TasksService {
   private async updateProjetoStatus(projetoId: number) {
     const etapas = await this.prisma.etapa.findMany({
       where: { projetoId },
-      select: { status: true },
+      select: { 
+        status: true,
+        valorInsumos: true,
+      },
     });
 
     if (etapas.length === 0) {
+      // Se não houver etapas, definir valorInsumos como 0
+      await this.prisma.projeto.update({
+        where: { id: projetoId },
+        data: { valorInsumos: 0 },
+      });
       return;
     }
 
@@ -722,6 +747,11 @@ export class TasksService {
       return status === EtapaStatus.EM_ANALISE || status === EtapaStatus.APROVADA;
     }).length;
     const emAndamento = etapas.filter((etapa) => etapa.status === EtapaStatus.EM_ANDAMENTO).length;
+
+    // Calcular valorInsumos como soma das etapas
+    const valorInsumosCalculado = etapas.reduce((sum, etapa) => {
+      return sum + (etapa.valorInsumos || 0);
+    }, 0);
 
     let novoStatus: ProjetoStatus = ProjetoStatus.EM_ANDAMENTO;
 
@@ -736,7 +766,10 @@ export class TasksService {
 
     await this.prisma.projeto.update({
       where: { id: projetoId },
-      data: { status: novoStatus },
+      data: { 
+        status: novoStatus,
+        valorInsumos: valorInsumosCalculado,
+      },
     });
   }
 

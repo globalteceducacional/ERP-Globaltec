@@ -8,32 +8,51 @@ export class CargosService {
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll() {
-    return this.prisma.cargo.findMany({
+    const cargos = await this.prisma.cargo.findMany({
       where: { ativo: true },
       orderBy: { nome: 'asc' },
       include: {
+        permissions: {
+          include: {
+            permission: true,
+          },
+        },
         _count: {
           select: { usuarios: true },
         },
       },
     });
+
+    return cargos.map((cargo) => this.mapCargoWithPermissions(cargo));
   }
 
   async findAllIncludingInactive() {
-    return this.prisma.cargo.findMany({
+    const cargos = await this.prisma.cargo.findMany({
       orderBy: { nome: 'asc' },
       include: {
+        permissions: {
+          include: {
+            permission: true,
+          },
+        },
         _count: {
           select: { usuarios: true },
         },
       },
     });
+
+    return cargos.map((cargo) => this.mapCargoWithPermissions(cargo));
   }
 
   async findOne(id: number) {
     const cargo = await this.prisma.cargo.findUnique({
       where: { id },
       include: {
+        permissions: {
+          include: {
+            permission: true,
+          },
+        },
         _count: {
           select: { usuarios: true },
         },
@@ -44,7 +63,13 @@ export class CargosService {
       throw new NotFoundException('Cargo não encontrado');
     }
 
-    return cargo;
+    return this.mapCargoWithPermissions(cargo);
+  }
+
+  async listPermissions() {
+    return this.prisma.permission.findMany({
+      orderBy: [{ modulo: 'asc' }, { acao: 'asc' }],
+    });
   }
 
   async create(data: CreateCargoDto) {
@@ -56,14 +81,29 @@ export class CargosService {
       throw new BadRequestException('Já existe um cargo com este nome');
     }
 
-    return this.prisma.cargo.create({
+    const permissions = await this.resolvePermissionKeys(data.permissions);
+
+    const cargo = await this.prisma.cargo.create({
       data: {
         nome: data.nome.toUpperCase(),
         descricao: data.descricao,
         ativo: data.ativo ?? true,
         paginasPermitidas: data.paginasPermitidas || [],
+        nivelAcesso: data.nivelAcesso,
+        herdaPermissoes: typeof data.herdaPermissoes === 'boolean' ? data.herdaPermissoes : true,
+        permissions: permissions.length
+          ? {
+              create: permissions.map((permission) => ({ permissionId: permission.id })),
+            }
+          : undefined,
+      },
+      include: {
+        permissions: { include: { permission: true } },
+        _count: { select: { usuarios: true } },
       },
     });
+
+    return this.mapCargoWithPermissions(cargo);
   }
 
   async update(id: number, data: UpdateCargoDto) {
@@ -97,10 +137,39 @@ export class CargosService {
       payload.paginasPermitidas = data.paginasPermitidas;
     }
 
-    return this.prisma.cargo.update({
+    if (typeof data.nivelAcesso !== 'undefined') {
+      payload.nivelAcesso = data.nivelAcesso;
+    }
+
+    if (typeof data.herdaPermissoes !== 'undefined') {
+      payload.herdaPermissoes = data.herdaPermissoes;
+    }
+
+    let permissions: Awaited<ReturnType<typeof this.resolvePermissionKeys>> | null = null;
+    if (typeof data.permissions !== 'undefined') {
+      permissions = await this.resolvePermissionKeys(data.permissions);
+    }
+
+    const cargo = await this.prisma.cargo.update({
       where: { id },
-      data: payload,
+      data: {
+        ...payload,
+        ...(permissions !== null
+          ? {
+              permissions: {
+                deleteMany: {},
+                create: permissions.map((permission) => ({ permissionId: permission.id })),
+              },
+            }
+          : {}),
+      },
+      include: {
+        permissions: { include: { permission: true } },
+        _count: { select: { usuarios: true } },
+      },
     });
+
+    return this.mapCargoWithPermissions(cargo);
   }
 
   async remove(id: number) {
@@ -120,6 +189,52 @@ export class CargosService {
     await this.prisma.cargo.delete({
       where: { id },
     });
+  }
+
+  private mapCargoWithPermissions(cargo: any) {
+    const permissions = cargo.permissions?.map((relation) => ({
+      id: relation.permissionId,
+      modulo: relation.permission.modulo,
+      acao: relation.permission.acao,
+      chave: `${relation.permission.modulo}:${relation.permission.acao}`,
+      descricao: relation.permission.descricao,
+    })) ?? [];
+
+    return {
+      ...cargo,
+      permissions,
+    };
+  }
+
+  private async resolvePermissionKeys(keys?: string[]) {
+    if (!keys || keys.length === 0) {
+      return [];
+    }
+
+    const normalized = Array.from(new Set(keys.map((key) => key?.trim()).filter(Boolean)));
+
+    const parsed = normalized.map((key) => {
+      const [modulo, acao] = key.split(':').map((part) => part?.trim());
+      if (!modulo || !acao) {
+        throw new BadRequestException(`Formato de permissão inválido: ${key}`);
+      }
+      return { modulo, acao, chave: key };
+    });
+
+    const permissions = await this.prisma.permission.findMany({
+      where: {
+        OR: parsed.map(({ modulo, acao }) => ({ modulo, acao })),
+      },
+    });
+
+    const foundKeys = new Set(permissions.map((p) => `${p.modulo}:${p.acao}`));
+    const missing = parsed.filter((item) => !foundKeys.has(item.chave)).map((item) => item.chave);
+
+    if (missing.length > 0) {
+      throw new BadRequestException(`Permissões não encontradas: ${missing.join(', ')}`);
+    }
+
+    return permissions;
   }
 }
 

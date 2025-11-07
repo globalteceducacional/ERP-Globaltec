@@ -26,11 +26,21 @@ export class UsersService {
       where.ativo = filter.ativo === 'true';
     }
 
-    return this.prisma.usuario.findMany({
+    const users = await this.prisma.usuario.findMany({
       where,
-      include: { cargo: true },
+      include: {
+        cargo: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
+      },
       orderBy: { dataCadastro: 'desc' },
     });
+
+    return users.map((user) => this.mapUserCargoPermissions(user));
   }
 
   async findOptions() {
@@ -43,12 +53,20 @@ export class UsersService {
   async findOne(id: number) {
     const user = await this.prisma.usuario.findUnique({
       where: { id },
-      include: { cargo: true },
+      include: {
+        cargo: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
+      },
     });
     if (!user) {
       throw new NotFoundException('Usuário não encontrado');
     }
-    return user;
+    return this.mapUserCargoPermissions(user);
   }
 
   async create(data: CreateUserDto) {
@@ -65,7 +83,7 @@ export class UsersService {
 
     const hashedPassword = await bcrypt.hash(data.senha, 10);
 
-    return this.prisma.usuario.create({
+    const user = await this.prisma.usuario.create({
       data: {
         nome: data.nome,
         email: data.email,
@@ -77,8 +95,18 @@ export class UsersService {
         dataNascimento: data.dataNascimento ? new Date(data.dataNascimento) : undefined,
         ativo: false, // Por padrão, novos usuários começam inativos
       },
-      include: { cargo: true },
+      include: {
+        cargo: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
+      },
     });
+
+    return this.mapUserCargoPermissions(user);
   }
 
   async update(id: number, data: UpdateUserDto) {
@@ -118,29 +146,57 @@ export class UsersService {
       payload.senha = await bcrypt.hash(data.senha.trim(), 10);
     }
 
-    return this.prisma.usuario.update({
+    const user = await this.prisma.usuario.update({
       where: { id },
       data: payload,
-      include: { cargo: true },
+      include: {
+        cargo: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
+      },
     });
+
+    return this.mapUserCargoPermissions(user);
   }
 
   async activate(id: number) {
     await this.findOne(id);
-    return this.prisma.usuario.update({
+    const user = await this.prisma.usuario.update({
       where: { id },
       data: { ativo: true },
-      include: { cargo: true },
+      include: {
+        cargo: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
+      },
     });
+    return this.mapUserCargoPermissions(user);
   }
 
   async deactivate(id: number) {
     await this.findOne(id);
-    return this.prisma.usuario.update({
+    const user = await this.prisma.usuario.update({
       where: { id },
       data: { ativo: false },
-      include: { cargo: true },
+      include: {
+        cargo: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
+      },
     });
+    return this.mapUserCargoPermissions(user);
   }
 
   async assignRole(id: number, cargoId: number) {
@@ -152,11 +208,21 @@ export class UsersService {
       throw new BadRequestException('Cargo não encontrado');
     }
 
-    return this.prisma.usuario.update({
+    const updatedUser = await this.prisma.usuario.update({
       where: { id },
       data: { cargoId },
-      include: { cargo: true },
+      include: {
+        cargo: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
+      },
     });
+
+    return this.mapUserCargoPermissions(updatedUser);
   }
 
   async remove(id: number) {
@@ -167,16 +233,16 @@ export class UsersService {
   }
 
   async changePassword(userId: number, senhaAtual: string, novaSenha: string) {
-    const user = await this.prisma.usuario.findUnique({
+    const currentUser = await this.prisma.usuario.findUnique({
       where: { id: userId },
     });
 
-    if (!user) {
+    if (!currentUser) {
       throw new NotFoundException('Usuário não encontrado');
     }
 
     // Verificar senha atual
-    const passwordMatches = await bcrypt.compare(senhaAtual, user.senha);
+    const passwordMatches = await bcrypt.compare(senhaAtual, currentUser.senha);
     if (!passwordMatches) {
       throw new BadRequestException('Senha atual incorreta');
     }
@@ -188,10 +254,41 @@ export class UsersService {
 
     // Atualizar senha
     const hashedPassword = await bcrypt.hash(novaSenha.trim(), 10);
-    return this.prisma.usuario.update({
+    const updatedUser = await this.prisma.usuario.update({
       where: { id: userId },
       data: { senha: hashedPassword },
-      include: { cargo: true },
+      include: {
+        cargo: {
+          include: {
+            permissions: {
+              include: { permission: true },
+            },
+          },
+        },
+      },
     });
+    return this.mapUserCargoPermissions(updatedUser);
+  }
+
+  private mapUserCargoPermissions(user: any) {
+    if (!user?.cargo) {
+      return user;
+    }
+
+    const permissions = user.cargo.permissions?.map((relation) => ({
+      id: relation.permissionId,
+      modulo: relation.permission.modulo,
+      acao: relation.permission.acao,
+      chave: `${relation.permission.modulo}:${relation.permission.acao}`,
+      descricao: relation.permission.descricao,
+    })) ?? [];
+
+    return {
+      ...user,
+      cargo: {
+        ...user.cargo,
+        permissions,
+      },
+    };
   }
 }

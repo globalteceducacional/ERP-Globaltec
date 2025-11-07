@@ -129,7 +129,7 @@ export class TasksController {
   }
 
   @Patch(':id/checklist/:index/review')
-  @Roles('DIRETOR', 'SUPERVISOR')
+  @Roles('DIRETOR', 'SUPERVISOR', 'GM')
   reviewChecklistItem(
     @Param('id', ParseIntPipe) etapaId: number,
     @Param('index', ParseIntPipe) checklistIndex: number,

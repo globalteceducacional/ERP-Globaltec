@@ -31,6 +31,12 @@ export class CargosController {
     return this.cargosService.findAllIncludingInactive();
   }
 
+  @Get('permissions')
+  @Roles('DIRETOR')
+  listPermissions() {
+    return this.cargosService.listPermissions();
+  }
+
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.cargosService.findOne(id);

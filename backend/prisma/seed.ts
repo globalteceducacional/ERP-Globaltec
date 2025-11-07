@@ -6,38 +6,137 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Iniciando seed do banco de dados...');
 
-  // Verificar se os cargos já existem, se não, criar
-  let cargoDiretor = await prisma.cargo.findUnique({ where: { nome: 'DIRETOR' } });
-  if (!cargoDiretor) {
-    cargoDiretor = await prisma.cargo.create({
-      data: {
-        nome: 'DIRETOR',
-        descricao: 'Diretor com acesso total ao sistema',
-        ativo: true,
+  // Criar permissões base
+  const permissionsSeed = [
+    { modulo: 'projetos', acao: 'visualizar', descricao: 'Visualizar projetos' },
+    { modulo: 'projetos', acao: 'editar', descricao: 'Criar e editar projetos' },
+    { modulo: 'projetos', acao: 'aprovar', descricao: 'Aprovar etapas e metas de projetos' },
+    { modulo: 'trabalhos', acao: 'visualizar', descricao: 'Visualizar tarefas atribuídas' },
+    { modulo: 'trabalhos', acao: 'registrar', descricao: 'Registrar progresso e anexos das tarefas' },
+    { modulo: 'trabalhos', acao: 'avaliar', descricao: 'Avaliar entregas e aprovar objetivos' },
+    { modulo: 'compras', acao: 'solicitar', descricao: 'Solicitar compras e orçamentos' },
+    { modulo: 'compras', acao: 'aprovar', descricao: 'Aprovar solicitações de compras' },
+    { modulo: 'estoque', acao: 'visualizar', descricao: 'Visualizar itens de estoque' },
+    { modulo: 'estoque', acao: 'movimentar', descricao: 'Registrar movimentações de estoque' },
+    { modulo: 'usuarios', acao: 'gerenciar', descricao: 'Gerenciar usuários e cargos' },
+    { modulo: 'sistema', acao: 'administrar', descricao: 'Administrar configurações avançadas do sistema' },
+  ];
+
+  const permissionMap = new Map<string, number>();
+
+  for (const permission of permissionsSeed) {
+    const created = await prisma.permission.upsert({
+      where: {
+        modulo_acao: {
+          modulo: permission.modulo,
+          acao: permission.acao,
+        },
+      },
+      create: permission,
+      update: {
+        descricao: permission.descricao,
       },
     });
+    permissionMap.set(`${created.modulo}:${created.acao}`, created.id);
   }
 
-  let cargoSupervisor = await prisma.cargo.findUnique({ where: { nome: 'SUPERVISOR' } });
-  if (!cargoSupervisor) {
-    cargoSupervisor = await prisma.cargo.create({
-      data: {
-        nome: 'SUPERVISOR',
-        descricao: 'Supervisor de projetos',
+  // Configurações de cargos com níveis e permissões
+  const cargosSeed = [
+    {
+      nome: 'EXECUTOR',
+      descricao: 'Executor de tarefas',
+      nivelAcesso: 'NIVEL_0' as const,
+      paginasPermitidas: ['/tasks/my', '/occurrences', '/requests'],
+      permissions: ['projetos:visualizar', 'trabalhos:visualizar', 'trabalhos:registrar'],
+    },
+    {
+      nome: 'SUPERVISOR',
+      descricao: 'Supervisor de projetos',
+      nivelAcesso: 'NIVEL_1' as const,
+      paginasPermitidas: ['/projects', '/tasks/my', '/occurrences', '/requests'],
+      permissions: [
+        'projetos:visualizar',
+        'projetos:editar',
+        'projetos:aprovar',
+        'trabalhos:visualizar',
+        'trabalhos:registrar',
+        'trabalhos:avaliar',
+      ],
+    },
+    {
+      nome: 'COMPRADOR',
+      descricao: 'Responsável por compras e estoque',
+      nivelAcesso: 'NIVEL_2' as const,
+      paginasPermitidas: ['/tasks/my', '/stock', '/requests'],
+      permissions: [
+        'projetos:visualizar',
+        'compras:solicitar',
+        'compras:aprovar',
+        'estoque:visualizar',
+        'estoque:movimentar',
+      ],
+    },
+    {
+      nome: 'DIRETOR',
+      descricao: 'Diretor com acesso total ao sistema',
+      nivelAcesso: 'NIVEL_3' as const,
+      paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/stock', '/occurrences', '/requests', '/users', '/cargos'],
+      permissions: Array.from(permissionMap.keys()),
+    },
+    {
+      nome: 'GM',
+      descricao: 'Gerente Master com controle total do ERP',
+      nivelAcesso: 'NIVEL_4' as const,
+      paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/stock', '/occurrences', '/requests', '/users', '/cargos'],
+      permissions: Array.from(permissionMap.keys()),
+    },
+  ];
+
+  const cargosCriados = new Map<string, { id: number }>();
+
+  for (const cargoSeed of cargosSeed) {
+    const permissionIds = Array.from(cargoSeed.permissions, (key) => {
+      const id = permissionMap.get(key);
+      if (!id) {
+        throw new Error(`Permissão não encontrada: ${key}`);
+      }
+      return id;
+    });
+
+    const cargo = await prisma.cargo.upsert({
+      where: { nome: cargoSeed.nome },
+      update: {
+        descricao: cargoSeed.descricao,
         ativo: true,
+        paginasPermitidas: cargoSeed.paginasPermitidas,
+        nivelAcesso: cargoSeed.nivelAcesso,
+        permissions: {
+          deleteMany: {},
+          create: permissionIds.map((permissionId) => ({ permissionId })),
+        },
+      },
+      create: {
+        nome: cargoSeed.nome,
+        descricao: cargoSeed.descricao,
+        ativo: true,
+        paginasPermitidas: cargoSeed.paginasPermitidas,
+        nivelAcesso: cargoSeed.nivelAcesso,
+        permissions: {
+          create: permissionIds.map((permissionId) => ({ permissionId })),
+        },
       },
     });
+
+    cargosCriados.set(cargoSeed.nome, cargo);
   }
 
-  let cargoExecutor = await prisma.cargo.findUnique({ where: { nome: 'EXECUTOR' } });
-  if (!cargoExecutor) {
-    cargoExecutor = await prisma.cargo.create({
-      data: {
-        nome: 'EXECUTOR',
-        descricao: 'Executor de tarefas',
-        ativo: true,
-      },
-    });
+  const cargoExecutor = cargosCriados.get('EXECUTOR');
+  const cargoSupervisor = cargosCriados.get('SUPERVISOR');
+  const cargoDiretor = cargosCriados.get('DIRETOR');
+  const cargoGerenteMaster = cargosCriados.get('GM');
+
+  if (!cargoExecutor || !cargoSupervisor || !cargoDiretor || !cargoGerenteMaster) {
+    throw new Error('Erro ao criar cargos base');
   }
 
   // Criar usuário administrador padrão
@@ -50,7 +149,7 @@ async function main() {
       nome: 'Administrador',
       email: 'admin@globaltec.com',
       senha: senhaHash,
-      cargoId: cargoDiretor.id,
+      cargoId: cargoGerenteMaster.id,
       ativo: true,
     },
   });

@@ -15,9 +15,12 @@ model Cargo {
   nome        String   @unique
   descricao   String?
   ativo       Boolean  @default(true)
+  nivelAcesso CargoNivel @default(NIVEL_0)
+  herdaPermissoes Boolean @default(true)
   paginasPermitidas Json?  // Array de strings com as rotas permitidas: ["/dashboard", "/projects", ...]
   dataCriacao DateTime @default(now())
   usuarios    Usuario[]
+  permissions CargoPermission[]
   
   @@map("Cargo")
 }
@@ -48,6 +51,14 @@ enum ChecklistItemStatus {
   REPROVADO
 }
 
+enum CargoNivel {
+  NIVEL_0
+  NIVEL_1
+  NIVEL_2
+  NIVEL_3
+  NIVEL_4
+}
+
 enum SubetapaStatus {
   PENDENTE
   EM_ANDAMENTO
@@ -55,6 +66,8 @@ enum SubetapaStatus {
 }
 
 enum CompraStatus {
+  SOLICITADO
+  REPROVADO
   PENDENTE
   COMPRADO_ACAMINHO
   ENTREGUE
@@ -84,6 +97,7 @@ model Usuario {
   email                String                @unique
   telefone             String?
   senha                String
+  comprasSolicitadas    Compra[]              @relation("SolicitadoPor")
   ativo                Boolean               @default(false)
   dataCadastro         DateTime              @default(now())
   projetosResponsavel  ProjetoResponsavel[]
@@ -158,6 +172,7 @@ model Etapa {
   estoqueItens Estoque[]
   entregas    EtapaEntrega[]
   checklistEntregas ChecklistItemEntrega[]
+  compras     Compra[]
 }
 
 model EtapaEntrega {
@@ -182,8 +197,10 @@ model ChecklistItemEntrega {
   etapaId        Int
   checklistIndex Int                 // Índice do item no array checklistJson
   descricao      String
-  imagemUrl      String?
-  documentoUrl   String?             // URL do documento anexado
+  imagemUrl      String?             // Mantido para compatibilidade (deprecated)
+  documentoUrl   String?             // Mantido para compatibilidade (deprecated)
+  imagensUrls    Json?               // Array de URLs/imagens (base64 ou URLs)
+  documentosUrls Json?              // Array de URLs/documentos (base64 ou URLs)
   status         ChecklistItemStatus @default(PENDENTE)
   dataEnvio      DateTime            @default(now())
   comentario     String?
@@ -198,6 +215,25 @@ model ChecklistItemEntrega {
   @@unique([etapaId, checklistIndex])
   @@index([etapaId])
   @@index([executorId])
+}
+
+model Permission {
+  id          Int              @id @default(autoincrement())
+  modulo      String
+  acao        String
+  descricao   String?
+  cargos      CargoPermission[]
+
+  @@unique([modulo, acao])
+}
+
+model CargoPermission {
+  cargoId      Int
+  permissionId Int
+  cargo        Cargo      @relation(fields: [cargoId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([cargoId, permissionId])
 }
 
 model Subetapa {
@@ -216,7 +252,7 @@ model Compra {
   item                 String
   descricao            String?
   quantidade           Int
-  valorUnitario        Float        // Valor unitário da cotação selecionada
+  valorUnitario        Float?       // Valor unitário da cotação selecionada (opcional para solicitações)
   imagemUrl            String?
   cotacoesJson         Json?        // Array de cotações: [{ valorUnitario, frete, impostos, link }]
   status               CompraStatus @default(PENDENTE)
@@ -224,8 +260,13 @@ model Compra {
   dataConfirmacao      DateTime?
   nfUrl                String?      // URL da Nota Fiscal (base64 ou URL)
   comprovantePagamentoUrl String?   // URL do comprovante de pagamento (base64 ou URL)
-  projetoId            Int
-  projeto              Projeto      @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  projetoId            Int?
+  projeto              Projeto?     @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  etapaId              Int?
+  etapa                Etapa?       @relation(fields: [etapaId], references: [id], onDelete: SetNull)
+  solicitadoPorId      Int?
+  solicitadoPor        Usuario?     @relation("SolicitadoPor", fields: [solicitadoPorId], references: [id], onDelete: SetNull)
+  motivoRejeicao       String?      // Motivo da rejeição quando status for REPROVADO
 }
 
 model Estoque {

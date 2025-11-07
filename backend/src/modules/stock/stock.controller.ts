@@ -14,12 +14,15 @@ import { StockService } from './stock.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CompraStatus, EstoqueStatus } from '@prisma/client';
 import { CreateStockItemDto } from './dto/create-stock-item.dto';
 import { UpdateStockItemDto } from './dto/update-stock-item.dto';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
+import { ApprovePurchaseDto } from './dto/approve-purchase.dto';
+import { RejectPurchaseDto } from './dto/reject-purchase.dto';
 
 @Controller('stock')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -31,8 +34,15 @@ export class StockController {
   listItems(
     @Query('status') status?: EstoqueStatus,
     @Query('search') search?: string,
+    @Query('projetoId') projetoId?: string,
+    @Query('etapaId') etapaId?: string,
   ) {
-    return this.stockService.listItems({ status, search });
+    return this.stockService.listItems({ 
+      status, 
+      search,
+      projetoId: projetoId ? Number(projetoId) : undefined,
+      etapaId: etapaId ? Number(etapaId) : undefined,
+    });
   }
 
   @Post('items')
@@ -57,13 +67,20 @@ export class StockController {
   listPurchases(
     @Query('status') status?: CompraStatus,
     @Query('projetoId') projetoId?: string,
+    @Query('etapaId') etapaId?: string,
+    @Query('excludeSolicitado') excludeSolicitado?: string,
   ) {
-    return this.stockService.listPurchases({ status, projetoId: projetoId ? Number(projetoId) : undefined });
+    return this.stockService.listPurchases({ 
+      status, 
+      projetoId: projetoId ? Number(projetoId) : undefined,
+      etapaId: etapaId ? Number(etapaId) : undefined,
+      excludeSolicitado: excludeSolicitado === 'true',
+    });
   }
 
   @Post('purchases')
-  createPurchase(@Body() body: CreatePurchaseDto) {
-    return this.stockService.createPurchase(body);
+  createPurchase(@CurrentUser() user: { userId: number }, @Body() body: CreatePurchaseDto) {
+    return this.stockService.createPurchase(body, user.userId);
   }
 
   @Patch('purchases/:id/status')
@@ -85,5 +102,21 @@ export class StockController {
   @Delete('purchases/:id')
   deletePurchase(@Param('id', ParseIntPipe) id: number) {
     return this.stockService.deletePurchase(id);
+  }
+
+  @Post('purchases/:id/approve')
+  approvePurchase(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: ApprovePurchaseDto,
+  ) {
+    return this.stockService.approvePurchase(id, body);
+  }
+
+  @Post('purchases/:id/reject')
+  rejectPurchase(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: RejectPurchaseDto,
+  ) {
+    return this.stockService.rejectPurchase(id, body.motivoRejeicao);
   }
 }

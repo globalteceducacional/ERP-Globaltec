@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 
@@ -24,10 +24,18 @@ export class RolesGuard implements CanActivate {
 
     const cargo = user.role as string;
 
-    if (requiredRoles.includes('DIRETOR')) {
-      return cargo === 'DIRETOR';
+    // GM tem acesso a tudo
+    if (cargo === 'GM') {
+      return true;
     }
 
-    return requiredRoles.includes(cargo);
+    // Verificar se o cargo do usuário está na lista de cargos permitidos
+    const hasPermission = requiredRoles.includes(cargo);
+
+    if (!hasPermission) {
+      throw new ForbiddenException('Você não tem permissão para realizar esta ação');
+    }
+
+    return true;
   }
 }

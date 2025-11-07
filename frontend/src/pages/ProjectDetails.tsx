@@ -1,4 +1,4 @@
-import { useEffect, useState, FormEvent, useRef, ChangeEvent } from 'react';
+import { useEffect, useState, FormEvent, useRef, ChangeEvent, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
@@ -32,11 +32,7 @@ interface Etapa {
   integrantes?: Array<{ usuario: Usuario }>;
   subetapas: Subetapa[];
   entregas?: EtapaEntrega[];
-  checklistEntregas?: Array<{
-    checklistIndex: number;
-    status: 'PENDENTE' | 'EM_ANALISE' | 'APROVADO' | 'REPROVADO';
-    comentario?: string | null;
-  }>;
+  checklistEntregas?: ChecklistItemEntrega[];
 }
 
 interface EtapaEntrega {
@@ -60,10 +56,11 @@ interface Compra {
   id: number;
   item: string;
   quantidade: number;
-  valorUnitario: number;
+  valorUnitario: number | null;
   status: string;
   nfUrl?: string | null;
   comprovantePagamentoUrl?: string | null;
+  motivoRejeicao?: string | null;
 }
 
 interface ProjectDetails {
@@ -101,9 +98,30 @@ export default function ProjectDetails() {
         ? user.cargo.nome
         : undefined;
 
-  const isDiretor = cargoNome === 'DIRETOR';
+  const isDiretor = cargoNome === 'DIRETOR' || cargoNome === 'GM';
   const isSupervisor = cargoNome === 'SUPERVISOR';
-  const canReview = isDiretor || isSupervisor;
+  const permissionKeys = useMemo(() => {
+    if (!user) {
+      return new Set<string>();
+    }
+
+    const cargoData =
+      typeof user.cargo === 'string'
+        ? null
+        : user.cargo && typeof user.cargo === 'object'
+          ? (user.cargo as any)
+          : null;
+
+    if (!cargoData || !Array.isArray(cargoData.permissions)) {
+      return new Set<string>();
+    }
+
+    return new Set<string>(
+      cargoData.permissions.map((permission: any) => permission.chave ?? `${permission.modulo}:${permission.acao}`),
+    );
+  }, [user]);
+
+  const canReview = isDiretor || isSupervisor || permissionKeys.has('trabalhos:avaliar');
   const [etapaForm, setEtapaForm] = useState({
     nome: '',
     descricao: '',
@@ -114,7 +132,13 @@ export default function ProjectDetails() {
     valorInsumos: 0,
     checklist: [{ texto: '', concluido: false }],
     status: 'PENDENTE' as string,
+    estoqueItems: [] as Array<{ itemId: number; quantidade: number }>,
   });
+  const [availableStockItems, setAvailableStockItems] = useState<any[]>([]);
+  const [loadingStockItems, setLoadingStockItems] = useState(false);
+  const [stockSearchTerm, setStockSearchTerm] = useState('');
+  const [selectedStockItemId, setSelectedStockItemId] = useState<number | null>(null);
+  const [selectedStockQuantity, setSelectedStockQuantity] = useState<number>(1);
 
   const [updatingChecklist, setUpdatingChecklist] = useState<number | null>(null);
   const [showEntregaModal, setShowEntregaModal] = useState(false);
@@ -124,8 +148,23 @@ export default function ProjectDetails() {
   const [entregaPreview, setEntregaPreview] = useState<string | null>(null);
   const [enviandoEntrega, setEnviandoEntrega] = useState(false);
   const [entregaError, setEntregaError] = useState<string | null>(null);
-  const [reviewNotes, setReviewNotes] = useState<Record<number, string>>({});
-  const [reviewLoading, setReviewLoading] = useState<Record<number, boolean>>({});
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const [reviewLoading, setReviewLoading] = useState<Record<string, boolean>>({});
+  const [showViewEntregaModal, setShowViewEntregaModal] = useState(false);
+  const [selectedViewEntrega, setSelectedViewEntrega] = useState<{ etapa: Etapa; index: number; entrega: ChecklistItemEntrega } | null>(null);
+  const [etapaEstoque, setEtapaEstoque] = useState<Record<number, any[]>>({});
+  const [etapaCompras, setEtapaCompras] = useState<Record<number, any[]>>({});
+  const [loadingEstoqueCompras, setLoadingEstoqueCompras] = useState<Record<number, boolean>>({});
+  const [showCompraModal, setShowCompraModal] = useState(false);
+  const [selectedEtapaForCompra, setSelectedEtapaForCompra] = useState<Etapa | null>(null);
+  const [compraForm, setCompraForm] = useState({
+    item: '',
+    descricao: '',
+    quantidade: 1,
+    cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0 }] as Array<{ valorUnitario: number; frete: number; impostos: number; link?: string }>,
+    selectedCotacaoIndex: 0,
+    imagemUrl: '',
+  });
 
   const statusOptions = [
     { value: 'PENDENTE', label: 'Pendente' },
@@ -155,13 +194,50 @@ export default function ProjectDetails() {
     } catch (err: any) {
       const message = err.response?.data?.message ?? 'Erro ao carregar projeto';
       setError(message);
-      if (!showSpinner) {
-        throw err;
+      console.error('Erro ao atualizar projeto:', err);
+      // Não lançar erro para não causar problemas em cascata
+      // Se for erro crítico (401), o interceptor já trata
+      if (showSpinner) {
+        // Em modo spinner, apenas logar o erro
       }
     } finally {
       if (showSpinner) {
         setLoading(false);
       }
+    }
+  }
+
+  async function loadEtapaEstoqueCompras(etapaId: number) {
+    if (loadingEstoqueCompras[etapaId]) return;
+    
+    setLoadingEstoqueCompras((prev) => ({ ...prev, [etapaId]: true }));
+    try {
+      const [estoqueRes, comprasRes] = await Promise.all([
+        api.get(`/stock/items?etapaId=${etapaId}`),
+        api.get(`/stock/purchases?etapaId=${etapaId}`),
+      ]);
+      setEtapaEstoque((prev) => ({ ...prev, [etapaId]: estoqueRes.data }));
+      setEtapaCompras((prev) => ({ ...prev, [etapaId]: comprasRes.data }));
+    } catch (err) {
+      console.error('Erro ao carregar estoque/compras da etapa:', err);
+    } finally {
+      setLoadingEstoqueCompras((prev) => ({ ...prev, [etapaId]: false }));
+    }
+  }
+
+  async function loadAvailableStockItems() {
+    if (!id) return;
+    setLoadingStockItems(true);
+    try {
+      // Carregar itens de estoque do projeto ou sem etapa associada
+      const { data } = await api.get(`/stock/items?projetoId=${id}`);
+      // Filtrar apenas itens disponíveis (sem etapa ou que possam ser reatribuídos)
+      setAvailableStockItems(data || []);
+    } catch (err) {
+      console.error('Erro ao carregar itens de estoque:', err);
+      setAvailableStockItems([]);
+    } finally {
+      setLoadingStockItems(false);
     }
   }
 
@@ -178,6 +254,14 @@ export default function ProjectDetails() {
     refreshProject(true);
     loadUsers();
   }, [id]);
+
+  useEffect(() => {
+    if (project?.etapas) {
+      project.etapas.forEach((etapa) => {
+        loadEtapaEstoqueCompras(etapa.id);
+      });
+    }
+  }, [project?.etapas]);
 
   async function handleCreateEtapa(event: FormEvent) {
     event.preventDefault();
@@ -230,10 +314,46 @@ export default function ProjectDetails() {
         payload.status = etapaForm.status as string;
       }
 
+      let etapaId: number;
       if (editingEtapa) {
-        await api.patch(`/tasks/${editingEtapa.id}`, payload);
+        const updated = await api.patch(`/tasks/${editingEtapa.id}`, payload);
+        etapaId = editingEtapa.id;
+        
+        // Se estiver editando, desvincular itens que não estão mais selecionados
+        try {
+          const { data: currentItems } = await api.get(`/stock/items?etapaId=${etapaId}`);
+          const currentItemIds = (currentItems || []).map((item: any) => item.id);
+          const selectedItemIds = etapaForm.estoqueItems.map((item) => item.itemId);
+          const itemsToRemove = currentItemIds.filter((id: number) => !selectedItemIds.includes(id));
+          
+          // Desvincular itens removidos
+          await Promise.all(
+            itemsToRemove.map((itemId: number) =>
+              api.patch(`/stock/items/${itemId}`, { etapaId: null })
+            )
+          );
+        } catch (err) {
+          console.error('Erro ao desvincular itens de estoque da etapa:', err);
+        }
       } else {
-        await api.post('/tasks', payload);
+        const created = await api.post('/tasks', payload);
+        etapaId = created.data.id;
+      }
+
+      // Relacionar itens de estoque selecionados com a etapa
+      if (etapaForm.estoqueItems && etapaForm.estoqueItems.length > 0) {
+        try {
+          await Promise.all(
+            etapaForm.estoqueItems.map((estoqueItem) =>
+              api.patch(`/stock/items/${estoqueItem.itemId}`, { 
+                etapaId,
+                quantidade: estoqueItem.quantidade 
+              })
+            )
+          );
+        } catch (err) {
+          console.error('Erro ao relacionar itens de estoque com a etapa:', err);
+        }
       }
 
       setShowEtapaModal(false);
@@ -248,10 +368,16 @@ export default function ProjectDetails() {
         valorInsumos: 0,
         checklist: [{ texto: '', concluido: false }],
         status: 'PENDENTE',
+        estoqueItems: [],
       });
+      setStockSearchTerm('');
+      setSelectedStockItemId(null);
+      setSelectedStockQuantity(1);
 
       // Recarregar o projeto
       await refreshProject();
+      // Recarregar estoque/compras da etapa
+      await loadEtapaEstoqueCompras(etapaId);
     } catch (err: any) {
       let errorMessage = editingEtapa ? 'Erro ao atualizar etapa' : 'Erro ao criar etapa';
       if (err.response?.data?.message) {
@@ -277,7 +403,7 @@ export default function ProjectDetails() {
     }
   }
 
-  function handleEditEtapa(etapa: Etapa) {
+  async function handleEditEtapa(etapa: Etapa) {
     setEditingEtapa(etapa);
     
     // Formatar datas para datetime-local
@@ -291,6 +417,20 @@ export default function ProjectDetails() {
       const minutes = String(date.getMinutes()).padStart(2, '0');
       return `${year}-${month}-${day}T${hours}:${minutes}`;
     };
+
+    // Carregar itens de estoque relacionados à etapa
+    let estoqueItems: Array<{ itemId: number; quantidade: number }> = [];
+    try {
+      const { data } = await api.get(`/stock/items?etapaId=${etapa.id}`);
+      if (data && Array.isArray(data)) {
+        estoqueItems = data.map((item: any) => ({
+          itemId: item.id,
+          quantidade: item.quantidade || 1,
+        }));
+      }
+    } catch (err) {
+      console.error('Erro ao carregar itens de estoque da etapa:', err);
+    }
 
     setEtapaForm({
       nome: etapa.nome || '',
@@ -308,7 +448,11 @@ export default function ProjectDetails() {
             }))
           : [{ texto: '', concluido: false }],
       status: etapa.status || 'PENDENTE',
+      estoqueItems,
     });
+    
+    // Carregar itens de estoque disponíveis
+    await loadAvailableStockItems();
     setShowEtapaModal(true);
   }
 
@@ -405,38 +549,38 @@ export default function ProjectDetails() {
   }
 
   function handleReviewNoteChange(etapaId: number, value: string) {
-    setReviewNotes((prev) => ({ ...prev, [etapaId]: value }));
+    setReviewNotes((prev) => ({ ...prev, [String(etapaId)]: value }));
   }
 
   async function handleApproveEtapa(etapaId: number) {
-    setReviewLoading((prev) => ({ ...prev, [etapaId]: true }));
+    setReviewLoading((prev) => ({ ...prev, [String(etapaId)]: true }));
     try {
       setError(null);
       await api.post(`/tasks/${etapaId}/approve`, {
-        comentario: reviewNotes[etapaId]?.trim() || undefined,
+        comentario: reviewNotes[String(etapaId)]?.trim() || undefined,
       });
-      setReviewNotes((prev) => ({ ...prev, [etapaId]: '' }));
+      setReviewNotes((prev) => ({ ...prev, [String(etapaId)]: '' }));
       await refreshProject();
     } catch (err: any) {
       setError(err.response?.data?.message ?? 'Falha ao aprovar a entrega');
     } finally {
-      setReviewLoading((prev) => ({ ...prev, [etapaId]: false }));
+      setReviewLoading((prev) => ({ ...prev, [String(etapaId)]: false }));
     }
   }
 
   async function handleRejectEtapa(etapaId: number) {
-    setReviewLoading((prev) => ({ ...prev, [etapaId]: true }));
+    setReviewLoading((prev) => ({ ...prev, [String(etapaId)]: true }));
     try {
       setError(null);
       await api.post(`/tasks/${etapaId}/reject`, {
-        reason: reviewNotes[etapaId]?.trim() || undefined,
+        reason: reviewNotes[String(etapaId)]?.trim() || undefined,
       });
       setReviewNotes((prev) => ({ ...prev, [etapaId]: '' }));
       await refreshProject();
     } catch (err: any) {
       setError(err.response?.data?.message ?? 'Falha ao recusar a entrega');
     } finally {
-      setReviewLoading((prev) => ({ ...prev, [etapaId]: false }));
+      setReviewLoading((prev) => ({ ...prev, [String(etapaId)]: false }));
     }
   }
 
@@ -470,6 +614,8 @@ export default function ProjectDetails() {
       EM_ANALISE: 'Em Análise',
       APROVADA: 'Aprovada',
       REPROVADA: 'Recusada',
+      SOLICITADO: 'Solicitado',
+      REPROVADO: 'Reprovado',
       COMPRADO_ACAMINHO: 'Comprado/A Caminho',
       ENTREGUE: 'Entregue',
     };
@@ -531,6 +677,11 @@ export default function ProjectDetails() {
   const etapasConcluidas = project.etapas.filter((e) => e.status === 'EM_ANALISE' || e.status === 'APROVADA').length;
   const progresso = totalEtapas > 0 ? Math.round((etapasConcluidas / totalEtapas) * 100) : 0;
 
+  // Calcular valorInsumos como soma das etapas (garantia de que sempre está correto)
+  const valorInsumosCalculado = project.etapas.reduce((sum, etapa) => {
+    return sum + (etapa.valorInsumos || 0);
+  }, 0);
+
   const projectStatusForDisplay = progresso === 0
     ? 'PENDENTE'
     : progresso === 100
@@ -585,7 +736,7 @@ export default function ProjectDetails() {
             <div>
               <label className="text-sm text-white/70">Valor Insumos</label>
               <p className="mt-1 text-lg font-semibold">
-                {project.valorInsumos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {valorInsumosCalculado.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
               </p>
             </div>
           </div>
@@ -612,7 +763,11 @@ export default function ProjectDetails() {
             <p className="mt-1 text-white/90">
               {project.supervisor ? (
                 <span>
-                  {project.supervisor.nome} <span className="text-white/50">({project.supervisor.email})</span>
+                  {project.supervisor.nome} <span className="text-white/50">
+                    ({typeof project.supervisor.cargo === 'string' 
+                      ? project.supervisor.cargo 
+                      : (project.supervisor.cargo?.nome || 'Sem cargo')}) - {project.supervisor.email}
+                  </span>
                 </span>
               ) : (
                 '—'
@@ -626,17 +781,18 @@ export default function ProjectDetails() {
             </label>
             {project.responsaveis.length > 0 ? (
               <div className="mt-2 space-y-1">
-                {project.responsaveis.map((resp) => {
-                  if (!resp.usuario) return null;
-                  const cargoNome = typeof resp.usuario.cargo === 'string' 
-                    ? resp.usuario.cargo 
-                    : (resp.usuario.cargo?.nome || 'Sem cargo');
-                  return (
-                    <div key={resp.id} className="text-sm text-white/90">
-                      • {resp.usuario.nome} <span className="text-white/50">({cargoNome})</span>
-                    </div>
-                  );
-                })}
+                {project.responsaveis
+                  .filter((resp) => resp.usuario)
+                  .map((resp) => {
+                    const cargoNome = typeof resp.usuario!.cargo === 'string' 
+                      ? resp.usuario!.cargo 
+                      : (resp.usuario!.cargo?.nome || 'Sem cargo');
+                    return (
+                      <div key={resp.id || `responsavel-${resp.usuario!.id}`} className="text-sm text-white/90">
+                        • {resp.usuario!.nome} <span className="text-white/50">({cargoNome})</span>
+                      </div>
+                    );
+                  })}
               </div>
             ) : (
               <p className="mt-1 text-white/50">Nenhum responsável atribuído</p>
@@ -672,7 +828,7 @@ export default function ProjectDetails() {
         </h3>
           {isDiretor && (
             <button
-              onClick={() => {
+              onClick={async () => {
                 setEditingEtapa(null);
                 setEtapaForm({
                   nome: '',
@@ -684,7 +840,10 @@ export default function ProjectDetails() {
                   valorInsumos: 0,
                   checklist: [{ texto: '', concluido: false }],
                   status: 'PENDENTE',
+                  estoqueItems: [],
                 });
+                // Carregar itens de estoque disponíveis
+                await loadAvailableStockItems();
                 setShowEtapaModal(true);
               }}
               className={buttonStyles.primary}
@@ -721,8 +880,8 @@ export default function ProjectDetails() {
               // Permitir marcar checklist livremente (sem restrição de executor)
               const podeMarcarChecklist = true;
               const awaitingReview = latestEntrega?.status === 'EM_ANALISE';
-              const reviewValue = reviewNotes[etapa.id] ?? '';
-              const isReviewing = reviewLoading[etapa.id] ?? false;
+              const reviewValue = reviewNotes[String(etapa.id)] ?? '';
+              const isReviewing = reviewLoading[String(etapa.id)] ?? false;
 
               return (
                 <div key={etapa.id} className="bg-neutral/60 border border-white/10 rounded-lg p-4">
@@ -776,15 +935,14 @@ export default function ProjectDetails() {
                     {etapa.integrantes && etapa.integrantes.length > 0 && (
                       <div>
                         <span className="font-medium">Integrantes:</span>{' '}
-                        {etapa.integrantes.map((i, idx) => {
-                          if (!i.usuario) return null;
-                          return (
-                            <span key={i.usuario.id || idx}>
-                              {i.usuario.nome}
-                              {idx < etapa.integrantes.length - 1 ? ', ' : ''}
+                        {etapa.integrantes
+                          .filter((i) => i.usuario)
+                          .map((i, idx, arr) => (
+                            <span key={i.usuario?.id || `integrante-${idx}`}>
+                              {i.usuario?.nome}
+                              {idx < arr.length - 1 ? ', ' : ''}
                             </span>
-                          );
-                        })}
+                          ))}
                       </div>
                     )}
                     {etapa.dataInicio && (
@@ -915,9 +1073,10 @@ export default function ProjectDetails() {
                           const entregaItem = etapa.checklistEntregas?.find((e) => e.checklistIndex === index);
                           const statusItem = entregaItem?.status ?? 'PENDENTE';
                           const canApprove = canReview && statusItem === 'EM_ANALISE';
+                          const itemLoading = reviewLoading[`${etapa.id}-${index}`] ?? false;
                           return (
                             <div
-                              key={index}
+                              key={`${etapa.id}-checklist-${index}`}
                               className={`flex items-center gap-2 text-sm ${isExecutor ? 'hover:bg-white/5 p-1 rounded' : ''}`}
                             >
                               <input
@@ -949,49 +1108,86 @@ export default function ProjectDetails() {
                                   ? 'Aprovado'
                                   : 'Reprovado'}
                               </span>
+                              {entregaItem && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
+                                    setShowViewEntregaModal(true);
+                                  }}
+                                  className="ml-2 px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                                  title="Ver detalhes da entrega"
+                                >
+                                  Ver detalhes
+                                </button>
+                              )}
                               {canApprove && (
-                                <div className="ml-2 flex items-center gap-1">
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      try {
-                                        setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: true } as any));
-                                        await api.patch(`/tasks/${etapa.id}/checklist/${index}/review`, {
-                                          status: 'APROVADO',
-                                          comentario: reviewNotes[`${etapa.id}-${index}` as any]?.trim() || undefined,
-                                        });
-                                        setReviewNotes((prev) => ({ ...prev, [`${etapa.id}-${index}`]: '' } as any));
-                                        await refreshProject();
-                                      } catch (err: any) {
-                                        setError(err.response?.data?.message ?? 'Falha ao aprovar objetivo');
-                                      } finally {
-                                        setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: false } as any));
-                                      }
-                                    }}
-                                    className="px-2 py-0.5 rounded text-xs bg-success/20 hover:bg-success/30 text-success border border-success/30"
-                                  >
-                                    Aprovar
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      try {
-                                        setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: true } as any));
-                                        await api.patch(`/tasks/${etapa.id}/checklist/${index}/review`, {
-                                          status: 'REPROVADO',
-                                          comentario: reviewNotes[`${etapa.id}-${index}` as any]?.trim() || undefined,
-                                        });
-                                        await refreshProject();
-                                      } catch (err: any) {
-                                        setError(err.response?.data?.message ?? 'Falha ao recusar objetivo');
-                                      } finally {
-                                        setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: false } as any));
-                                      }
-                                    }}
-                                    className="px-2 py-0.5 rounded text-xs bg-danger/20 hover:bg-danger/30 text-danger border border-danger/30"
-                                  >
-                                    Recusar
-                                  </button>
+                                <div className="ml-2 flex flex-col gap-2">
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={async (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        try {
+                                          setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: true }));
+                                          setError(null);
+                                          await api.patch(`/tasks/${etapa.id}/checklist/${index}/review`, {
+                                            status: 'APROVADO',
+                                            comentario: reviewNotes[`${etapa.id}-${index}`]?.trim() || undefined,
+                                          });
+                                          setReviewNotes((prev) => ({ ...prev, [`${etapa.id}-${index}`]: '' }));
+                                          await refreshProject(false);
+                                        } catch (err: any) {
+                                          const message = err.response?.data?.message ?? 'Falha ao aprovar objetivo';
+                                          setError(message);
+                                          console.error('Erro ao aprovar:', err);
+                                        } finally {
+                                          setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: false }));
+                                        }
+                                      }}
+                                      className="px-2 py-0.5 rounded text-xs bg-success/20 hover:bg-success/30 text-success border border-success/30"
+                                      disabled={itemLoading}
+                                    >
+                                      Aprovar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={async (e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        try {
+                                          setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: true }));
+                                          setError(null);
+                                          await api.patch(`/tasks/${etapa.id}/checklist/${index}/review`, {
+                                            status: 'REPROVADO',
+                                            comentario: reviewNotes[`${etapa.id}-${index}`]?.trim() || undefined,
+                                          });
+                                          await refreshProject(false);
+                                        } catch (err: any) {
+                                          const message = err.response?.data?.message ?? 'Falha ao recusar objetivo';
+                                          setError(message);
+                                          console.error('Erro ao recusar:', err);
+                                        } finally {
+                                          setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: false }));
+                                        }
+                                      }}
+                                      className="px-2 py-0.5 rounded text-xs bg-danger/20 hover:bg-danger/30 text-danger border border-danger/30"
+                                      disabled={itemLoading}
+                                    >
+                                      Recusar
+                                    </button>
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={reviewNotes[`${etapa.id}-${index}`] ?? ''}
+                                    onChange={(e) =>
+                                      setReviewNotes((prev) => ({ ...prev, [`${etapa.id}-${index}`]: e.target.value }))
+                                    }
+                                    placeholder="Comentário (opcional)"
+                                    disabled={itemLoading}
+                                    className="bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                                  />
                                 </div>
                               )}
                             </div>
@@ -1027,6 +1223,87 @@ export default function ProjectDetails() {
                       </div>
                     </div>
                   )}
+
+                  {/* Estoque e Compras da Etapa */}
+                  <div className="mt-3 pt-3 border-t border-white/10">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs text-white/70 block font-medium">
+                        Estoque e Compras
+                      </label>
+                      {(isDiretor || isSupervisor) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedEtapaForCompra(etapa);
+                            setCompraForm({
+                              item: '',
+                              descricao: '',
+                              quantidade: 1,
+                              cotacoes: [],
+                              selectedCotacaoIndex: 0,
+                              imagemUrl: '',
+                            });
+                            setShowCompraModal(true);
+                          }}
+                          className="px-2 py-1 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                        >
+                          + Solicitar Compra
+                        </button>
+                      )}
+                    </div>
+                    
+                    {loadingEstoqueCompras[etapa.id] ? (
+                      <p className="text-xs text-white/50">Carregando...</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {/* Estoque */}
+                        {etapaEstoque[etapa.id] && etapaEstoque[etapa.id].length > 0 && (
+                          <div>
+                            <p className="text-xs text-white/60 mb-1">Estoque ({etapaEstoque[etapa.id].length}):</p>
+                            <div className="space-y-1">
+                              {etapaEstoque[etapa.id].map((item: any) => (
+                                <div key={item.id} className="text-xs text-white/80 flex items-center justify-between bg-white/5 p-2 rounded">
+                                  <span>{item.item} - Qtd: {item.quantidade}</span>
+                                  <span className="text-primary">
+                                    {item.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {/* Compras */}
+                        {etapaCompras[etapa.id] && etapaCompras[etapa.id].length > 0 && (
+                          <div>
+                            <p className="text-xs text-white/60 mb-1">Compras ({etapaCompras[etapa.id].length}):</p>
+                            <div className="space-y-1">
+                              {etapaCompras[etapa.id].map((compra: any) => (
+                                <div key={compra.id} className="text-xs text-white/80 flex items-center justify-between bg-white/5 p-2 rounded">
+                                  <span>{compra.item} - Qtd: {compra.quantidade}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-primary">
+                                      {compra.valorUnitario 
+                                        ? (compra.quantidade * compra.valorUnitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                                        : 'Aguardando cotação'}
+                                    </span>
+                                    <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(compra.status)}`}>
+                                      {getStatusLabel(compra.status)}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {(!etapaEstoque[etapa.id] || etapaEstoque[etapa.id].length === 0) &&
+                         (!etapaCompras[etapa.id] || etapaCompras[etapa.id].length === 0) && (
+                          <p className="text-xs text-white/50">Nenhum item de estoque ou compra relacionada</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -1053,17 +1330,30 @@ export default function ProjectDetails() {
               </thead>
               <tbody>
                 {project.compras.map((compra) => (
-                  <tr key={compra.id} className="border-t border-white/5">
-                    <td className="px-4 py-2">{compra.item}</td>
+                  <tr key={compra.id} className={`border-t border-white/5 ${compra.status === 'REPROVADO' ? 'bg-red-500/10' : ''}`}>
+                    <td className="px-4 py-2">
+                      <div>
+                        <div>{compra.item}</div>
+                        {compra.status === 'REPROVADO' && compra.motivoRejeicao && (
+                          <div className="text-xs text-red-300 mt-1">
+                            Motivo: {compra.motivoRejeicao}
+                          </div>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-2">{compra.quantidade}</td>
                     <td className="px-4 py-2">
-                      {compra.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      {compra.valorUnitario 
+                        ? compra.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                        : 'Aguardando cotação'}
                     </td>
                     <td className="px-4 py-2 font-semibold">
-                      {(compra.quantidade * compra.valorUnitario).toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                      })}
+                      {compra.valorUnitario 
+                        ? (compra.quantidade * compra.valorUnitario).toLocaleString('pt-BR', {
+                            style: 'currency',
+                            currency: 'BRL',
+                          })
+                        : 'Aguardando cotação'}
                     </td>
                     <td className="px-4 py-2">
                       <span className={`px-2 py-1 rounded text-xs ${getStatusColor(compra.status)}`}>
@@ -1161,6 +1451,208 @@ export default function ProjectDetails() {
         </div>
       )}
 
+      {/* Modal Visualizar Entrega */}
+      {showViewEntregaModal && selectedViewEntrega && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-white/20 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-white">Detalhes da Entrega</h2>
+                <p className="text-sm text-white/60 mt-1">
+                  {selectedViewEntrega.etapa.nome} • Objetivo #{selectedViewEntrega.index + 1}
+                </p>
+                {selectedViewEntrega.etapa.checklistJson && selectedViewEntrega.etapa.checklistJson[selectedViewEntrega.index] && (
+                  <p className="text-xs text-white/40 mt-1">
+                    {selectedViewEntrega.etapa.checklistJson[selectedViewEntrega.index]?.texto}
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowViewEntregaModal(false);
+                  setSelectedViewEntrega(null);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
+                  Descrição
+                </label>
+                <div className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-3 text-white whitespace-pre-wrap min-h-[100px]">
+                  {selectedViewEntrega.entrega.descricao || 'Não informada'}
+                </div>
+              </div>
+
+              {/* Imagens - usar array se disponível, senão usar campo único (compatibilidade) */}
+              {(() => {
+                const imagens = selectedViewEntrega.entrega.imagensUrls && Array.isArray(selectedViewEntrega.entrega.imagensUrls) && selectedViewEntrega.entrega.imagensUrls.length > 0
+                  ? selectedViewEntrega.entrega.imagensUrls
+                  : selectedViewEntrega.entrega.imagemUrl
+                    ? [selectedViewEntrega.entrega.imagemUrl]
+                    : [];
+                
+                return imagens.length > 0 ? (
+                  <div>
+                    <label className="block text-sm font-medium text-white/90 mb-2">
+                      Imagens ({imagens.length})
+                    </label>
+                    <div className="space-y-3">
+                      {imagens.map((url, index) => (
+                        <img
+                          key={index}
+                          src={url}
+                          alt={`Imagem ${index + 1} da entrega`}
+                          className="w-full rounded-md border border-white/20 max-h-96 object-contain bg-white/5"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+
+              {/* Documentos - usar array se disponível, senão usar campo único (compatibilidade) */}
+              {(() => {
+                const documentos = selectedViewEntrega.entrega.documentosUrls && Array.isArray(selectedViewEntrega.entrega.documentosUrls) && selectedViewEntrega.entrega.documentosUrls.length > 0
+                  ? selectedViewEntrega.entrega.documentosUrls
+                  : selectedViewEntrega.entrega.documentoUrl
+                    ? [selectedViewEntrega.entrega.documentoUrl]
+                    : [];
+                
+                return documentos.length > 0 ? (
+                  <div>
+                    <label className="block text-sm font-medium text-white/90 mb-2">
+                      Documentos ({documentos.length})
+                    </label>
+                    <div className="space-y-2">
+                      {documentos.map((url, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => {
+                            try {
+                              if (url.startsWith('data:')) {
+                                // Base64 - criar blob e abrir
+                                const parts = url.split(',');
+                                if (parts.length < 2) {
+                                  alert('Formato de documento inválido');
+                                  return;
+                                }
+                                const byteString = atob(parts[1]);
+                                const mimeString = parts[0].split(':')[1].split(';')[0];
+                                const ab = new ArrayBuffer(byteString.length);
+                                const ia = new Uint8Array(ab);
+                                for (let i = 0; i < byteString.length; i++) {
+                                  ia[i] = byteString.charCodeAt(i);
+                                }
+                                const blob = new Blob([ab], { type: mimeString });
+                                const blobUrl = URL.createObjectURL(blob);
+                                const newWindow = window.open(blobUrl, '_blank');
+                                if (!newWindow) {
+                                  alert('Por favor, permita pop-ups para visualizar o documento');
+                                  URL.revokeObjectURL(blobUrl);
+                                  return;
+                                }
+                                // Limpar após um tempo
+                                setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+                              } else {
+                                // URL externa - abrir diretamente
+                                window.open(url, '_blank');
+                              }
+                            } catch (error) {
+                              console.error('Erro ao abrir documento:', error);
+                              alert('Erro ao abrir documento. Tente novamente.');
+                            }
+                          }}
+                          className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                        >
+                          <span>📄</span>
+                          <span>Abrir documento {index + 1}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null;
+              })()}
+
+              <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/20">
+                <div>
+                  <label className="block text-xs text-white/60 mb-1">Enviado por</label>
+                  <p className="text-sm text-white/90">
+                    {selectedViewEntrega.entrega.executor?.nome ?? 'Usuário'}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs text-white/60 mb-1">Data de envio</label>
+                  <p className="text-sm text-white/90">
+                    {new Date(selectedViewEntrega.entrega.dataEnvio).toLocaleString('pt-BR')}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-xs text-white/60 mb-1">Status</label>
+                  <span
+                    className={`inline-block px-2 py-1 rounded text-xs ${
+                      selectedViewEntrega.entrega.status === 'EM_ANALISE'
+                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                        : selectedViewEntrega.entrega.status === 'APROVADO'
+                        ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                        : selectedViewEntrega.entrega.status === 'REPROVADO'
+                        ? 'bg-danger/20 text-danger border border-danger/40'
+                        : 'bg-white/10 text-white/70 border border-white/20'
+                    }`}
+                  >
+                    {selectedViewEntrega.entrega.status === 'PENDENTE'
+                      ? 'Pendente'
+                      : selectedViewEntrega.entrega.status === 'EM_ANALISE'
+                      ? 'Em análise'
+                      : selectedViewEntrega.entrega.status === 'APROVADO'
+                      ? 'Aprovado'
+                      : 'Reprovado'}
+                  </span>
+                </div>
+                {selectedViewEntrega.entrega.avaliadoPor && (
+                  <div>
+                    <label className="block text-xs text-white/60 mb-1">Avaliado por</label>
+                    <p className="text-sm text-white/90">
+                      {selectedViewEntrega.entrega.avaliadoPor.nome}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {selectedViewEntrega.entrega.comentario && (
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">
+                    Comentário da avaliação
+                  </label>
+                  <div className="w-full bg-warning/10 border border-warning/30 rounded-md px-4 py-3 text-warning whitespace-pre-wrap">
+                    {selectedViewEntrega.entrega.comentario}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex justify-end pt-4 border-t border-white/20">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowViewEntregaModal(false);
+                    setSelectedViewEntrega(null);
+                  }}
+                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal Adicionar Etapa */}
       {showEtapaModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -1184,7 +1676,11 @@ export default function ProjectDetails() {
                     valorInsumos: 0,
                     checklist: [{ texto: '', concluido: false }],
                     status: 'PENDENTE',
+                    estoqueItems: [],
                   });
+                  setStockSearchTerm('');
+                  setSelectedStockItemId(null);
+                  setSelectedStockQuantity(1);
                 }}
                 className="text-white/50 hover:text-white transition-colors text-2xl"
               >
@@ -1221,20 +1717,34 @@ export default function ProjectDetails() {
                   required
                   value={etapaForm.executorId}
                   onChange={(e) => setEtapaForm({ ...etapaForm, executorId: Number(e.target.value) })}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem'
+                  }}
                 >
                   <option value="0" className="bg-neutral text-white">Selecione um responsável...</option>
-                  {users.map((user) => {
-                    if (!user) return null;
-                    const cargoNome = typeof user.cargo === 'string' 
-                      ? user.cargo 
-                      : (user.cargo?.nome || 'Sem cargo');
-                    return (
-                      <option key={user.id} value={user.id} className="bg-neutral text-white">
-                        {user.nome} ({cargoNome})
-                      </option>
-                    );
-                  })}
+                  {users
+                    .filter((user) => {
+                      if (!user) return false;
+                      // Filtrar responsáveis do projeto e o supervisor
+                      const isResponsavel = project?.responsaveis?.some((resp) => resp.usuario?.id === user.id) || false;
+                      const isSupervisor = project?.supervisor?.id === user.id;
+                      return isResponsavel || isSupervisor;
+                    })
+                    .map((user) => {
+                      if (!user) return null;
+                      const cargoNome = typeof user.cargo === 'string' 
+                        ? user.cargo 
+                        : (user.cargo?.nome || 'Sem cargo');
+                      return (
+                        <option key={user.id} value={user.id} className="bg-neutral text-white">
+                          {user.nome} ({cargoNome})
+                        </option>
+                      );
+                    })}
                 </select>
               </div>
 
@@ -1273,11 +1783,24 @@ export default function ProjectDetails() {
                       integrantesSelectRef.current.value = '';
                     }
                   }}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem'
+                  }}
                 >
                   <option value="" className="bg-neutral text-white">Selecione um integrante...</option>
                   {users
-                    .filter((user) => user && user.id !== etapaForm.executorId && !etapaForm.integrantesIds.includes(user.id))
+                    .filter((user) => {
+                      if (!user) return false;
+                      // Filtrar responsáveis do projeto e o supervisor
+                      const isResponsavel = project?.responsaveis?.some((resp) => resp.usuario?.id === user.id) || false;
+                      const isSupervisor = project?.supervisor?.id === user.id;
+                      // Não mostrar o executor nem os já selecionados
+                      return (isResponsavel || isSupervisor) && user.id !== etapaForm.executorId && !etapaForm.integrantesIds.includes(user.id);
+                    })
                     .map((user) => {
                       if (!user) return null;
                       const cargoNome = typeof user.cargo === 'string' 
@@ -1367,7 +1890,7 @@ export default function ProjectDetails() {
                 <label className="block text-sm font-medium text-white/90 mb-2">Checklist de Objetos</label>
                 <div className="space-y-2">
                   {etapaForm.checklist.map((item, index) => (
-                    <div key={index} className="flex gap-2">
+                    <div key={`checklist-item-${index}`} className="flex gap-2">
                       <input
                         type="text"
                         value={item.texto}
@@ -1408,6 +1931,148 @@ export default function ProjectDetails() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Itens do Estoque</label>
+                
+                {/* Campo de pesquisa */}
+                <input
+                  type="text"
+                  value={stockSearchTerm}
+                  onChange={(e) => setStockSearchTerm(e.target.value)}
+                  placeholder="Pesquisar itens do estoque..."
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary mb-3"
+                />
+
+                {/* Seleção de item e quantidade */}
+                <div className="flex gap-2 mb-3">
+                  <select
+                    value={selectedStockItemId || ''}
+                    onChange={(e) => {
+                      const itemId = e.target.value ? Number(e.target.value) : null;
+                      setSelectedStockItemId(itemId);
+                      if (itemId) {
+                        const item = availableStockItems.find((i) => i.id === itemId);
+                        if (item) {
+                          setSelectedStockQuantity(Math.min(1, item.quantidade || 1));
+                        } else {
+                          setSelectedStockQuantity(1);
+                        }
+                      } else {
+                        setSelectedStockQuantity(1);
+                      }
+                    }}
+                    className="flex-1 bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 1rem center',
+                      paddingRight: '2.5rem'
+                    }}
+                    disabled={loadingStockItems}
+                  >
+                    <option value="" className="bg-neutral text-white">
+                      {loadingStockItems ? 'Carregando...' : 'Selecione um item...'}
+                    </option>
+                    {availableStockItems
+                      .filter((item) => {
+                        // Filtrar por pesquisa
+                        if (stockSearchTerm.trim()) {
+                          const searchLower = stockSearchTerm.toLowerCase();
+                          const itemName = (item.item || '').toLowerCase();
+                          const itemDesc = (item.descricao || '').toLowerCase();
+                          if (!itemName.includes(searchLower) && !itemDesc.includes(searchLower)) {
+                            return false;
+                          }
+                        }
+                        // Filtrar itens já selecionados
+                        return !etapaForm.estoqueItems.some((ei) => ei.itemId === item.id);
+                      })
+                      .map((item) => (
+                        <option key={item.id} value={item.id} className="bg-neutral text-white">
+                          {item.item} - Disponível: {item.quantidade} - {item.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </option>
+                      ))}
+                  </select>
+                  
+                  {selectedStockItemId && (
+                    <>
+                      <input
+                        type="number"
+                        min="1"
+                        max={availableStockItems.find((i) => i.id === selectedStockItemId)?.quantidade || 1}
+                        value={selectedStockQuantity}
+                        onChange={(e) => setSelectedStockQuantity(Math.max(1, Number(e.target.value)))}
+                        placeholder="Qtd"
+                        className="w-24 bg-white/10 border border-white/30 rounded-md px-3 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (selectedStockItemId && selectedStockQuantity > 0) {
+                            const item = availableStockItems.find((i) => i.id === selectedStockItemId);
+                            if (item && selectedStockQuantity <= item.quantidade) {
+                              setEtapaForm({
+                                ...etapaForm,
+                                estoqueItems: [
+                                  ...etapaForm.estoqueItems,
+                                  { itemId: selectedStockItemId, quantidade: selectedStockQuantity },
+                                ],
+                              });
+                              setSelectedStockItemId(null);
+                              setSelectedStockQuantity(1);
+                              setStockSearchTerm('');
+                            }
+                          }
+                        }}
+                        className="px-4 py-2.5 bg-primary hover:bg-primary/80 text-white rounded-md transition-colors font-medium"
+                      >
+                        Adicionar
+                      </button>
+                    </>
+                  )}
+                </div>
+
+                {/* Lista de itens selecionados */}
+                {etapaForm.estoqueItems.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {etapaForm.estoqueItems.map((estoqueItem, index) => {
+                      const item = availableStockItems.find((i) => i.id === estoqueItem.itemId);
+                      if (!item) return null;
+                      return (
+                        <div
+                          key={`${estoqueItem.itemId}-${index}`}
+                          className="flex items-center justify-between bg-white/5 border border-white/10 rounded-md px-3 py-2"
+                        >
+                          <div className="flex-1">
+                            <span className="text-sm text-white/90 font-medium">{item.item}</span>
+                            <div className="text-xs text-white/60 mt-1">
+                              Quantidade: {estoqueItem.quantidade} | 
+                              Valor Unitário: {item.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} | 
+                              Total: {(item.valorUnitario * estoqueItem.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEtapaForm({
+                                ...etapaForm,
+                                estoqueItems: etapaForm.estoqueItems.filter((_, i) => i !== index),
+                              });
+                            }}
+                            className="text-danger hover:text-danger/80 text-sm font-medium transition-colors ml-3"
+                          >
+                            Remover
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {etapaForm.estoqueItems.length === 0 && (
+                  <p className="text-xs text-white/50 mt-2">Nenhum item de estoque selecionado</p>
+                )}
+              </div>
+
               {error && (
                 <div className="bg-danger/20 border border-danger/50 text-danger px-4 py-3 rounded-md text-sm">
                   {error}
@@ -1425,12 +2090,17 @@ export default function ProjectDetails() {
                       nome: '',
                       descricao: '',
                       executorId: 0,
+                      integrantesIds: [],
                       dataInicio: '',
                       dataFim: '',
                       valorInsumos: 0,
                       checklist: [{ texto: '', concluido: false }],
                       status: 'PENDENTE',
+                      estoqueItems: [],
                     });
+                    setStockSearchTerm('');
+                    setSelectedStockItemId(null);
+                    setSelectedStockQuantity(1);
                   }}
                   className={buttonStyles.secondary}
                 >
@@ -1442,6 +2112,271 @@ export default function ProjectDetails() {
                   className={`${buttonStyles.primary} disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   {submitting ? (editingEtapa ? 'Salvando...' : 'Criando...') : editingEtapa ? 'Salvar Alterações' : 'Criar Etapa'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Criar Compra a partir de Etapa */}
+      {showCompraModal && selectedEtapaForCompra && project && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-6 py-4 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-white">Solicitar Compra</h2>
+                <p className="text-sm text-white/60 mt-1">Etapa: {selectedEtapaForCompra.nome}</p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowCompraModal(false);
+                  setSelectedEtapaForCompra(null);
+                  setError(null);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                setSubmitting(true);
+                setError(null);
+                try {
+                  const payload: any = {
+                    projetoId: project.id,
+                    etapaId: selectedEtapaForCompra.id,
+                    item: compraForm.item.trim(),
+                    quantidade: Number(compraForm.quantidade),
+                  };
+
+                  // Se houver cotações, adicionar ao payload
+                  if (compraForm.cotacoes && compraForm.cotacoes.length > 0) {
+                    const selectedCotacao = compraForm.cotacoes[compraForm.selectedCotacaoIndex ?? 0];
+                    if (selectedCotacao) {
+                      const totalPorUnidade = selectedCotacao.valorUnitario + selectedCotacao.frete + selectedCotacao.impostos;
+                      payload.valorUnitario = Number(totalPorUnidade.toFixed(2));
+                      payload.cotacoes = compraForm.cotacoes;
+                    }
+                  }
+
+                  if (compraForm.descricao && compraForm.descricao.trim().length > 0) {
+                    payload.descricao = compraForm.descricao.trim();
+                  }
+
+                  await api.post('/stock/purchases', payload);
+                  
+                  setShowCompraModal(false);
+                  setSelectedEtapaForCompra(null);
+                  setCompraForm({
+                    item: '',
+                    descricao: '',
+                    quantidade: 1,
+                    cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0 }],
+                    selectedCotacaoIndex: 0,
+                    imagemUrl: '',
+                  });
+                  
+                  await loadEtapaEstoqueCompras(selectedEtapaForCompra.id);
+                  await refreshProject();
+                } catch (err: any) {
+                  const message = err.response?.data?.message ?? 'Erro ao criar compra';
+                  setError(typeof message === 'string' ? message : JSON.stringify(message));
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+              className="p-6 space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
+                  Item <span className="text-danger">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={compraForm.item}
+                  onChange={(e) => setCompraForm((prev) => ({ ...prev, item: e.target.value }))}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Nome do item"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Descrição</label>
+                <textarea
+                  value={compraForm.descricao}
+                  onChange={(e) => setCompraForm((prev) => ({ ...prev, descricao: e.target.value }))}
+                  rows={3}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Descrição do item"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
+                  Quantidade <span className="text-danger">*</span>
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  value={compraForm.quantidade}
+                  onChange={(e) => setCompraForm((prev) => ({ ...prev, quantidade: Number(e.target.value) }))}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
+                  Cotações <span className="text-white/50 text-xs">(opcional - se não houver, será criada como solicitação)</span>
+                </label>
+                <div className="space-y-3">
+                  {compraForm.cotacoes.map((cotacao, index) => (
+                    <div key={index} className="bg-white/5 border border-white/10 rounded-md p-3 space-y-2">
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-xs text-white/70">Valor Unitário</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            required
+                            value={cotacao.valorUnitario}
+                            onChange={(e) => {
+                              const newCotacoes = [...compraForm.cotacoes];
+                              newCotacoes[index] = { ...newCotacoes[index], valorUnitario: Number(e.target.value) };
+                              setCompraForm((prev) => ({ ...prev, cotacoes: newCotacoes }));
+                            }}
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-2 py-1.5 text-white text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-white/70">Frete</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            required
+                            value={cotacao.frete}
+                            onChange={(e) => {
+                              const newCotacoes = [...compraForm.cotacoes];
+                              newCotacoes[index] = { ...newCotacoes[index], frete: Number(e.target.value) };
+                              setCompraForm((prev) => ({ ...prev, cotacoes: newCotacoes }));
+                            }}
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-2 py-1.5 text-white text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-white/70">Impostos</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            required
+                            value={cotacao.impostos}
+                            onChange={(e) => {
+                              const newCotacoes = [...compraForm.cotacoes];
+                              newCotacoes[index] = { ...newCotacoes[index], impostos: Number(e.target.value) };
+                              setCompraForm((prev) => ({ ...prev, cotacoes: newCotacoes }));
+                            }}
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-2 py-1.5 text-white text-sm"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-white/70">Link (opcional)</label>
+                        <input
+                          type="text"
+                          value={cotacao.link || ''}
+                          onChange={(e) => {
+                            const newCotacoes = [...compraForm.cotacoes];
+                            newCotacoes[index] = { ...newCotacoes[index], link: e.target.value };
+                            setCompraForm((prev) => ({ ...prev, cotacoes: newCotacoes }));
+                          }}
+                          className="w-full bg-white/10 border border-white/30 rounded-md px-2 py-1.5 text-white text-sm"
+                          placeholder="URL da cotação"
+                        />
+                      </div>
+                      {compraForm.cotacoes.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newCotacoes = compraForm.cotacoes.filter((_, i) => i !== index);
+                            setCompraForm((prev) => ({ ...prev, cotacoes: newCotacoes, selectedCotacaoIndex: 0 }));
+                          }}
+                          className="text-xs text-danger hover:text-danger/80"
+                        >
+                          Remover cotação
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCompraForm((prev) => ({
+                        ...prev,
+                        cotacoes: [...prev.cotacoes, { valorUnitario: 0, frete: 0, impostos: 0 }],
+                      }));
+                    }}
+                    className="w-full px-3 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                  >
+                    + Adicionar Cotação
+                  </button>
+                </div>
+              </div>
+
+              {compraForm.cotacoes.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">
+                    Cotação Selecionada <span className="text-danger">*</span>
+                  </label>
+                  <select
+                    required
+                    value={compraForm.selectedCotacaoIndex}
+                    onChange={(e) => setCompraForm((prev) => ({ ...prev, selectedCotacaoIndex: Number(e.target.value) }))}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    {compraForm.cotacoes.map((cot, index) => {
+                      const total = cot.valorUnitario + cot.frete + cot.impostos;
+                      return (
+                        <option key={index} value={index} className="bg-neutral text-white">
+                          Cotação {index + 1}: R$ {total.toFixed(2)} (Unit: R$ {cot.valorUnitario.toFixed(2)} + Frete: R$ {cot.frete.toFixed(2)} + Impostos: R$ {cot.impostos.toFixed(2)})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
+
+              {error && (
+                <div className="bg-danger/20 border border-danger/50 text-danger px-4 py-3 rounded-md text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-white/20">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCompraModal(false);
+                    setSelectedEtapaForCompra(null);
+                    setError(null);
+                  }}
+                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                  disabled={submitting}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {submitting ? 'Criando...' : 'Criar Compra'}
                 </button>
               </div>
             </form>

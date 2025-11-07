@@ -1,18 +1,22 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateStockItemDto } from './dto/create-stock-item.dto';
 import { UpdateStockItemDto } from './dto/update-stock-item.dto';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
-import { CompraStatus, EstoqueStatus } from '@prisma/client';
+import { CompraStatus, EstoqueStatus, NotificacaoTipo } from '@prisma/client';
 
 @Injectable()
 export class StockService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
-  async listItems(filter: { status?: EstoqueStatus; search?: string }) {
-    const where: Record<string, unknown> = {};
+  async listItems(filter: { status?: EstoqueStatus; search?: string; projetoId?: number; etapaId?: number }) {
+    const where: any = {};
 
     if (filter.status) {
       where.status = filter.status;
@@ -23,6 +27,39 @@ export class StockService {
         contains: filter.search,
         mode: 'insensitive' as any, // Prisma PostgreSQL suporta insensitive
       };
+    }
+
+    // Se projetoId for fornecido, incluir itens do projeto OU itens sem projeto (adicionados diretamente)
+    if (filter.projetoId) {
+      where.AND = [
+        {
+          OR: [
+            { projetoId: filter.projetoId },
+            { projetoId: null },
+          ],
+        },
+      ];
+    }
+
+    if (filter.etapaId) {
+      // Se etapaId for fornecido, só mostrar itens sem etapa ou da etapa especificada
+      if (where.AND) {
+        where.AND.push({
+          OR: [
+            { etapaId: filter.etapaId },
+            { etapaId: null },
+          ],
+        });
+      } else {
+        where.AND = [
+          {
+            OR: [
+              { etapaId: filter.etapaId },
+              { etapaId: null },
+            ],
+          },
+        ];
+      }
     }
 
     return this.prisma.estoque.findMany({
@@ -129,55 +166,150 @@ export class StockService {
     return { deleted: true };
   }
 
-  async listPurchases(filter: { status?: CompraStatus; projetoId?: number }) {
-    const where: Record<string, unknown> = {};
+  async listPurchases(filter: { status?: CompraStatus; projetoId?: number; etapaId?: number; excludeSolicitado?: boolean }) {
+    const where: any = {};
 
     if (filter.status) {
       where.status = filter.status;
     }
 
+    // Se excludeSolicitado for true, excluir compras com status SOLICITADO
+    if (filter.excludeSolicitado) {
+      if (where.status) {
+        // Se já tem filtro de status, combinar com AND
+        where.AND = where.AND || [];
+        where.AND.push({ status: { not: 'SOLICITADO' as any } });
+        delete where.status;
+      } else {
+        where.status = { not: 'SOLICITADO' as any };
+      }
+    }
+
+    // Se projetoId for fornecido, incluir compras do projeto OU compras sem projeto
     if (filter.projetoId) {
-      where.projetoId = filter.projetoId;
+      if (where.AND) {
+        where.AND.push({
+          OR: [
+            { projetoId: filter.projetoId },
+            { projetoId: null },
+          ],
+        });
+      } else {
+        where.AND = [
+          {
+            OR: [
+              { projetoId: filter.projetoId },
+              { projetoId: null },
+            ],
+          },
+        ];
+      }
+    }
+
+    if (filter.etapaId) {
+      // Se etapaId for fornecido, só mostrar compras sem etapa ou da etapa especificada
+      if (where.AND) {
+        where.AND.push({
+          OR: [
+            { etapaId: filter.etapaId },
+            { etapaId: null },
+          ],
+        });
+      } else {
+        where.AND = [
+          {
+            OR: [
+              { etapaId: filter.etapaId },
+              { etapaId: null },
+            ],
+          },
+        ];
+      }
     }
 
     return this.prisma.compra.findMany({
       where,
-      include: { projeto: true },
+      include: { 
+        projeto: true, 
+        etapa: true,
+        solicitadoPor: { include: { cargo: true } },
+      } as any,
       orderBy: { dataSolicitacao: 'desc' },
     });
   }
 
-  async createPurchase(data: CreatePurchaseDto) {
-    await this.ensureProjectExists(data.projetoId);
+  async createPurchase(data: CreatePurchaseDto, solicitadoPorId?: number) {
+    if (data.projetoId) {
+      await this.ensureProjectExists(data.projetoId);
+    }
+    
+    if (data.etapaId) {
+      await this.ensureTaskExists(data.etapaId);
+    }
+
+    // Se não houver cotação, definir status como SOLICITADO
+    const hasCotacoes = data.cotacoes && data.cotacoes.length > 0;
+    const status = data.status ?? (hasCotacoes ? CompraStatus.PENDENTE : ('SOLICITADO' as CompraStatus));
 
     const createData: any = {
-      projetoId: data.projetoId,
+      projetoId: data.projetoId || null,
       item: data.item,
       quantidade: data.quantidade,
-      valorUnitario: data.valorUnitario,
-      status: data.status ?? CompraStatus.PENDENTE,
+      valorUnitario: data.valorUnitario || null,
+      status: status,
     };
 
+    // Adicionar solicitadoPorId se fornecido
+    if (solicitadoPorId) {
+      createData.solicitadoPorId = solicitadoPorId;
+    }
+
+    if (data.etapaId) {
+      createData.etapaId = data.etapaId;
+    }
+
     // Adicionar campos opcionais apenas se existirem
-    if (data.descricao !== undefined && data.descricao !== null) {
+    if (data.descricao !== undefined && data.descricao !== null && data.descricao.trim().length > 0) {
       createData.descricao = data.descricao;
     }
-    if (data.imagemUrl !== undefined && data.imagemUrl !== null) {
+    // Salvar imagemUrl se existir e não for vazia
+    if (data.imagemUrl !== undefined && data.imagemUrl !== null && typeof data.imagemUrl === 'string' && data.imagemUrl.trim().length > 0) {
       createData.imagemUrl = data.imagemUrl;
+      console.log('[createPurchase] imagemUrl salva:', data.imagemUrl.substring(0, 50) + '...', `(${data.imagemUrl.length} chars)`);
+    } else {
+      console.log('[createPurchase] imagemUrl não incluída:', { 
+        undefined: data.imagemUrl === undefined, 
+        null: data.imagemUrl === null, 
+        type: typeof data.imagemUrl,
+        length: typeof data.imagemUrl === 'string' ? data.imagemUrl.length : 'N/A'
+      });
     }
-    if (data.nfUrl !== undefined && data.nfUrl !== null) {
+    if (data.nfUrl !== undefined && data.nfUrl !== null && data.nfUrl.trim().length > 0) {
       createData.nfUrl = data.nfUrl;
     }
-    if (data.comprovantePagamentoUrl !== undefined && data.comprovantePagamentoUrl !== null) {
+    if (data.comprovantePagamentoUrl !== undefined && data.comprovantePagamentoUrl !== null && data.comprovantePagamentoUrl.trim().length > 0) {
       createData.comprovantePagamentoUrl = data.comprovantePagamentoUrl;
     }
     if (data.cotacoes) {
       createData.cotacoesJson = data.cotacoes as any;
     }
 
-    return this.prisma.compra.create({
+    console.log('[createPurchase] createData antes de salvar:', {
+      ...createData,
+      imagemUrl: createData.imagemUrl ? `${createData.imagemUrl.substring(0, 50)}... (${createData.imagemUrl.length} chars)` : 'não incluído'
+    });
+
+    const created = await this.prisma.compra.create({
       data: createData,
     });
+
+    console.log('[createPurchase] Compra criada:', {
+      id: created.id,
+      item: created.item,
+      imagemUrl: created.imagemUrl ? `${created.imagemUrl.substring(0, 50)}... (${created.imagemUrl.length} chars)` : 'null'
+    });
+
+    return created;
   }
 
   async updatePurchaseStatus(id: number, data: UpdatePurchaseStatusDto) {
@@ -197,7 +329,16 @@ export class StockService {
     });
 
     if (data.status === CompraStatus.ENTREGUE) {
-      await this.appendToStock(compra);
+      await this.appendToStock({
+        projetoId: compra.projetoId,
+        etapaId: compra.etapaId,
+        item: compra.item,
+        descricao: compra.descricao,
+        quantidade: compra.quantidade,
+        valorUnitario: compra.valorUnitario,
+        imagemUrl: compra.imagemUrl,
+        cotacoesJson: compra.cotacoesJson,
+      });
     }
 
     return compra;
@@ -236,20 +377,39 @@ export class StockService {
         updateData.cotacoesJson = null;
       }
     }
+    if (data.etapaId !== undefined) {
+      if (data.etapaId) {
+        await this.ensureTaskExists(data.etapaId);
+        updateData.etapaId = data.etapaId;
+      } else {
+        updateData.etapaId = null;
+      }
+    }
     if (data.status !== undefined) {
       updateData.status = data.status;
       if (data.status === CompraStatus.COMPRADO_ACAMINHO || data.status === CompraStatus.ENTREGUE) {
         updateData.dataConfirmacao = new Date();
       }
-      if (data.status === CompraStatus.ENTREGUE) {
-        const compra = await this.prisma.compra.findUnique({ where: { id } });
-        if (compra) {
-          await this.appendToStock(compra);
-        }
-      }
     }
 
-    return this.prisma.compra.update({ where: { id }, data: updateData });
+    // Atualizar a compra primeiro para garantir que todos os dados estejam atualizados
+    const compraAtualizada = await this.prisma.compra.update({ where: { id }, data: updateData });
+
+    // Se o status foi alterado para ENTREGUE, transferir para o estoque
+    if (data.status === CompraStatus.ENTREGUE) {
+      await this.appendToStock({
+        projetoId: compraAtualizada.projetoId,
+        etapaId: compraAtualizada.etapaId,
+        item: compraAtualizada.item,
+        descricao: compraAtualizada.descricao,
+        quantidade: compraAtualizada.quantidade,
+        valorUnitario: compraAtualizada.valorUnitario,
+        imagemUrl: compraAtualizada.imagemUrl,
+        cotacoesJson: compraAtualizada.cotacoesJson,
+      });
+    }
+
+    return compraAtualizada;
   }
 
   async deletePurchase(id: number) {
@@ -258,29 +418,84 @@ export class StockService {
     return { deleted: true };
   }
 
-  private async appendToStock(compra: { projetoId: number; item: string; quantidade: number; valorUnitario: number }) {
+  private async appendToStock(compra: { 
+    projetoId?: number | null; 
+    etapaId?: number | null; 
+    item: string; 
+    descricao?: string | null;
+    quantidade: number; 
+    valorUnitario?: number | null;
+    imagemUrl?: string | null;
+    cotacoesJson?: any;
+  }) {
+    console.log('[appendToStock] Iniciando transferência para estoque:', {
+      item: compra.item,
+      projetoId: compra.projetoId,
+      etapaId: compra.etapaId,
+      imagemUrl: compra.imagemUrl ? `${compra.imagemUrl.substring(0, 50)}... (${compra.imagemUrl.length} chars)` : 'null/undefined',
+      imagemUrlType: typeof compra.imagemUrl,
+      imagemUrlLength: compra.imagemUrl ? compra.imagemUrl.length : 0
+    });
+
     const existing = await this.prisma.estoque.findFirst({
-      where: { item: compra.item, projetoId: compra.projetoId },
+      where: { 
+        item: compra.item, 
+        projetoId: compra.projetoId || null,
+        etapaId: compra.etapaId || null,
+      },
     });
 
     if (existing) {
+      const imagemUrlFinal = compra.imagemUrl && compra.imagemUrl.trim().length > 0 
+        ? compra.imagemUrl 
+        : existing.imagemUrl;
+      
+      console.log('[appendToStock] Item existente encontrado. Atualizando:', {
+        existingId: existing.id,
+        imagemUrlExistente: existing.imagemUrl ? `${existing.imagemUrl.substring(0, 50)}... (${existing.imagemUrl.length} chars)` : 'null',
+        imagemUrlCompra: compra.imagemUrl ? `${compra.imagemUrl.substring(0, 50)}... (${compra.imagemUrl.length} chars)` : 'null',
+        imagemUrlFinal: imagemUrlFinal ? `${imagemUrlFinal.substring(0, 50)}... (${imagemUrlFinal.length} chars)` : 'null'
+      });
+
       await this.prisma.estoque.update({
         where: { id: existing.id },
         data: {
           quantidade: existing.quantidade + compra.quantidade,
-          valorUnitario: compra.valorUnitario,
+          valorUnitario: compra.valorUnitario ?? existing.valorUnitario,
+          // Priorizar imagem da compra se existir, senão manter a existente
+          imagemUrl: imagemUrlFinal,
+          // Priorizar descrição da compra se existir, senão manter a existente
+          descricao: compra.descricao && compra.descricao.trim().length > 0 
+            ? compra.descricao 
+            : existing.descricao,
+          // Priorizar cotações da compra se existir, senão manter as existentes
+          cotacoesJson: compra.cotacoesJson || existing.cotacoesJson,
         },
       });
+
+      console.log('[appendToStock] Item atualizado com sucesso');
     } else {
+      const imagemUrlFinal = compra.imagemUrl && compra.imagemUrl.trim().length > 0 ? compra.imagemUrl : null;
+      
+      console.log('[appendToStock] Criando novo item no estoque:', {
+        imagemUrlFinal: imagemUrlFinal ? `${imagemUrlFinal.substring(0, 50)}... (${imagemUrlFinal.length} chars)` : 'null'
+      });
+
       await this.prisma.estoque.create({
         data: {
           item: compra.item,
+          descricao: compra.descricao && compra.descricao.trim().length > 0 ? compra.descricao : null,
           quantidade: compra.quantidade,
-          valorUnitario: compra.valorUnitario,
+          valorUnitario: compra.valorUnitario ?? 0,
+          imagemUrl: imagemUrlFinal,
+          cotacoesJson: compra.cotacoesJson || null,
           status: EstoqueStatus.DISPONIVEL,
-          projetoId: compra.projetoId,
+          projetoId: compra.projetoId || null,
+          etapaId: compra.etapaId || null,
         },
       });
+
+      console.log('[appendToStock] Novo item criado com sucesso');
     }
   }
 
@@ -310,5 +525,88 @@ export class StockService {
     if (!compra) {
       throw new NotFoundException('Compra não encontrada');
     }
+    return compra;
+  }
+
+  async approvePurchase(id: number, data: { cotacoes?: any[]; selectedCotacaoIndex?: number }) {
+    const compra = await this.ensurePurchaseExists(id);
+    
+    if (compra.status !== ('SOLICITADO' as CompraStatus)) {
+      throw new BadRequestException('Apenas solicitações podem ser aprovadas');
+    }
+
+    let valorUnitario = compra.valorUnitario;
+    let cotacoesJson = compra.cotacoesJson;
+
+    // Se houver cotações fornecidas, usar a selecionada
+    if (data.cotacoes && data.cotacoes.length > 0) {
+      const selectedIndex = data.selectedCotacaoIndex ?? 0;
+      const selectedCotacao = data.cotacoes[selectedIndex];
+      if (selectedCotacao) {
+        valorUnitario = selectedCotacao.valorUnitario + selectedCotacao.frete + selectedCotacao.impostos;
+        cotacoesJson = data.cotacoes as any;
+      }
+    }
+
+    if (!valorUnitario || valorUnitario <= 0) {
+      throw new BadRequestException('É necessário fornecer cotações ou valor unitário para aprovar a solicitação');
+    }
+
+    return this.prisma.compra.update({
+      where: { id },
+      data: {
+        status: CompraStatus.PENDENTE,
+        valorUnitario: valorUnitario,
+        cotacoesJson: cotacoesJson as any,
+      },
+      include: {
+        projeto: true,
+        etapa: true,
+        solicitadoPor: { include: { cargo: true } },
+      } as any,
+    });
+  }
+
+  async rejectPurchase(id: number, motivoRejeicao: string) {
+    const compra = await this.ensurePurchaseExists(id);
+    
+    if (compra.status !== ('SOLICITADO' as CompraStatus)) {
+      throw new BadRequestException('Apenas solicitações podem ser reprovadas');
+    }
+
+    const compraReprovada = await this.prisma.compra.update({
+      where: { id },
+      data: {
+        status: 'REPROVADO' as CompraStatus,
+        motivoRejeicao: motivoRejeicao.trim(),
+      } as any,
+      include: {
+        projeto: true,
+        etapa: true,
+        solicitadoPor: { include: { cargo: true } },
+      } as any,
+    });
+
+    // Criar notificação para o solicitante e supervisor do projeto
+    if ((compraReprovada as any).solicitadoPorId) {
+      await this.notificationsService.create({
+        usuarioId: (compraReprovada as any).solicitadoPorId,
+        titulo: 'Solicitação de Compra Reprovada',
+        mensagem: `Sua solicitação de compra "${compraReprovada.item}" foi reprovada. Motivo: ${motivoRejeicao.trim()}`,
+        tipo: NotificacaoTipo.ERROR,
+      });
+    }
+
+    // Notificar supervisor do projeto se houver
+    if ((compraReprovada as any).projeto?.supervisorId) {
+      await this.notificationsService.create({
+        usuarioId: (compraReprovada as any).projeto.supervisorId,
+        titulo: 'Solicitação de Compra Reprovada',
+        mensagem: `A solicitação de compra "${compraReprovada.item}" do projeto "${(compraReprovada as any).projeto.nome}" foi reprovada. Motivo: ${motivoRejeicao.trim()}`,
+        tipo: NotificacaoTipo.WARNING,
+      });
+    }
+
+    return compraReprovada;
   }
 }

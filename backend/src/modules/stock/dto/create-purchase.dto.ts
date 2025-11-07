@@ -21,8 +21,15 @@ export class CotacaoDto {
 }
 
 export class CreatePurchaseDto {
+  @IsOptional()
   @IsInt()
-  projetoId: number;
+  @IsPositive()
+  projetoId?: number;
+
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  etapaId?: number;
 
   @IsString()
   @MaxLength(120)
@@ -37,9 +44,10 @@ export class CreatePurchaseDto {
   @IsPositive()
   quantidade: number;
 
+  @IsOptional()
   @IsNumber()
   @IsPositive()
-  valorUnitario: number; // Valor da cotação selecionada
+  valorUnitario?: number; // Valor da cotação selecionada (opcional para solicitações)
 
   @IsOptional()
   @IsString()

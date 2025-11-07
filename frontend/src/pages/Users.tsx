@@ -41,9 +41,12 @@ export default function Users() {
   });
 
   // Verificar se o usuário é DIRETOR (compatibilidade com formato antigo e novo)
-  const isDiretor = 
-    (typeof user?.cargo === 'string' && user.cargo === 'DIRETOR') ||
-    (user?.cargo && typeof user.cargo === 'object' && 'nome' in user.cargo && user.cargo.nome === 'DIRETOR');
+  const isDiretor =
+    (typeof user?.cargo === 'string' && (user.cargo === 'DIRETOR' || user.cargo === 'GM')) ||
+    (user?.cargo &&
+      typeof user.cargo === 'object' &&
+      'nome' in user.cargo &&
+      (user.cargo.nome === 'DIRETOR' || user.cargo.nome === 'GM'));
 
   async function loadCargos() {
     try {

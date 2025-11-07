@@ -83,7 +83,14 @@ export default function Stock() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedPurchases, setSelectedPurchases] = useState<number[]>([]);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'estoque' | 'compras'>('estoque');
+  const [activeTab, setActiveTab] = useState<'estoque' | 'compras' | 'solicitacoes'>('estoque');
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [purchaseToReject, setPurchaseToReject] = useState<Purchase | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [showApproveModal, setShowApproveModal] = useState(false);
+  const [purchaseToApprove, setPurchaseToApprove] = useState<Purchase | null>(null);
+  const [showViewRequestModal, setShowViewRequestModal] = useState(false);
+  const [purchaseToView, setPurchaseToView] = useState<Purchase | null>(null);
   const [itemForm, setItemForm] = useState<CreateItemForm>({
     item: '',
     codigo: '',
@@ -110,13 +117,14 @@ export default function Stock() {
 
   async function load() {
     try {
-      const [{ data: itemsData }, { data: purchasesData }, { data: projectsData }] = await Promise.all([
+      const [{ data: itemsData }, { data: purchasesData }, { data: purchasesAllData }, { data: projectsData }] = await Promise.all([
         api.get<StockItem[]>('/stock/items'),
+        api.get<Purchase[]>('/stock/purchases?excludeSolicitado=true'),
         api.get<Purchase[]>('/stock/purchases'),
         api.get<Projeto[]>('/projects'),
       ]);
       setItems(itemsData);
-      setPurchases(purchasesData);
+      setPurchases(purchasesAllData); // Todas as compras para a aba Solicitações
       setProjects(projectsData);
     } catch (err: any) {
       setError(err.response?.data?.message ?? 'Erro ao carregar estoque');
@@ -151,6 +159,16 @@ export default function Stock() {
 
   // Filtrar purchases baseado nos filtros
   const filteredPurchases = purchases.filter((purchase) => {
+    // Excluir SOLICITADO da aba Compras
+    if (activeTab === 'compras' && purchase.status === 'SOLICITADO') {
+      return false;
+    }
+    
+    // Mostrar apenas SOLICITADO na aba Solicitações
+    if (activeTab === 'solicitacoes' && purchase.status !== 'SOLICITADO') {
+      return false;
+    }
+    
     // Filtro por projeto
     if (selectedProjectFilter !== 'all') {
       if (purchase.projetoId !== selectedProjectFilter) {
@@ -173,6 +191,8 @@ export default function Stock() {
 
   function getStatusLabel(status: string): string {
     const labels: Record<string, string> = {
+      SOLICITADO: 'Solicitado',
+      REPROVADO: 'Reprovado',
       PENDENTE: 'Pendente',
       COMPRADO_ACAMINHO: 'Comprado/A Caminho',
       ENTREGUE: 'Entregue',
@@ -182,6 +202,10 @@ export default function Stock() {
 
   function getStatusColor(status: string): string {
     switch (status) {
+      case 'SOLICITADO':
+        return 'bg-yellow-500/20 text-yellow-300';
+      case 'REPROVADO':
+        return 'bg-red-500/20 text-red-300';
       case 'PENDENTE':
         return 'bg-yellow-500/20 text-yellow-300';
       case 'COMPRADO_ACAMINHO':
@@ -521,14 +545,6 @@ export default function Stock() {
         payload.item = itemForm.item.trim();
       }
       
-      if (itemForm.codigo !== undefined && itemForm.codigo.trim().length > 0) {
-        payload.codigo = itemForm.codigo.trim();
-      }
-      
-      if (itemForm.categoria !== undefined && itemForm.categoria.trim().length > 0) {
-        payload.categoria = itemForm.categoria.trim();
-      }
-      
       if (itemForm.descricao && itemForm.descricao.trim().length > 0) {
         payload.descricao = itemForm.descricao.trim();
       }
@@ -539,18 +555,6 @@ export default function Stock() {
       
       if (itemForm.valorUnitario !== undefined) {
         payload.valorUnitario = Number(itemForm.valorUnitario);
-      }
-      
-      if (itemForm.unidadeMedida !== undefined && itemForm.unidadeMedida.trim().length > 0) {
-        payload.unidadeMedida = itemForm.unidadeMedida.trim();
-      }
-      
-      if (itemForm.estoqueMinimo !== undefined && itemForm.estoqueMinimo !== null) {
-        payload.estoqueMinimo = Number(itemForm.estoqueMinimo);
-      }
-      
-      if (itemForm.localizacao !== undefined && itemForm.localizacao.trim().length > 0) {
-        payload.localizacao = itemForm.localizacao.trim();
       }
       
       if (itemForm.imagemUrl && itemForm.imagemUrl.trim().length > 0) {
@@ -628,28 +632,8 @@ export default function Stock() {
       };
 
       // Adicionar campos opcionais apenas se tiverem valor válido
-      if (itemForm.codigo && itemForm.codigo.trim().length > 0) {
-        payload.codigo = itemForm.codigo.trim();
-      }
-
-      if (itemForm.categoria && itemForm.categoria.trim().length > 0) {
-        payload.categoria = itemForm.categoria.trim();
-      }
-      
       if (itemForm.descricao && itemForm.descricao.trim().length > 0) {
         payload.descricao = itemForm.descricao.trim();
-      }
-      
-      if (itemForm.unidadeMedida && itemForm.unidadeMedida.trim().length > 0) {
-        payload.unidadeMedida = itemForm.unidadeMedida.trim();
-              }
-      
-      if (itemForm.estoqueMinimo !== undefined && itemForm.estoqueMinimo !== null && itemForm.estoqueMinimo > 0) {
-        payload.estoqueMinimo = Number(itemForm.estoqueMinimo);
-      }
-      
-      if (itemForm.localizacao && itemForm.localizacao.trim().length > 0) {
-        payload.localizacao = itemForm.localizacao.trim();
       }
       
       if (itemForm.imagemUrl && itemForm.imagemUrl.trim().length > 0) {
@@ -721,12 +705,6 @@ export default function Stock() {
       console.log('=== INÍCIO: Criar Compra ===');
       console.log('Form completo:', purchaseForm);
       
-      if (!purchaseForm.projetoId) {
-        setError('Selecione um projeto');
-        setSubmitting(false);
-        return;
-      }
-      
       const selectedCotacao = purchaseForm.cotacoes[purchaseForm.selectedCotacaoIndex ?? 0];
       if (!selectedCotacao) {
         setError('Selecione uma cotação');
@@ -741,11 +719,15 @@ export default function Stock() {
 
       // Preparar payload removendo campos undefined/vazios
       const payload: any = {
-        projetoId: Number(purchaseForm.projetoId),
         item: purchaseForm.item.trim(),
         quantidade: Number(purchaseForm.quantidade),
         valorUnitario: Number(totalPorUnidade.toFixed(2)),
       };
+
+      // Adicionar projetoId apenas se foi selecionado
+      if (purchaseForm.projetoId) {
+        payload.projetoId = Number(purchaseForm.projetoId);
+      }
 
       console.log('Payload base criado:', payload);
 
@@ -1156,6 +1138,21 @@ export default function Stock() {
           >
             Compras
           </button>
+          <button
+            onClick={() => setActiveTab('solicitacoes')}
+            className={`flex-1 px-6 py-4 text-sm font-semibold transition-colors relative ${
+              activeTab === 'solicitacoes'
+                ? 'bg-primary text-white border-b-2 border-primary'
+                : 'text-white/70 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Solicitações
+            {purchases.filter((p) => p.status === 'SOLICITADO').length > 0 && (
+              <span className="absolute top-2 right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                {purchases.filter((p) => p.status === 'SOLICITADO').length}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -1181,7 +1178,13 @@ export default function Stock() {
             <select
               value={selectedProjectFilter}
               onChange={(e) => setSelectedProjectFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-              className="w-full px-4 py-2 rounded-md bg-white/10 border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              className="w-full px-4 py-2 rounded-md bg-neutral border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent appearance-none cursor-pointer"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 1rem center',
+                paddingRight: '2.5rem'
+              }}
             >
               <option value="all" className="bg-neutral text-white">Todos os Projetos</option>
               {projects.map((project) => (
@@ -1260,8 +1263,9 @@ export default function Stock() {
                             let etapasData: any[] = [];
                             if (item.projetoId) {
                               try {
-                                const etapasResponse = await api.get(`/projects/${item.projetoId}/tasks`);
-                                etapasData = etapasResponse.data || [];
+                                // Buscar etapas através do endpoint do projeto que já retorna as etapas
+                                const projetoResponse = await api.get(`/projects/${item.projetoId}`);
+                                etapasData = projetoResponse.data?.etapas || [];
                                 setEtapas(etapasData);
                               } catch (err) {
                                 console.error('Erro ao carregar etapas:', err);
@@ -1497,6 +1501,104 @@ export default function Stock() {
       </section>
       )}
 
+      {/* Conteúdo da aba Solicitações */}
+      {activeTab === 'solicitacoes' && (
+      <section>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-semibold">Solicitações de Compra</h3>
+        </div>
+        <div className="overflow-x-auto rounded-xl border border-white/10">
+          <table className="min-w-full text-sm">
+            <thead className="bg-white/5 text-white/70">
+              <tr>
+                <th className="px-4 py-3 text-left">Item</th>
+                <th className="px-4 py-3 text-left">Quantidade</th>
+                <th className="px-4 py-3 text-left">Solicitado Por</th>
+                <th className="px-4 py-3 text-left">Projeto</th>
+                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {purchases.filter((p) => p.status === 'SOLICITADO').length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-8 text-center text-white/50">
+                    Nenhuma solicitação pendente
+                  </td>
+                </tr>
+              ) : (
+                purchases
+                  .filter((p) => p.status === 'SOLICITADO')
+                  .map((purchase) => {
+                    const solicitadoPor = (purchase as any).solicitadoPor;
+                    const cargoNome = solicitadoPor?.cargo 
+                      ? (typeof solicitadoPor.cargo === 'string' 
+                          ? solicitadoPor.cargo 
+                          : solicitadoPor.cargo.nome || 'Sem cargo')
+                      : 'N/A';
+                    return (
+                      <tr key={purchase.id} className="border-t border-white/5 hover:bg-white/5 bg-yellow-500/10">
+                        <td className="px-4 py-3">
+                          <div className="flex items-center space-x-3">
+                            {purchase.imagemUrl && (
+                              (purchase.imagemUrl.startsWith('data:image/') || purchase.imagemUrl.startsWith('http://') || purchase.imagemUrl.startsWith('https://')) ? (
+                                <img
+                                  src={purchase.imagemUrl}
+                                  alt={purchase.item || 'Item'}
+                                  className="w-10 h-10 object-cover rounded"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                  }}
+                                />
+                              ) : null
+                            )}
+                            <div>
+                              <div className="font-medium">{purchase.item || 'Sem nome'}</div>
+                              {purchase.descricao && <div className="text-xs text-white/60">{purchase.descricao}</div>}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">{purchase.quantidade || 0}</td>
+                        <td className="px-4 py-3">
+                          {solicitadoPor ? (
+                            <span>
+                              {solicitadoPor.nome} <span className="text-white/50">({cargoNome})</span>
+                            </span>
+                          ) : (
+                            'N/A'
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {(purchase as any).projeto?.nome || 'Sem projeto'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-1 rounded text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
+                            SOLICITADO
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                setPurchaseToView(purchase);
+                                setShowViewRequestModal(true);
+                              }}
+                              className="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                            >
+                              Ver Detalhes
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      )}
+
       {/* Modal Adicionar Item ao Estoque */}
       {showItemModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -1567,7 +1669,13 @@ export default function Stock() {
                   <select
                     value={itemForm.unidadeMedida || 'UN'}
                     onChange={(e) => setItemForm({ ...itemForm, unidadeMedida: e.target.value })}
-                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 1rem center',
+                      paddingRight: '2.5rem'
+                    }}
                   >
                     <option value="UN" className="bg-neutral text-white">UN (Unidade)</option>
                     <option value="KG" className="bg-neutral text-white">KG (Quilograma)</option>
@@ -1753,7 +1861,13 @@ export default function Stock() {
                   <select
                     value={itemForm.unidadeMedida || 'UN'}
                     onChange={(e) => setItemForm({ ...itemForm, unidadeMedida: e.target.value })}
-                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 1rem center',
+                      paddingRight: '2.5rem'
+                    }}
                   >
                     <option value="UN" className="bg-neutral text-white">UN (Unidade)</option>
                     <option value="KG" className="bg-neutral text-white">KG (Quilograma)</option>
@@ -1841,11 +1955,17 @@ export default function Stock() {
                 <select
                   value={itemForm.status || 'DISPONIVEL'}
                   onChange={(e) => setItemForm({ ...itemForm, status: e.target.value })}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem'
+                  }}
                 >
-                  <option value="DISPONIVEL" className="bg-neutral">Disponível</option>
-                  <option value="ALOCADO" className="bg-neutral">Alocado</option>
-                  <option value="RESERVADO" className="bg-neutral">Reservado</option>
+                  <option value="DISPONIVEL" className="bg-neutral text-white">Disponível</option>
+                  <option value="ALOCADO" className="bg-neutral text-white">Alocado</option>
+                  <option value="RESERVADO" className="bg-neutral text-white">Reservado</option>
                 </select>
               </div>
 
@@ -1860,8 +1980,9 @@ export default function Stock() {
                     // Carregar etapas do projeto selecionado
                     if (projetoId) {
                       try {
-                        const etapasResponse = await api.get(`/projects/${projetoId}/tasks`);
-                        setEtapas(etapasResponse.data || []);
+                        // Buscar etapas através do endpoint do projeto que já retorna as etapas
+                        const projetoResponse = await api.get(`/projects/${projetoId}`);
+                        setEtapas(projetoResponse.data?.etapas || []);
                       } catch (err) {
                         console.error('Erro ao carregar etapas:', err);
                         setEtapas([]);
@@ -1870,9 +1991,15 @@ export default function Stock() {
                       setEtapas([]);
                     }
                   }}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem'
+                  }}
                 >
-                  <option value="" className="bg-neutral">Selecione um projeto...</option>
+                  <option value="" className="bg-neutral text-white">Sem projeto (opcional)</option>
                   {projects.map((projeto) => (
                     <option key={projeto.id} value={projeto.id} className="bg-neutral text-white">
                       {projeto.nome}
@@ -1887,9 +2014,15 @@ export default function Stock() {
                   <select
                     value={itemForm.etapaId || ''}
                     onChange={(e) => setItemForm({ ...itemForm, etapaId: e.target.value ? Number(e.target.value) : undefined })}
-                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 1rem center',
+                      paddingRight: '2.5rem'
+                    }}
                   >
-                    <option value="" className="bg-neutral">Selecione uma etapa...</option>
+                    <option value="" className="bg-neutral text-white">Selecione uma etapa...</option>
                     {etapas.map((etapa) => (
                       <option key={etapa.id} value={etapa.id} className="bg-neutral text-white">
                         {etapa.nome}
@@ -2010,14 +2143,19 @@ export default function Stock() {
             </div>
             <form onSubmit={handleCreatePurchase} className="p-8 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Projeto *</label>
+                <label className="block text-sm font-medium text-white/90 mb-2">Projeto</label>
                 <select
-                  required
-                  value={purchaseForm.projetoId}
-                  onChange={(e) => setPurchaseForm({ ...purchaseForm, projetoId: Number(e.target.value) })}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  value={purchaseForm.projetoId || ''}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, projetoId: e.target.value ? Number(e.target.value) : undefined })}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem'
+                  }}
                 >
-                  <option value="">Selecione um projeto...</option>
+                  <option value="" className="bg-neutral text-white">Sem projeto (opcional)</option>
                   {projects.map((projeto) => (
                     <option key={projeto.id} value={projeto.id} className="bg-neutral text-white">
                       {projeto.nome}
@@ -2775,11 +2913,17 @@ export default function Stock() {
                 <select
                   value={newStatus}
                   onChange={(e) => setNewStatus(e.target.value)}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem'
+                  }}
                 >
-                  <option value="PENDENTE" className="bg-neutral">Pendente</option>
-                  <option value="COMPRADO_ACAMINHO" className="bg-neutral">Comprado/A Caminho</option>
-                  <option value="ENTREGUE" className="bg-neutral">Entregue</option>
+                  <option value="PENDENTE" className="bg-neutral text-white">Pendente</option>
+                  <option value="COMPRADO_ACAMINHO" className="bg-neutral text-white">Comprado/A Caminho</option>
+                  <option value="ENTREGUE" className="bg-neutral text-white">Entregue</option>
                 </select>
               </div>
               {error && (
@@ -3209,6 +3353,97 @@ export default function Stock() {
                   </div>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Reprovar Solicitação */}
+      {showRejectModal && purchaseToReject && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold">Reprovar Solicitação</h2>
+              <button
+                onClick={() => {
+                  setShowRejectModal(false);
+                  setPurchaseToReject(null);
+                  setRejectReason('');
+                  setError(null);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-white/90 mb-4">
+                Item: <span className="font-semibold">{purchaseToReject.item}</span>
+              </p>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-white/90 mb-2">Motivo da Rejeição *</label>
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  rows={4}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="Descreva o motivo da rejeição..."
+                  required
+                />
+              </div>
+              {error && (
+                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md mb-4 text-sm">
+                  {error}
+                </div>
+              )}
+              <div className="flex justify-end space-x-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRejectModal(false);
+                    setPurchaseToReject(null);
+                    setRejectReason('');
+                    setError(null);
+                  }}
+                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  disabled={submitting}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!rejectReason.trim()) {
+                      setError('Por favor, informe o motivo da rejeição');
+                      return;
+                    }
+                    setSubmitting(true);
+                    setError(null);
+                    try {
+                      await api.post(`/stock/purchases/${purchaseToReject.id}/reject`, {
+                        motivoRejeicao: rejectReason.trim(),
+                      });
+                      await load();
+                      setShowRejectModal(false);
+                      setPurchaseToReject(null);
+                      setRejectReason('');
+                      setError(null);
+                      // Redirecionar para o projeto se houver
+                      if (purchaseToReject.projetoId) {
+                        window.location.href = `/projects/${purchaseToReject.projetoId}`;
+                      }
+                    } catch (err: any) {
+                      setError(err.response?.data?.message ?? 'Erro ao reprovar solicitação');
+                    } finally {
+                      setSubmitting(false);
+                    }
+                  }}
+                  className="px-6 py-2.5 rounded-md bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={submitting || !rejectReason.trim()}
+                >
+                  {submitting ? 'Reprovando...' : 'Confirmar Reprovação'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

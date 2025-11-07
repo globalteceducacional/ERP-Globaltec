@@ -1,4 +1,4 @@
-import { useEffect, useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { Projeto } from '../types';
@@ -14,7 +14,6 @@ interface CreateProjectForm {
   resumo?: string;
   objetivo?: string;
   valorTotal?: number;
-  valorInsumos?: number;
   supervisorId?: number;
   responsavelIds: number[];
   status?: 'EM_ANDAMENTO' | 'FINALIZADO';
@@ -39,7 +38,6 @@ export default function Projects() {
     resumo: '',
     objetivo: '',
     valorTotal: undefined,
-    valorInsumos: undefined,
     supervisorId: undefined,
     responsavelIds: [],
     status: 'EM_ANDAMENTO',
@@ -105,17 +103,15 @@ export default function Projects() {
         if (typeof form.resumo === 'string') payload.resumo = form.resumo?.trim() ?? '';
         if (typeof form.objetivo === 'string') payload.objetivo = form.objetivo?.trim() ?? '';
         if (typeof form.valorTotal === 'number') payload.valorTotal = form.valorTotal;
-        if (typeof form.valorInsumos === 'number') payload.valorInsumos = form.valorInsumos;
         if (typeof form.supervisorId !== 'undefined') payload.supervisorId = form.supervisorId;
         if (form.status) payload.status = form.status;
 
         await api.patch(`/projects/${editingProject.id}`, payload);
 
-        if (form.responsavelIds.length > 0) {
-          await api.patch(`/projects/${editingProject.id}/responsibles`, {
-            responsavelIds: form.responsavelIds,
-          });
-        }
+        // Sempre atualizar responsáveis, mesmo se o array estiver vazio (para remover todos)
+        await api.patch(`/projects/${editingProject.id}/responsibles`, {
+          responsavelIds: form.responsavelIds,
+        });
       } else {
         const payload: any = {
           nome: form.nome.trim(),
@@ -124,7 +120,6 @@ export default function Projects() {
         if (form.resumo && form.resumo.trim().length > 0) payload.resumo = form.resumo.trim();
         if (form.objetivo && form.objetivo.trim().length > 0) payload.objetivo = form.objetivo.trim();
         if (typeof form.valorTotal === 'number') payload.valorTotal = form.valorTotal;
-        if (typeof form.valorInsumos === 'number') payload.valorInsumos = form.valorInsumos;
         if (form.supervisorId) payload.supervisorId = form.supervisorId;
         if (form.responsavelIds.length > 0) {
           payload.responsavelIds = form.responsavelIds;
@@ -140,7 +135,6 @@ export default function Projects() {
         resumo: '',
         objetivo: '',
         valorTotal: undefined,
-        valorInsumos: undefined,
         supervisorId: undefined,
         responsavelIds: [],
         status: 'EM_ANDAMENTO',
@@ -177,7 +171,6 @@ export default function Projects() {
       resumo: project.resumo ?? '',
       objetivo: project.objetivo ?? '',
       valorTotal: project.valorTotal ?? undefined,
-      valorInsumos: project.valorInsumos ?? undefined,
       supervisorId: project.supervisor?.id ?? undefined,
       responsavelIds: project.responsaveis ? project.responsaveis.map((r) => r.usuario.id) : [],
       status: project.status,
@@ -220,14 +213,7 @@ export default function Projects() {
     }
   }
 
-  function toggleResponsavel(userId: number) {
-    setForm((prev) => ({
-      ...prev,
-      responsavelIds: prev.responsavelIds.includes(userId)
-        ? prev.responsavelIds.filter((id) => id !== userId)
-        : [...prev.responsavelIds, userId],
-    }));
-  }
+  const responsaveisSelectRef = useRef<HTMLSelectElement>(null);
 
   const statusLabels: Record<string, { label: string; className: string }> = {
     EM_ANDAMENTO: { label: 'Em Andamento', className: 'bg-blue-500/20 text-blue-300' },
@@ -410,40 +396,21 @@ export default function Projects() {
                 />
               </div>
 
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm text-white/70 mb-1">Valor Total (R$)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={typeof form.valorTotal === 'number' ? form.valorTotal : ''}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        valorTotal: e.target.value ? Number(e.target.value) : undefined,
-                      }))
-                    }
-                    className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm text-white/70 mb-1">Valor Insumos (R$)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={typeof form.valorInsumos === 'number' ? form.valorInsumos : ''}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        valorInsumos: e.target.value ? Number(e.target.value) : undefined,
-                      }))
-                    }
-                    className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                  />
-                </div>
+              <div>
+                <label className="block text-sm text-white/70 mb-1">Valor Total (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={typeof form.valorTotal === 'number' ? form.valorTotal : ''}
+                  onChange={(e) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      valorTotal: e.target.value ? Number(e.target.value) : undefined,
+                    }))
+                  }
+                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
               </div>
 
               {editingProject && (
@@ -469,20 +436,35 @@ export default function Projects() {
               )}
 
               <div>
-                <label className="block text-sm text-white/70 mb-1">Supervisor</label>
+                <label className="block text-sm font-medium text-white/90 mb-2">Supervisor *</label>
                 <select
+                  required
                   value={form.supervisorId ?? ''}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      supervisorId: e.target.value ? Number(e.target.value) : undefined,
-                    }))
-                  }
-                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                  onChange={(e) => {
+                    const newSupervisorId = e.target.value ? Number(e.target.value) : undefined;
+                    setForm((prev) => {
+                      // Remover o supervisor da lista de responsáveis se ele estiver lá
+                      const newResponsavelIds = prev.responsavelIds.filter(
+                        (id) => id !== newSupervisorId
+                      );
+                      return {
+                        ...prev,
+                        supervisorId: newSupervisorId,
+                        responsavelIds: newResponsavelIds,
+                      };
+                    });
+                  }}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem'
+                  }}
                 >
-                  <option value="">Selecione um supervisor...</option>
+                  <option value="" className="bg-neutral text-white">Selecione um supervisor...</option>
                   {users.map((user) => (
-                    <option key={user.id} value={user.id}>
+                    <option key={user.id} value={user.id} className="bg-neutral text-white">
                       {user.nome}
                     </option>
                   ))}
@@ -490,33 +472,75 @@ export default function Projects() {
               </div>
 
               <div>
-                <label className="block text-sm text-white/70 mb-2">Responsáveis</label>
-                <div className="bg-neutral/40 border border-white/10 rounded-md p-3 max-h-40 overflow-y-auto">
-                  {users.length === 0 ? (
-                    <p className="text-white/50 text-sm">Carregando usuários...</p>
-                  ) : (
-                    <div className="space-y-2">
-                      {users.map((user) => (
-                        <label
-                          key={user.id}
-                          className="flex items-center space-x-2 cursor-pointer hover:bg-white/5 p-2 rounded"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={form.responsavelIds.includes(user.id)}
-                            onChange={() => toggleResponsavel(user.id)}
-                            className="rounded border-white/20"
-                          />
-                          <span className="text-sm">{user.nome}</span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Responsáveis</label>
+                <select
+                  ref={responsaveisSelectRef}
+                  value=""
+                  onChange={(e) => {
+                    const selectedUserId = Number(e.target.value);
+                    if (selectedUserId && !form.responsavelIds.includes(selectedUserId)) {
+                      setForm({
+                        ...form,
+                        responsavelIds: [...form.responsavelIds, selectedUserId],
+                      });
+                    }
+                    // Resetar o select após seleção
+                    if (responsaveisSelectRef.current) {
+                      responsaveisSelectRef.current.value = '';
+                    }
+                  }}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem'
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">Selecione um responsável...</option>
+                  {users
+                    .filter((user) => 
+                      !form.responsavelIds.includes(user.id) && 
+                      user.id !== form.supervisorId
+                    )
+                    .map((user) => (
+                      <option key={user.id} value={user.id} className="bg-neutral text-white">
+                        {user.nome}
+                      </option>
+                    ))}
+                </select>
                 {form.responsavelIds.length > 0 && (
-                  <p className="text-xs text-white/50 mt-1">
-                    {form.responsavelIds.length} responsável(is) selecionado(s)
-                  </p>
+                  <div className="mt-3 space-y-2">
+                    {form.responsavelIds.map((responsavelId) => {
+                      const responsavel = users.find((u) => u.id === responsavelId);
+                      if (!responsavel) return null;
+                      return (
+                        <div
+                          key={responsavelId}
+                          className="flex items-center justify-between bg-white/5 border border-white/10 rounded-md px-3 py-2"
+                        >
+                          <span className="text-sm text-white/90">
+                            {responsavel.nome}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForm({
+                                ...form,
+                                responsavelIds: form.responsavelIds.filter((id) => id !== responsavelId),
+                              });
+                            }}
+                            className="text-danger hover:text-danger/80 text-sm font-medium transition-colors"
+                          >
+                            Remover
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {form.responsavelIds.length === 0 && (
+                  <p className="text-xs text-white/50 mt-2">Nenhum responsável adicionado ainda</p>
                 )}
               </div>
 
