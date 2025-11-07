@@ -202,11 +202,11 @@ export class ProjectsService {
       if (data.supervisorId === null || data.supervisorId === 0) {
         throw new BadRequestException('Supervisor é obrigatório e não pode ser removido');
       }
-      const supervisorExists = await this.prisma.usuario.findUnique({ where: { id: data.supervisorId } });
-      if (!supervisorExists) {
-        throw new BadRequestException('Supervisor informado não existe');
-      }
-      payload.supervisor = { connect: { id: data.supervisorId } };
+        const supervisorExists = await this.prisma.usuario.findUnique({ where: { id: data.supervisorId } });
+        if (!supervisorExists) {
+          throw new BadRequestException('Supervisor informado não existe');
+        }
+        payload.supervisor = { connect: { id: data.supervisorId } };
     }
 
     // Remover campos undefined do payload
@@ -253,7 +253,7 @@ export class ProjectsService {
       // Se houver responsáveis para adicionar, criar os novos registros
       if (responsavelIds.length > 0) {
         const records = responsavelIds.map((usuarioId) => ({ projetoId: id, usuarioId }));
-        await tx.projetoResponsavel.createMany({ data: records });
+      await tx.projetoResponsavel.createMany({ data: records });
       }
 
       return tx.projeto.findUnique({

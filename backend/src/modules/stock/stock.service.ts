@@ -62,10 +62,37 @@ export class StockService {
       }
     }
 
-    return this.prisma.estoque.findMany({
+    const items = await this.prisma.estoque.findMany({
       where,
-      include: { projeto: true, etapa: true },
+      include: { 
+        projeto: true, 
+        etapa: true,
+      } as any,
       orderBy: { item: 'asc' },
+    });
+
+    // Buscar alocações para todos os itens
+    const itemIds = items.map(item => item.id);
+    const alocacoes = itemIds.length > 0 ? await (this.prisma as any).estoqueAlocacao.findMany({
+      where: { estoqueId: { in: itemIds } },
+      include: {
+        projeto: true,
+        etapa: true,
+      },
+    }) : [];
+
+    // Calcular quantidade disponível e alocada para cada item
+    return items.map((item) => {
+      const itemAlocacoes = alocacoes.filter(aloc => aloc.estoqueId === item.id);
+      const quantidadeAlocada = itemAlocacoes.reduce((sum, aloc) => sum + aloc.quantidade, 0);
+      const quantidadeDisponivel = item.quantidade - quantidadeAlocada;
+      
+      return {
+        ...item,
+        quantidadeAlocada,
+        quantidadeDisponivel,
+        alocacoes: itemAlocacoes,
+      };
     });
   }
 
@@ -240,7 +267,7 @@ export class StockService {
 
   async createPurchase(data: CreatePurchaseDto, solicitadoPorId?: number) {
     if (data.projetoId) {
-      await this.ensureProjectExists(data.projetoId);
+    await this.ensureProjectExists(data.projetoId);
     }
     
     if (data.etapaId) {
@@ -396,7 +423,7 @@ export class StockService {
     const compraAtualizada = await this.prisma.compra.update({ where: { id }, data: updateData });
 
     // Se o status foi alterado para ENTREGUE, transferir para o estoque
-    if (data.status === CompraStatus.ENTREGUE) {
+      if (data.status === CompraStatus.ENTREGUE) {
       await this.appendToStock({
         projetoId: compraAtualizada.projetoId,
         etapaId: compraAtualizada.etapaId,
@@ -518,6 +545,7 @@ export class StockService {
     if (!item) {
       throw new NotFoundException('Item de estoque não encontrado');
     }
+    return item;
   }
 
   private async ensurePurchaseExists(id: number) {
@@ -608,5 +636,130 @@ export class StockService {
     }
 
     return compraReprovada;
+  }
+
+  async createAlocacao(data: { estoqueId: number; projetoId?: number; etapaId?: number; quantidade: number }) {
+    const item = await this.ensureItemExists(data.estoqueId);
+    
+    // Verificar quantidade disponível
+    const alocacoesExistentes = await (this.prisma as any).estoqueAlocacao.findMany({
+      where: { estoqueId: data.estoqueId },
+    });
+    const quantidadeAlocada = alocacoesExistentes.reduce((sum: number, aloc: any) => sum + aloc.quantidade, 0);
+    const quantidadeDisponivel = item.quantidade - quantidadeAlocada;
+    
+    if (data.quantidade > quantidadeDisponivel) {
+      throw new BadRequestException(
+        `Quantidade solicitada (${data.quantidade}) excede a quantidade disponível (${quantidadeDisponivel})`
+      );
+    }
+
+    if (data.projetoId) {
+      await this.ensureProjectExists(data.projetoId);
+    }
+    if (data.etapaId) {
+      await this.ensureTaskExists(data.etapaId);
+    }
+
+    // Verificar se já existe alocação para este estoque+projeto+etapa
+    const alocacaoExistente = await (this.prisma as any).estoqueAlocacao.findFirst({
+      where: {
+        estoqueId: data.estoqueId,
+        projetoId: data.projetoId || null,
+        etapaId: data.etapaId || null,
+      },
+    });
+
+    if (alocacaoExistente) {
+      // Atualizar alocação existente
+      const novaQuantidade = alocacaoExistente.quantidade + data.quantidade;
+      if (novaQuantidade > quantidadeDisponivel + alocacaoExistente.quantidade) {
+        throw new BadRequestException(
+          `Quantidade total (${novaQuantidade}) excede a quantidade disponível (${quantidadeDisponivel + alocacaoExistente.quantidade})`
+        );
+      }
+      return (this.prisma as any).estoqueAlocacao.update({
+        where: { id: alocacaoExistente.id },
+        data: { quantidade: novaQuantidade },
+        include: {
+          estoque: true,
+          projeto: true,
+          etapa: true,
+        },
+      });
+    }
+
+    return (this.prisma as any).estoqueAlocacao.create({
+      data: {
+        estoqueId: data.estoqueId,
+        projetoId: data.projetoId || null,
+        etapaId: data.etapaId || null,
+        quantidade: data.quantidade,
+      },
+      include: {
+        estoque: true,
+        projeto: true,
+        etapa: true,
+      },
+    });
+  }
+
+  async updateAlocacao(id: number, quantidade: number) {
+    const alocacao = await (this.prisma as any).estoqueAlocacao.findUnique({
+      where: { id },
+      include: { estoque: true },
+    });
+
+    if (!alocacao) {
+      throw new NotFoundException('Alocação não encontrada');
+    }
+
+    // Verificar quantidade disponível
+    const alocacoesExistentes = await (this.prisma as any).estoqueAlocacao.findMany({
+      where: { estoqueId: alocacao.estoqueId },
+    });
+    const quantidadeAlocada = alocacoesExistentes.reduce((sum: number, aloc: any) => {
+      if (aloc.id === id) return sum; // Excluir a alocação atual
+      return sum + aloc.quantidade;
+    }, 0);
+    const quantidadeDisponivel = alocacao.estoque.quantidade - quantidadeAlocada;
+    
+    if (quantidade > quantidadeDisponivel) {
+      throw new BadRequestException(
+        `Quantidade solicitada (${quantidade}) excede a quantidade disponível (${quantidadeDisponivel})`
+      );
+    }
+
+    return (this.prisma as any).estoqueAlocacao.update({
+      where: { id },
+      data: { quantidade },
+      include: {
+        estoque: true,
+        projeto: true,
+        etapa: true,
+      },
+    });
+  }
+
+  async deleteAlocacao(id: number) {
+    await (this.prisma as any).estoqueAlocacao.delete({ where: { id } });
+    return { deleted: true };
+  }
+
+  async listAlocacoes(estoqueId?: number, projetoId?: number, etapaId?: number) {
+    const where: any = {};
+    if (estoqueId) where.estoqueId = estoqueId;
+    if (projetoId) where.projetoId = projetoId;
+    if (etapaId) where.etapaId = etapaId;
+
+    return (this.prisma as any).estoqueAlocacao.findMany({
+      where,
+      include: {
+        estoque: true,
+        projeto: true,
+        etapa: true,
+      },
+      orderBy: { dataAlocacao: 'desc' },
+    });
   }
 }

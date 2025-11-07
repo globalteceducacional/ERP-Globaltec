@@ -9,6 +9,7 @@ import {
   Post,
   Query,
   UseGuards,
+  BadRequestException,
 } from '@nestjs/common';
 import { StockService } from './stock.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -23,6 +24,8 @@ import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 import { ApprovePurchaseDto } from './dto/approve-purchase.dto';
 import { RejectPurchaseDto } from './dto/reject-purchase.dto';
+import { CreateAlocacaoDto } from './dto/create-alocacao.dto';
+import { UpdateAlocacaoDto } from './dto/update-alocacao.dto';
 
 @Controller('stock')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -118,5 +121,39 @@ export class StockController {
     @Body() body: RejectPurchaseDto,
   ) {
     return this.stockService.rejectPurchase(id, body.motivoRejeicao);
+  }
+
+  @Post('alocacoes')
+  createAlocacao(@Body() body: CreateAlocacaoDto) {
+    return this.stockService.createAlocacao(body);
+  }
+
+  @Get('alocacoes')
+  listAlocacoes(
+    @Query('estoqueId') estoqueId?: string,
+    @Query('projetoId') projetoId?: string,
+    @Query('etapaId') etapaId?: string,
+  ) {
+    return this.stockService.listAlocacoes(
+      estoqueId ? Number(estoqueId) : undefined,
+      projetoId ? Number(projetoId) : undefined,
+      etapaId ? Number(etapaId) : undefined,
+    );
+  }
+
+  @Patch('alocacoes/:id')
+  updateAlocacao(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: UpdateAlocacaoDto,
+  ) {
+    if (!body.quantidade) {
+      throw new BadRequestException('Quantidade é obrigatória');
+    }
+    return this.stockService.updateAlocacao(id, body.quantidade);
+  }
+
+  @Delete('alocacoes/:id')
+  deleteAlocacao(@Param('id', ParseIntPipe) id: number) {
+    return this.stockService.deleteAlocacao(id);
   }
 }

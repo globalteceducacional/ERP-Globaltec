@@ -84,6 +84,7 @@ export default function MyTasks() {
   const [objetivoError, setObjetivoError] = useState<string | null>(null);
   const [showViewEntregaModal, setShowViewEntregaModal] = useState(false);
   const [selectedViewEntrega, setSelectedViewEntrega] = useState<{ etapa: Etapa; index: number; entrega: ChecklistItemEntrega } | null>(null);
+  const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
 
   // Verificar se o usuário tem acesso à página de projetos
   const hasProjectsAccess = useMemo(() => {
@@ -422,6 +423,7 @@ export default function MyTasks() {
   const etapasPendentes = Array.isArray(data.etapasPendentes) ? data.etapasPendentes : [];
   const projetos = Array.isArray(data.projetos) ? data.projetos : [];
 
+  // Agrupar etapas por projeto
   const etapasPorProjeto = etapasPendentes.reduce((acc, etapa) => {
     const projetoId = etapa.projeto.id;
     if (!acc[projetoId]) {
@@ -434,325 +436,430 @@ export default function MyTasks() {
     return acc;
   }, {} as Record<number, { projeto: Projeto; etapas: Etapa[] }>);
 
+  // Criar um mapa de projetos com suas etapas para exibição unificada
+  const projetosComEtapas = projetos.map(projeto => {
+    const etapasDoProjeto = etapasPorProjeto[projeto.id]?.etapas || [];
+    return {
+      projeto,
+      etapas: etapasDoProjeto,
+      temEtapasPendentes: etapasDoProjeto.length > 0,
+    };
+  });
+
+  // Adicionar projetos que têm etapas mas não estão na lista de projetos
+  Object.values(etapasPorProjeto).forEach(({ projeto, etapas }) => {
+    if (!projetosComEtapas.find(p => p.projeto.id === projeto.id)) {
+      projetosComEtapas.push({
+        projeto,
+        etapas,
+        temEtapasPendentes: true,
+      });
+    }
+  });
+
+  const toggleProject = (projetoId: number) => {
+    setExpandedProjects(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(projetoId)) {
+        newSet.delete(projetoId);
+      } else {
+        newSet.add(projetoId);
+      }
+      return newSet;
+    });
+  };
+
+  // Calcular estatísticas por projeto
+  const getProjetoStats = (projeto: Projeto, etapas: Etapa[]) => {
+    const pendentes = etapas.filter(e => e.status === 'PENDENTE').length;
+    const emAndamento = etapas.filter(e => e.status === 'EM_ANDAMENTO').length;
+    const emAnalise = etapas.filter(e => e.status === 'EM_ANALISE').length;
+    const total = etapas.length;
+    
+    return { pendentes, emAndamento, emAnalise, total };
+  };
+
   return (
     <div className="space-y-6">
-      {/* Projetos onde o usuário é responsável */}
-      {projetos.length > 0 && (
-        <div>
-          <h2 className="text-xl font-semibold mb-4">Meus Projetos</h2>
-          <div className="grid md:grid-cols-2 gap-4">
-            {projetos.map((projeto) => (
-              <div
-                key={projeto.id}
-                onClick={hasProjectsAccess ? () => navigate(`/projects/${projeto.id}`) : undefined}
-                className={`bg-neutral/80 border border-white/10 rounded-xl p-5 ${
-                  hasProjectsAccess 
-                    ? 'cursor-pointer hover:border-primary/50 transition-colors' 
-                    : 'cursor-default'
-                }`}
-              >
-                <h3 className="text-lg font-semibold mb-2">{projeto.nome}</h3>
-                {projeto.resumo && (
-                  <p className="text-white/60 text-sm mb-3 line-clamp-2">{projeto.resumo}</p>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className={`px-2 py-1 rounded text-xs ${getStatusColor(projeto.status)}`}>
-                    {getStatusLabel(projeto.status)}
-                  </span>
-                  {hasProjectsAccess && (
-                    <span className="text-primary text-sm font-medium">Ver detalhes →</span>
-                  )}
-                </div>
-              </div>
-            ))}
+      {/* Resumo Geral */}
+      {(projetos.length > 0 || etapasPendentes.length > 0) && (
+        <div className="bg-neutral/80 border border-white/10 rounded-xl p-6">
+          <h2 className="text-xl font-semibold mb-4">Resumo</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white/5 rounded-lg p-4 border border-white/10">
+              <p className="text-white/60 text-sm mb-1">Total de Projetos</p>
+              <p className="text-2xl font-bold text-white">{projetosComEtapas.length}</p>
+            </div>
+            <div className="bg-yellow-500/10 rounded-lg p-4 border border-yellow-500/20">
+              <p className="text-yellow-300/80 text-sm mb-1">Etapas Pendentes</p>
+              <p className="text-2xl font-bold text-yellow-300">
+                {etapasPendentes.filter(e => e.status === 'PENDENTE').length}
+              </p>
+            </div>
+            <div className="bg-blue-500/10 rounded-lg p-4 border border-blue-500/20">
+              <p className="text-blue-300/80 text-sm mb-1">Em Andamento</p>
+              <p className="text-2xl font-bold text-blue-300">
+                {etapasPendentes.filter(e => e.status === 'EM_ANDAMENTO').length}
+              </p>
+            </div>
+            <div className="bg-purple-500/10 rounded-lg p-4 border border-purple-500/20">
+              <p className="text-purple-300/80 text-sm mb-1">Em Análise</p>
+              <p className="text-2xl font-bold text-purple-300">
+                {etapasPendentes.filter(e => e.status === 'EM_ANALISE').length}
+              </p>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Etapas Pendentes */}
-      {etapasPendentes.length > 0 ? (
+      {/* Projetos e Etapas Organizados */}
+      {projetosComEtapas.length > 0 ? (
         <div>
-          <h2 className="text-xl font-semibold mb-4">Etapas Pendentes e em Andamento</h2>
-          <div className="space-y-6">
-            {Object.values(etapasPorProjeto).map(({ projeto, etapas }) => (
-              <div key={projeto.id} className="bg-neutral/80 border border-white/10 rounded-xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-lg font-semibold">{projeto.nome}</h3>
-                    <p className="text-white/60 text-sm">{etapas.length} etapa(s) pendente(s)</p>
-                  </div>
-                  {hasProjectsAccess && (
-                    <button
-                      onClick={() => navigate(`/projects/${projeto.id}`)}
-                      className={buttonStyles.secondary}
-                    >
-                      Ver Projeto
-                    </button>
-                  )}
-                </div>
+          <h2 className="text-xl font-semibold mb-4">Meus Projetos e Tarefas</h2>
+          <div className="space-y-4">
+            {projetosComEtapas.map(({ projeto, etapas, temEtapasPendentes }) => {
+              const isExpanded = expandedProjects.has(projeto.id);
+              const stats = getProjetoStats(projeto, etapas);
+              const hasEtapas = etapas.length > 0;
 
-    <div className="space-y-4">
-                  {etapas.map((etapa) => {
-                    // Verificar se o usuário é executor usando executorId ou executor.id como fallback
-                    const executorId = etapa.executorId || etapa.executor?.id;
-                    // Comparar convertendo ambos para número para evitar problemas de tipo
-                    const isExecutor = user?.id && executorId && Number(user.id) === Number(executorId);
-                    
-                    // Verificar se o usuário é integrante (auxiliar) da etapa
-                    const integrantesIds = etapa.integrantes?.map(i => i.usuario?.id).filter(Boolean) || [];
-                    const isIntegrante = user?.id && integrantesIds.some(id => Number(user.id) === Number(id));
-                    
-                    // Usuário pode interagir se for executor OU integrante
-                    const podeInteragir = isExecutor || isIntegrante;
-                    
-                    const latestEntrega = etapa.entregas && etapa.entregas.length > 0 ? etapa.entregas[0] : null;
-                    
-                    // Verificar se há itens do checklist marcados
-                    const checklistItems = etapa.checklistJson && Array.isArray(etapa.checklistJson) 
-                      ? etapa.checklistJson 
-                      : [];
-                    const itensMarcados = checklistItems.filter((item) => item.concluido).length;
-                    const temItensMarcados = itensMarcados > 0;
-                    const totalItens = checklistItems.length;
-                    
-                    const canEnviarEntrega =
-                      podeInteragir && 
-                      ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) &&
-                      temItensMarcados;
-
-                    return (
-                      <div key={etapa.id} className="bg-neutral/60 border border-white/10 rounded-lg p-4">
-                        <div className="flex items-start justify-between gap-3 mb-3">
-                          <div className="flex-1">
-                            <h4 className="font-semibold text-white/90">{etapa.nome}</h4>
-                            {etapa.descricao && (
-                              <p className="text-sm text-white/70 mt-1">{etapa.descricao}</p>
-                            )}
-                          </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <span className={`px-2 py-1 rounded text-xs ${getStatusColor(etapa.status)}`}>
-                              {getStatusLabel(etapa.status)}
-                            </span>
-                            {podeInteragir && etapa.status === 'EM_ANALISE' && (
-                              <span className="text-xs text-white/60">Aguardando revisão</span>
-                            )}
-                            {podeInteragir && 
-                             ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) && 
-                             !temItensMarcados && 
-                             totalItens > 0 && (
-                              <span className="text-xs text-yellow-400">
-                                Marque itens do checklist na página de Projetos para enviar
-                              </span>
-                            )}
-                            {canEnviarEntrega && (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEntregaModal(etapa)}
-                                className="px-3 py-1 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-xs border border-primary/30 transition-colors"
-                              >
-                                Enviar Entrega ({itensMarcados}/{totalItens})
-                              </button>
-                            )}
-                          </div>
+              return (
+                <div key={projeto.id} className="bg-neutral/80 border border-white/10 rounded-xl overflow-hidden">
+                  {/* Cabeçalho do Projeto */}
+                  <div
+                    className={`p-5 ${
+                      hasProjectsAccess && hasEtapas
+                        ? 'cursor-pointer hover:bg-white/5 transition-colors'
+                        : ''
+                    }`}
+                    onClick={hasProjectsAccess && hasEtapas ? () => toggleProject(projeto.id) : undefined}
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-lg font-semibold">{projeto.nome}</h3>
+                          <span className={`px-2 py-1 rounded text-xs ${getStatusColor(projeto.status)}`}>
+                            {getStatusLabel(projeto.status)}
+                          </span>
                         </div>
-
-                        {latestEntrega ? (
-                          <div className="mt-3 border border-white/10 rounded-md p-3 bg-white/5">
-                            <div className="flex items-start justify-between gap-3 mb-2">
-            <div>
-                                <span className="text-xs text-white/60 block">Última entrega</span>
-                                <span className="text-sm text-white/80">
-                                  {new Date(latestEntrega.dataEnvio).toLocaleString('pt-BR')}
-                                </span>
-            </div>
-                              <span className={`px-2 py-1 rounded text-xs ${getEntregaStatusColor(latestEntrega.status)}`}>
-                                {getEntregaStatusLabel(latestEntrega.status)}
-            </span>
-          </div>
-                            <p className="text-sm text-white/80 whitespace-pre-wrap">{latestEntrega.descricao}</p>
-                            {latestEntrega.imagemUrl && (
-                              <img
-                                src={latestEntrega.imagemUrl}
-                                alt={`Entrega etapa ${etapa.nome}`}
-                                className="mt-3 rounded-md border border-white/10 max-h-48 object-cover"
-                              />
-                            )}
-                            {latestEntrega.comentario && (
-                              <div className="mt-3 text-xs text-white/70">
-                                <span className="font-semibold">Comentário do avaliador:</span>
-                                <p className="mt-1 text-white/80">{latestEntrega.comentario}</p>
-                              </div>
-                            )}
-                            {latestEntrega.avaliadoPor && (
-                              <p className="mt-2 text-xs text-white/60">
-                                Avaliado por {latestEntrega.avaliadoPor.nome}
-                                {latestEntrega.dataAvaliacao
-                                  ? ` em ${new Date(latestEntrega.dataAvaliacao).toLocaleString('pt-BR')}`
-                                  : ''}
-                              </p>
-                            )}
-                          </div>
-                        ) : (
-                          podeInteragir && (
-                            <div className="mt-3 p-3 border border-dashed border-white/20 rounded-md text-sm text-white/60">
-                              Finalize a etapa descrevendo o trabalho e anexando uma imagem de evidência.
-                            </div>
-                          )
+                        {projeto.resumo && (
+                          <p className="text-white/60 text-sm mb-3 line-clamp-2">{projeto.resumo}</p>
                         )}
-
-                      {/* Checklist */}
-                      {etapa.checklistJson && Array.isArray(etapa.checklistJson) && etapa.checklistJson.length > 0 && (
-                        <div className="mt-4 pt-4 border-t border-white/10">
-                          <div className="flex items-center justify-between mb-3">
-                            <label className="text-sm font-medium text-white/90 block">
-                              Checklist de Objetos
-                              {etapa.executor && (
-                                <span className="text-white/50 text-xs ml-2">
-                                  (Executor: {etapa.executor.nome})
-                                </span>
-                              )}
-                            </label>
-                            {podeInteragir && totalItens > 0 && (
-                              <span className="text-xs text-white/60">
-                                {itensMarcados} de {totalItens} marcado{itensMarcados !== 1 ? 's' : ''}
+                        {hasEtapas && (
+                          <div className="flex items-center gap-4 text-xs">
+                            <span className="text-white/60">
+                              {stats.total} etapa{stats.total !== 1 ? 's' : ''} pendente{stats.total !== 1 ? 's' : ''}
+                            </span>
+                            {stats.pendentes > 0 && (
+                              <span className="px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+                                {stats.pendentes} pendente{stats.pendentes !== 1 ? 's' : ''}
+                              </span>
+                            )}
+                            {stats.emAndamento > 0 && (
+                              <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                                {stats.emAndamento} em andamento
+                              </span>
+                            )}
+                            {stats.emAnalise > 0 && (
+                              <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                                {stats.emAnalise} em análise
                               </span>
                             )}
                           </div>
-                          <div className="space-y-2">
-                            {etapa.checklistJson.map((item, index) => {
-                              const entregaItem = etapa.checklistEntregas?.find((e) => e.checklistIndex === index);
-                              const statusItem = entregaItem?.status ?? 'PENDENTE';
-                              const podeEnviarObjetivo = podeInteragir && (statusItem === 'PENDENTE' || statusItem === 'REPROVADO');
-                              return (
-                                <div
-                                  key={index}
-                                  className={`flex items-center gap-3 p-2 rounded-md transition-colors ${
-                                    podeInteragir ? 'hover:bg-white/5' : ''
-                                  }`}
-                                >
-                                  <div
-                                    className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                                      item.concluido
-                                        ? 'bg-primary border-primary'
-                                        : 'border-white/30 bg-white/10'
-                                    }`}
-                                    title="Marque os itens na página de Projetos"
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {hasProjectsAccess && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/projects/${projeto.id}`);
+                            }}
+                            className="px-3 py-1.5 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-sm border border-primary/30 transition-colors"
+                          >
+                            Ver Detalhes
+                          </button>
+                        )}
+                        {hasEtapas && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleProject(projeto.id);
+                            }}
+                            className="p-2 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                            title={isExpanded ? 'Recolher' : 'Expandir'}
+                          >
+                            <svg
+                              className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Etapas do Projeto (Colapsável) */}
+                  {hasEtapas && isExpanded && (
+                    <div className="border-t border-white/10 p-5 pt-4 space-y-4">
+                      {etapas.map((etapa) => {
+                        // Verificar se o usuário é executor usando executorId ou executor.id como fallback
+                        const executorId = etapa.executorId || etapa.executor?.id;
+                        // Comparar convertendo ambos para número para evitar problemas de tipo
+                        const isExecutor = user?.id && executorId && Number(user.id) === Number(executorId);
+                        
+                        // Verificar se o usuário é integrante (auxiliar) da etapa
+                        const integrantesIds = etapa.integrantes?.map(i => i.usuario?.id).filter(Boolean) || [];
+                        const isIntegrante = user?.id && integrantesIds.some(id => Number(user.id) === Number(id));
+                        
+                        // Usuário pode interagir se for executor OU integrante
+                        const podeInteragir = isExecutor || isIntegrante;
+                        
+                        const latestEntrega = etapa.entregas && etapa.entregas.length > 0 ? etapa.entregas[0] : null;
+                        
+                        // Verificar se há itens do checklist marcados
+                        const checklistItems = etapa.checklistJson && Array.isArray(etapa.checklistJson) 
+                          ? etapa.checklistJson 
+                          : [];
+                        const itensMarcados = checklistItems.filter((item) => item.concluido).length;
+                        const temItensMarcados = itensMarcados > 0;
+                        const totalItens = checklistItems.length;
+                        
+                        const canEnviarEntrega =
+                          podeInteragir && 
+                          ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) &&
+                          temItensMarcados;
+
+                        return (
+                          <div key={etapa.id} className="bg-neutral/60 border border-white/10 rounded-lg p-4">
+                            <div className="flex items-start justify-between gap-3 mb-3">
+                              <div className="flex-1">
+                                <h4 className="font-semibold text-white/90">{etapa.nome}</h4>
+                                {etapa.descricao && (
+                                  <p className="text-sm text-white/70 mt-1">{etapa.descricao}</p>
+                                )}
+                              </div>
+                              <div className="flex flex-col items-end gap-2">
+                                <span className={`px-2 py-1 rounded text-xs ${getStatusColor(etapa.status)}`}>
+                                  {getStatusLabel(etapa.status)}
+                                </span>
+                                {podeInteragir && etapa.status === 'EM_ANALISE' && (
+                                  <span className="text-xs text-white/60">Aguardando revisão</span>
+                                )}
+                                {podeInteragir && 
+                                 ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) && 
+                                 !temItensMarcados && 
+                                 totalItens > 0 && (
+                                  <span className="text-xs text-yellow-400">
+                                    Marque itens do checklist na página de Projetos para enviar
+                                  </span>
+                                )}
+                                {canEnviarEntrega && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEntregaModal(etapa)}
+                                    className="px-3 py-1 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-xs border border-primary/30 transition-colors"
                                   >
-                                    {item.concluido && (
-                                      <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                      </svg>
-                                    )}
+                                    Enviar Entrega ({itensMarcados}/{totalItens})
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {latestEntrega ? (
+                              <div className="mt-3 border border-white/10 rounded-md p-3 bg-white/5">
+                                <div className="flex items-start justify-between gap-3 mb-2">
+                                  <div>
+                                    <span className="text-xs text-white/60 block">Última entrega</span>
+                                    <span className="text-sm text-white/80">
+                                      {new Date(latestEntrega.dataEnvio).toLocaleString('pt-BR')}
+                                    </span>
                                   </div>
-                                  <span
-                                    className={`flex-1 text-sm ${
-                                      item.concluido
-                                        ? 'text-white/50 line-through'
-                                        : 'text-white/80'
-                                    }`}
-                                  >
-                                    {item.texto}
+                                  <span className={`px-2 py-1 rounded text-xs ${getEntregaStatusColor(latestEntrega.status)}`}>
+                                    {getEntregaStatusLabel(latestEntrega.status)}
                                   </span>
-                                  <span
-                                    className={`px-2 py-0.5 rounded text-[10px] border ${
-                                      statusItem === 'EM_ANALISE'
-                                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
-                                        : statusItem === 'APROVADO'
-                                        ? 'bg-green-500/20 text-green-300 border-green-500/40'
-                                        : statusItem === 'REPROVADO'
-                                        ? 'bg-danger/20 text-danger border-danger/40'
-                                        : 'bg-white/10 text-white/70 border-white/20'
-                                    }`}
-                                  >
-                                    {statusItem === 'PENDENTE'
-                                      ? 'Pendente'
-                                      : statusItem === 'EM_ANALISE'
-                                      ? 'Em análise'
-                                      : statusItem === 'APROVADO'
-                                      ? 'Aprovado'
-                                      : 'Reprovado'}
-                                  </span>
-                                  {entregaItem && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
-                                        setShowViewEntregaModal(true);
-                                      }}
-                                      className="ml-2 px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                                      title="Ver detalhes da entrega"
-                                    >
-                                      Ver detalhes
-                                    </button>
-                                  )}
-                                  {podeEnviarObjetivo && (
-            <button
-                                      type="button"
-                                      onClick={() => handleOpenChecklistModal(etapa, index)}
-                                      className="ml-2 px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                                      title="Enviar objetivo para análise"
-            >
-                                      Enviar
-            </button>
+                                </div>
+                                <p className="text-sm text-white/80 whitespace-pre-wrap">{latestEntrega.descricao}</p>
+                                {latestEntrega.imagemUrl && (
+                                  <img
+                                    src={latestEntrega.imagemUrl}
+                                    alt={`Entrega etapa ${etapa.nome}`}
+                                    className="mt-3 rounded-md border border-white/10 max-h-48 object-cover"
+                                  />
+                                )}
+                                {latestEntrega.comentario && (
+                                  <div className="mt-3 text-xs text-white/70">
+                                    <span className="font-semibold">Comentário do avaliador:</span>
+                                    <p className="mt-1 text-white/80">{latestEntrega.comentario}</p>
+                                  </div>
+                                )}
+                                {latestEntrega.avaliadoPor && (
+                                  <p className="mt-2 text-xs text-white/60">
+                                    Avaliado por {latestEntrega.avaliadoPor.nome}
+                                    {latestEntrega.dataAvaliacao
+                                      ? ` em ${new Date(latestEntrega.dataAvaliacao).toLocaleString('pt-BR')}`
+                                      : ''}
+                                  </p>
+                                )}
+                              </div>
+                            ) : (
+                              podeInteragir && (
+                                <div className="mt-3 p-3 border border-dashed border-white/20 rounded-md text-sm text-white/60">
+                                  Finalize a etapa descrevendo o trabalho e anexando uma imagem de evidência.
+                                </div>
+                              )
+                            )}
+
+                            {/* Checklist */}
+                            {etapa.checklistJson && Array.isArray(etapa.checklistJson) && etapa.checklistJson.length > 0 && (
+                              <div className="mt-4 pt-4 border-t border-white/10">
+                                <div className="flex items-center justify-between mb-3">
+                                  <label className="text-sm font-medium text-white/90 block">
+                                    Checklist de Objetos
+                                    {etapa.executor && (
+                                      <span className="text-white/50 text-xs ml-2">
+                                        (Executor: {etapa.executor.nome})
+                                      </span>
+                                    )}
+                                  </label>
+                                  {podeInteragir && totalItens > 0 && (
+                                    <span className="text-xs text-white/60">
+                                      {itensMarcados} de {totalItens} marcado{itensMarcados !== 1 ? 's' : ''}
+                                    </span>
                                   )}
                                 </div>
-                              );
-                            })}
-                          </div>
-                            {podeInteragir && 
-                             ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) && 
-                             !temItensMarcados && (
-                            <div className="mt-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
-                              <p className="text-xs text-yellow-300">
-                                💡 Marque pelo menos um item do checklist na página de Projetos para poder enviar a entrega com descrição e imagem.
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                                <div className="space-y-2">
+                                  {etapa.checklistJson.map((item, index) => {
+                                    const entregaItem = etapa.checklistEntregas?.find((e) => e.checklistIndex === index);
+                                    const statusItem = entregaItem?.status ?? 'PENDENTE';
+                                    const podeEnviarObjetivo = podeInteragir && (statusItem === 'PENDENTE' || statusItem === 'REPROVADO');
+                                    return (
+                                      <div
+                                        key={index}
+                                        className={`flex items-center gap-3 p-2 rounded-md transition-colors ${
+                                          podeInteragir ? 'hover:bg-white/5' : ''
+                                        }`}
+                                      >
+                                        <div
+                                          className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                                            item.concluido
+                                              ? 'bg-primary border-primary'
+                                              : 'border-white/30 bg-white/10'
+                                          }`}
+                                          title="Marque os itens na página de Projetos"
+                                        >
+                                          {item.concluido && (
+                                            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                            </svg>
+                                          )}
+                                        </div>
+                                        <span
+                                          className={`flex-1 text-sm ${
+                                            item.concluido
+                                              ? 'text-white/50 line-through'
+                                              : 'text-white/80'
+                                          }`}
+                                        >
+                                          {item.texto}
+                                        </span>
+                                        <span
+                                          className={`px-2 py-0.5 rounded text-[10px] border ${
+                                            statusItem === 'EM_ANALISE'
+                                              ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                                              : statusItem === 'APROVADO'
+                                              ? 'bg-green-500/20 text-green-300 border-green-500/40'
+                                              : statusItem === 'REPROVADO'
+                                              ? 'bg-danger/20 text-danger border-danger/40'
+                                              : 'bg-white/10 text-white/70 border-white/20'
+                                          }`}
+                                        >
+                                          {statusItem === 'PENDENTE'
+                                            ? 'Pendente'
+                                            : statusItem === 'EM_ANALISE'
+                                            ? 'Em análise'
+                                            : statusItem === 'APROVADO'
+                                            ? 'Aprovado'
+                                            : 'Reprovado'}
+                                        </span>
+                                        {entregaItem && (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
+                                              setShowViewEntregaModal(true);
+                                            }}
+                                            className="ml-2 px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                                            title="Ver detalhes da entrega"
+                                          >
+                                            Ver detalhes
+                                          </button>
+                                        )}
+                                        {podeEnviarObjetivo && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenChecklistModal(etapa, index)}
+                                            className="ml-2 px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                                            title="Enviar objetivo para análise"
+                                          >
+                                            Enviar
+                                          </button>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                {podeInteragir && 
+                                 ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) && 
+                                 !temItensMarcados && (
+                                  <div className="mt-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
+                                    <p className="text-xs text-yellow-300">
+                                      💡 Marque pelo menos um item do checklist na página de Projetos para poder enviar a entrega com descrição e imagem.
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            )}
 
-                      {/* Informações da etapa */}
-                      <div className="mt-4 pt-4 border-t border-white/10 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-white/70">
-                        {etapa.dataInicio && (
-                          <div>
-                            <span className="font-medium">Data Início:</span>{' '}
-                            {new Date(etapa.dataInicio).toLocaleDateString('pt-BR', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                            })}
+                            {/* Informações da etapa */}
+                            <div className="mt-4 pt-4 border-t border-white/10 grid grid-cols-1 md:grid-cols-2 gap-2 text-sm text-white/70">
+                              {etapa.dataInicio && (
+                                <div>
+                                  <span className="font-medium">Data Início:</span>{' '}
+                                  {new Date(etapa.dataInicio).toLocaleDateString('pt-BR', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                  })}
+                                </div>
+                              )}
+                              {etapa.dataFim && (
+                                <div>
+                                  <span className="font-medium">Data Fim:</span>{' '}
+                                  {new Date(etapa.dataFim).toLocaleDateString('pt-BR', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                  })}
+                                </div>
+                              )}
+                            </div>
                           </div>
-                        )}
-                        {etapa.dataFim && (
-                          <div>
-                            <span className="font-medium">Data Fim:</span>{' '}
-                            {new Date(etapa.dataFim).toLocaleDateString('pt-BR', {
-                              day: '2-digit',
-                              month: '2-digit',
-                              year: 'numeric',
-                            })}
-                          </div>
-                        )}
-                      </div>
-                      </div>
                     );
                   })}
-          </div>
-        </div>
-      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
-        projetos.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-white/50">Nenhuma tarefa atribuída.</p>
-          </div>
-        )
-      )}
-
-      {projetos.length === 0 && etapasPendentes.length === 0 && (
-        <div className="text-center py-12">
-          <p className="text-white/50">Você não está atribuído a nenhum projeto ou etapa no momento.</p>
+        <div className="bg-neutral/80 border border-white/10 rounded-xl p-8 text-center">
+          <p className="text-white/60">Nenhum projeto ou tarefa encontrada</p>
         </div>
       )}
 

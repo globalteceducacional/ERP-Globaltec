@@ -132,6 +132,7 @@ model Projeto {
   responsaveis  ProjetoResponsavel[]
   compras       Compra[]
   estoqueItems  Estoque[]
+  estoqueAlocacoes EstoqueAlocacao[]
 }
 
 model ProjetoResponsavel {
@@ -173,6 +174,7 @@ model Etapa {
   entregas    EtapaEntrega[]
   checklistEntregas ChecklistItemEntrega[]
   compras     Compra[]
+  estoqueAlocacoes EstoqueAlocacao[]
 }
 
 model EtapaEntrega {
@@ -250,7 +252,7 @@ model Subetapa {
 model Compra {
   id                   Int          @id @default(autoincrement())
   item                 String
-  descricao            String?
+  descricao            String?      // Motivo da solicitação
   quantidade           Int
   valorUnitario        Float?       // Valor unitário da cotação selecionada (opcional para solicitações)
   imagemUrl            String?
@@ -273,7 +275,7 @@ model Estoque {
   id          Int           @id @default(autoincrement())
   item        String
   descricao   String?
-  quantidade  Int
+  quantidade  Int           // Quantidade total disponível no estoque
   valorUnitario Float
   imagemUrl   String?
   cotacoesJson Json?        // Array de cotações: [{ valorUnitario, frete, impostos, link }]
@@ -282,6 +284,23 @@ model Estoque {
   projeto     Projeto?      @relation(fields: [projetoId], references: [id])
   etapaId     Int?
   etapa       Etapa?        @relation(fields: [etapaId], references: [id])
+  alocacoes   EstoqueAlocacao[] // Alocações deste item para projetos/etapas
+}
+
+model EstoqueAlocacao {
+  id          Int      @id @default(autoincrement())
+  estoqueId   Int
+  estoque     Estoque  @relation(fields: [estoqueId], references: [id], onDelete: Cascade)
+  projetoId   Int?
+  projeto     Projeto? @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  etapaId     Int?
+  etapa       Etapa?   @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  quantidade  Int      // Quantidade alocada para este projeto/etapa
+  dataAlocacao DateTime @default(now())
+  
+  @@index([estoqueId])
+  @@index([projetoId])
+  @@index([etapaId])
 }
 
 model Ocorrencia {

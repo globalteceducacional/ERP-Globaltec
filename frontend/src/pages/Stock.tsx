@@ -20,6 +20,8 @@ interface StockItem {
   cotacoesJson?: Cotacao[] | null;
   projetoId?: number | null;
   etapaId?: number | null;
+  quantidadeAlocada?: number;
+  quantidadeDisponivel?: number;
 }
 
 interface Purchase {
@@ -91,6 +93,8 @@ export default function Stock() {
   const [purchaseToApprove, setPurchaseToApprove] = useState<Purchase | null>(null);
   const [showViewRequestModal, setShowViewRequestModal] = useState(false);
   const [purchaseToView, setPurchaseToView] = useState<Purchase | null>(null);
+  const [approveCotacoes, setApproveCotacoes] = useState<Cotacao[]>([{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }]);
+  const [selectedCotacaoIndex, setSelectedCotacaoIndex] = useState<number>(0);
   const [itemForm, setItemForm] = useState<CreateItemForm>({
     item: '',
     codigo: '',
@@ -159,6 +163,11 @@ export default function Stock() {
 
   // Filtrar purchases baseado nos filtros
   const filteredPurchases = purchases.filter((purchase) => {
+    // Excluir REPROVADO de todas as abas (só aparece no projeto)
+    if (purchase.status === 'REPROVADO') {
+      return false;
+    }
+    
     // Excluir SOLICITADO da aba Compras
     if (activeTab === 'compras' && purchase.status === 'SOLICITADO') {
       return false;
@@ -1214,7 +1223,9 @@ export default function Stock() {
             <thead className="bg-white/5 text-white/70">
               <tr>
                 <th className="px-4 py-3 text-left">Item</th>
-                <th className="px-4 py-3 text-left">Quantidade</th>
+                <th className="px-4 py-3 text-left">Quantidade Total</th>
+                <th className="px-4 py-3 text-left">Alocada</th>
+                <th className="px-4 py-3 text-left">Disponível</th>
                 <th className="px-4 py-3 text-left">Status</th>
                 <th className="px-4 py-3 text-left">Ações</th>
               </tr>
@@ -1222,12 +1233,15 @@ export default function Stock() {
             <tbody>
               {filteredItems.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-white/50">
+                  <td colSpan={6} className="px-4 py-8 text-center text-white/50">
                     {items.length === 0 ? 'Nenhum item no estoque' : 'Nenhum item encontrado com os filtros aplicados'}
                   </td>
                 </tr>
               ) : (
                 filteredItems.map((item) => {
+                  const quantidadeAlocada = item.quantidadeAlocada ?? 0;
+                  const quantidadeDisponivel = item.quantidadeDisponivel ?? item.quantidade ?? 0;
+                  
                   return (
                     <tr key={item.id} className="border-t border-white/5 hover:bg-white/5">
                       <td className="px-4 py-3">
@@ -1251,7 +1265,27 @@ export default function Stock() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3">{item.quantidade || 0}</td>
+                      <td className="px-4 py-3">
+                        <span className="font-medium">{item.quantidade || 0}</span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded text-xs ${
+                          quantidadeAlocada > 0 
+                            ? 'bg-yellow-500/20 text-yellow-400' 
+                            : 'bg-white/10 text-white/50'
+                        }`}>
+                          {quantidadeAlocada}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          quantidadeDisponivel > 0 
+                            ? 'bg-green-500/20 text-green-400' 
+                            : 'bg-red-500/20 text-red-400'
+                        }`}>
+                          {quantidadeDisponivel}
+                        </span>
+                      </td>
                       <td className="px-4 py-3">{item.status || 'DISPONIVEL'}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -1554,7 +1588,7 @@ export default function Stock() {
                             )}
                             <div>
                               <div className="font-medium">{purchase.item || 'Sem nome'}</div>
-                              {purchase.descricao && <div className="text-xs text-white/60">{purchase.descricao}</div>}
+                              {purchase.descricao && <div className="text-xs text-white/60">Motivo: {purchase.descricao}</div>}
                             </div>
                           </div>
                         </td>
@@ -1586,12 +1620,12 @@ export default function Stock() {
                               className="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
                             >
                               Ver Detalhes
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -2176,12 +2210,13 @@ export default function Stock() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Descrição</label>
+                <label className="block text-sm font-medium text-white/90 mb-2">Motivo da Solicitação</label>
                 <textarea
                   value={purchaseForm.descricao}
                   onChange={(e) => setPurchaseForm({ ...purchaseForm, descricao: e.target.value })}
                   rows={3}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="Descreva o motivo da solicitação..."
                 />
               </div>
 
@@ -2526,12 +2561,13 @@ export default function Stock() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Descrição</label>
+                <label className="block text-sm font-medium text-white/90 mb-2">Motivo da Solicitação</label>
                 <textarea
                   value={purchaseForm.descricao}
                   onChange={(e) => setPurchaseForm({ ...purchaseForm, descricao: e.target.value })}
                   rows={3}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="Descreva o motivo da solicitação..."
                 />
               </div>
 
@@ -3059,7 +3095,7 @@ export default function Stock() {
                                           <div className="font-medium text-white">{purchase.item}</div>
                                           {purchase.descricao && (
                                             <div className="text-sm text-white/60 mt-1">
-                                              {purchase.descricao}
+                                              Motivo: {purchase.descricao}
                                             </div>
                                           )}
                                           <div className="flex items-center gap-4 mt-2 text-sm text-white/70">
@@ -3230,7 +3266,7 @@ export default function Stock() {
                               doc.setTextColor(80, 80, 80);
                               if (purchase.descricao) {
                                 const descLines = doc.splitTextToSize(
-                                  `   Descrição: ${purchase.descricao}`,
+                                  `   Motivo da Solicitação: ${purchase.descricao}`,
                                   pageWidth - margin * 2 - 10
                                 );
                                 descLines.forEach((line: string) => {
@@ -3353,6 +3389,337 @@ export default function Stock() {
                   </div>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Ver Detalhes da Solicitação */}
+      {showViewRequestModal && purchaseToView && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold">Detalhes da Solicitação</h2>
+              <button
+                onClick={() => {
+                  setShowViewRequestModal(false);
+                  setPurchaseToView(null);
+                  setError(null);
+                  setApproveCotacoes([{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }]);
+                  setSelectedCotacaoIndex(0);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {/* Informações Básicas */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-1">Item</label>
+                  <p className="text-white/90 font-semibold">{purchaseToView.item}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-1">Quantidade</label>
+                  <p className="text-white/90">{purchaseToView.quantidade}</p>
+                </div>
+                {purchaseToView.descricao && (
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-white/70 mb-1">Motivo da Solicitação</label>
+                    <p className="text-white/90">{purchaseToView.descricao}</p>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-1">Solicitado Por</label>
+                  <p className="text-white/90">
+                    {(purchaseToView as any).solicitadoPor?.nome || 'N/A'}
+                    {(purchaseToView as any).solicitadoPor?.cargo && (
+                      <span className="text-white/60 ml-2">({(purchaseToView as any).solicitadoPor.cargo.nome})</span>
+                    )}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-1">Projeto</label>
+                  <p className="text-white/90">{(purchaseToView as any).projeto?.nome || 'Sem projeto'}</p>
+                </div>
+                {(purchaseToView as any).etapa && (
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-white/70 mb-1">Etapa</label>
+                    <p className="text-white/90">{(purchaseToView as any).etapa.nome}</p>
+                  </div>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-1">Status</label>
+                  <span className={`px-2 py-1 rounded text-xs ${getStatusColor(purchaseToView.status)}`}>
+                    {getStatusLabel(purchaseToView.status)}
+                  </span>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-1">Data de Solicitação</label>
+                  <p className="text-white/90">
+                    {new Date((purchaseToView as any).dataSolicitacao || new Date()).toLocaleString('pt-BR')}
+                  </p>
+                </div>
+              </div>
+
+              {/* Imagem se houver */}
+              {(purchaseToView as any).imagemUrl && (
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-2">Imagem</label>
+                  <img
+                    src={(purchaseToView as any).imagemUrl}
+                    alt={purchaseToView.item}
+                    className="max-w-full h-auto rounded-md border border-white/20"
+                  />
+                </div>
+              )}
+
+              {/* Cotações existentes se houver */}
+              {purchaseToView.cotacoesJson && Array.isArray(purchaseToView.cotacoesJson) && purchaseToView.cotacoesJson.length > 0 ? (
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-2">Cotações Existentes</label>
+                  <div className="space-y-2">
+                    {purchaseToView.cotacoesJson.map((cotacao: any, index: number) => (
+                      <div key={index} className="bg-white/5 p-3 rounded-md border border-white/10">
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          <div>
+                            <span className="text-white/70">Valor Unitário: </span>
+                            <span className="text-white/90">
+                              {cotacao.valorUnitario?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || 'N/A'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-white/70">Frete: </span>
+                            <span className="text-white/90">
+                              {cotacao.frete?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || 'N/A'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-white/70">Impostos: </span>
+                            <span className="text-white/90">
+                              {cotacao.impostos?.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) || 'N/A'}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-white/70">Total: </span>
+                            <span className="text-primary font-semibold">
+                              {((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </span>
+                          </div>
+                          {cotacao.link && (
+                            <div className="col-span-2">
+                              <span className="text-white/70">Link: </span>
+                              <a
+                                href={cotacao.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-primary hover:underline"
+                              >
+                                {cotacao.link}
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-white/70 mb-2">Adicionar Cotações para Aprovar</label>
+                  <p className="text-xs text-white/60 mb-3">Esta solicitação não possui cotações. Adicione pelo menos uma cotação para poder aprovar.</p>
+                  <div className="space-y-3">
+                    {approveCotacoes.map((cotacao, index) => (
+                      <div key={index} className="bg-white/5 p-4 rounded-md border border-white/10">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-medium text-white/90">Cotação {index + 1}</span>
+                          {approveCotacoes.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newCotacoes = approveCotacoes.filter((_, i) => i !== index);
+                                setApproveCotacoes(newCotacoes);
+                                if (selectedCotacaoIndex >= newCotacoes.length) {
+                                  setSelectedCotacaoIndex(newCotacoes.length - 1);
+                                }
+                              }}
+                              className="text-red-400 hover:text-red-300 text-sm"
+                            >
+                              Remover
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-white/70 mb-1">Valor Unitário *</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={cotacao.valorUnitario}
+                              onChange={(e) => {
+                                const newCotacoes = [...approveCotacoes];
+                                newCotacoes[index].valorUnitario = parseFloat(e.target.value) || 0;
+                                setApproveCotacoes(newCotacoes);
+                              }}
+                              className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-white/70 mb-1">Frete</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={cotacao.frete}
+                              onChange={(e) => {
+                                const newCotacoes = [...approveCotacoes];
+                                newCotacoes[index].frete = parseFloat(e.target.value) || 0;
+                                setApproveCotacoes(newCotacoes);
+                              }}
+                              className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-white/70 mb-1">Impostos</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={cotacao.impostos}
+                              onChange={(e) => {
+                                const newCotacoes = [...approveCotacoes];
+                                newCotacoes[index].impostos = parseFloat(e.target.value) || 0;
+                                setApproveCotacoes(newCotacoes);
+                              }}
+                              className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-white/70 mb-1">Link (opcional)</label>
+                            <input
+                              type="text"
+                              value={cotacao.link}
+                              onChange={(e) => {
+                                const newCotacoes = [...approveCotacoes];
+                                newCotacoes[index].link = e.target.value;
+                                setApproveCotacoes(newCotacoes);
+                              }}
+                              className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                              placeholder="URL da cotação"
+                            />
+                          </div>
+                        </div>
+                        <div className="mt-2">
+                          <span className="text-xs text-white/70">Total: </span>
+                          <span className="text-primary font-semibold text-sm">
+                            {((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setApproveCotacoes([...approveCotacoes, { valorUnitario: 0, frete: 0, impostos: 0, link: '' }])}
+                      className="w-full py-2 px-4 bg-white/10 hover:bg-white/20 border border-white/30 rounded-md text-white text-sm transition-colors"
+                    >
+                      + Adicionar Outra Cotação
+                    </button>
+                  </div>
+                  <div className="mt-4">
+                    <label className="block text-sm font-medium text-white/70 mb-2">Selecionar Cotação para Aprovar</label>
+                    <select
+                      value={selectedCotacaoIndex}
+                      onChange={(e) => setSelectedCotacaoIndex(parseInt(e.target.value))}
+                      className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right 1rem center',
+                        paddingRight: '2.5rem'
+                      }}
+                    >
+                      {approveCotacoes.map((_, index) => (
+                        <option key={index} value={index} className="bg-neutral text-white">
+                          Cotação {index + 1} - Total: {((approveCotacoes[index].valorUnitario || 0) + (approveCotacoes[index].frete || 0) + (approveCotacoes[index].impostos || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {error && (
+                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md text-sm">
+                  {error}
+                </div>
+              )}
+
+              {/* Botões de Ação */}
+              <div className="flex justify-end space-x-4 pt-4 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowViewRequestModal(false);
+                    setPurchaseToView(null);
+                    setError(null);
+                  }}
+                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    // Se não houver cotações na solicitação, usar as cotações adicionadas no modal
+                    const cotacoesToSend = (purchaseToView.cotacoesJson && Array.isArray(purchaseToView.cotacoesJson) && purchaseToView.cotacoesJson.length > 0)
+                      ? purchaseToView.cotacoesJson
+                      : approveCotacoes.filter(c => c.valorUnitario > 0);
+                    
+                    if (cotacoesToSend.length === 0) {
+                      setError('Adicione pelo menos uma cotação com valor unitário para aprovar a solicitação');
+                      return;
+                    }
+
+                    setSubmitting(true);
+                    setError(null);
+                    try {
+                      await api.post(`/stock/purchases/${purchaseToView.id}/approve`, {
+                        cotacoes: cotacoesToSend,
+                        selectedCotacaoIndex: selectedCotacaoIndex,
+                      });
+                      await load();
+                      setError(null);
+                      setShowViewRequestModal(false);
+                      setPurchaseToView(null);
+                      setApproveCotacoes([{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }]);
+                      setSelectedCotacaoIndex(0);
+                    } catch (err: any) {
+                      setError(err.response?.data?.message ?? 'Erro ao aprovar solicitação');
+                    } finally {
+                      setSubmitting(false);
+                    }
+                  }}
+                  className="px-6 py-2.5 rounded-md bg-green-600 hover:bg-green-700 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={submitting}
+                >
+                  {submitting ? 'Aprovando...' : 'Aprovar Solicitação'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowViewRequestModal(false);
+                    setPurchaseToReject(purchaseToView);
+                    setRejectReason('');
+                    setShowRejectModal(true);
+                  }}
+                  className="px-6 py-2.5 rounded-md bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors"
+                >
+                  Reprovar
+                </button>
+              </div>
             </div>
           </div>
         </div>

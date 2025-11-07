@@ -153,7 +153,6 @@ export default function ProjectDetails() {
   const [showViewEntregaModal, setShowViewEntregaModal] = useState(false);
   const [selectedViewEntrega, setSelectedViewEntrega] = useState<{ etapa: Etapa; index: number; entrega: ChecklistItemEntrega } | null>(null);
   const [etapaEstoque, setEtapaEstoque] = useState<Record<number, any[]>>({});
-  const [etapaCompras, setEtapaCompras] = useState<Record<number, any[]>>({});
   const [loadingEstoqueCompras, setLoadingEstoqueCompras] = useState<Record<number, boolean>>({});
   const [showCompraModal, setShowCompraModal] = useState(false);
   const [selectedEtapaForCompra, setSelectedEtapaForCompra] = useState<Etapa | null>(null);
@@ -212,27 +211,57 @@ export default function ProjectDetails() {
     
     setLoadingEstoqueCompras((prev) => ({ ...prev, [etapaId]: true }));
     try {
-      const [estoqueRes, comprasRes] = await Promise.all([
-        api.get(`/stock/items?etapaId=${etapaId}`),
-        api.get(`/stock/purchases?etapaId=${etapaId}`),
-      ]);
-      setEtapaEstoque((prev) => ({ ...prev, [etapaId]: estoqueRes.data }));
-      setEtapaCompras((prev) => ({ ...prev, [etapaId]: comprasRes.data }));
+      const alocacoesRes = await api.get(`/stock/alocacoes?etapaId=${etapaId}`);
+      // Transformar alocações em formato de itens para exibição
+      const estoqueItems = (alocacoesRes.data || []).map((aloc: any) => ({
+        id: aloc.estoque.id,
+        item: aloc.estoque.item,
+        quantidade: aloc.quantidade, // Quantidade alocada
+        valorUnitario: aloc.estoque.valorUnitario,
+        descricao: aloc.estoque.descricao,
+        imagemUrl: aloc.estoque.imagemUrl,
+        alocacaoId: aloc.id,
+      }));
+      setEtapaEstoque((prev) => ({ ...prev, [etapaId]: estoqueItems }));
     } catch (err) {
-      console.error('Erro ao carregar estoque/compras da etapa:', err);
+      console.error('Erro ao carregar estoque da etapa:', err);
     } finally {
       setLoadingEstoqueCompras((prev) => ({ ...prev, [etapaId]: false }));
     }
   }
 
-  async function loadAvailableStockItems() {
+  async function loadAvailableStockItems(etapaId?: number) {
     if (!id) return;
     setLoadingStockItems(true);
     try {
       // Carregar itens de estoque do projeto ou sem etapa associada
       const { data } = await api.get(`/stock/items?projetoId=${id}`);
-      // Filtrar apenas itens disponíveis (sem etapa ou que possam ser reatribuídos)
-      setAvailableStockItems(data || []);
+      
+      // Se estiver editando uma etapa, buscar alocações atuais para ajustar quantidadeDisponivel
+      let alocacoesAtuais: any[] = [];
+      if (etapaId) {
+        try {
+          const { data: alocacoes } = await api.get(`/stock/alocacoes?etapaId=${etapaId}`);
+          alocacoesAtuais = alocacoes || [];
+        } catch (err) {
+          console.error('Erro ao carregar alocações da etapa:', err);
+        }
+      }
+      
+      // Ajustar quantidadeDisponivel: se há alocação nesta etapa, adicionar de volta
+      const itemsAjustados = (data || []).map((item: any) => {
+        const alocacaoNestaEtapa = alocacoesAtuais.find((aloc: any) => aloc.estoqueId === item.id);
+        if (alocacaoNestaEtapa) {
+          // Adicionar de volta a quantidade já alocada nesta etapa ao disponível
+          return {
+            ...item,
+            quantidadeDisponivel: (item.quantidadeDisponivel ?? item.quantidade) + alocacaoNestaEtapa.quantidade,
+          };
+        }
+        return item;
+      });
+      
+      setAvailableStockItems(itemsAjustados);
     } catch (err) {
       console.error('Erro ao carregar itens de estoque:', err);
       setAvailableStockItems([]);
@@ -319,40 +348,74 @@ export default function ProjectDetails() {
         const updated = await api.patch(`/tasks/${editingEtapa.id}`, payload);
         etapaId = editingEtapa.id;
         
-        // Se estiver editando, desvincular itens que não estão mais selecionados
+        // Se estiver editando, gerenciar alocações (remover, atualizar ou criar)
         try {
-          const { data: currentItems } = await api.get(`/stock/items?etapaId=${etapaId}`);
-          const currentItemIds = (currentItems || []).map((item: any) => item.id);
-          const selectedItemIds = etapaForm.estoqueItems.map((item) => item.itemId);
-          const itemsToRemove = currentItemIds.filter((id: number) => !selectedItemIds.includes(id));
+          // Buscar alocações atuais da etapa
+          const { data: currentAlocacoes } = await api.get(`/stock/alocacoes?etapaId=${etapaId}`);
           
-          // Desvincular itens removidos
+          // Criar mapas para facilitar a busca
+          const currentAlocacoesMap = new Map(
+            (currentAlocacoes || []).map((aloc: any) => [aloc.estoqueId, aloc])
+          );
+          const selectedItemsMap = new Map(
+            etapaForm.estoqueItems.map((item) => [item.itemId, item])
+          );
+          
+          // Remover alocações que não estão mais na lista
+          const alocacoesToRemove = (currentAlocacoes || []).filter(
+            (aloc: any) => !selectedItemsMap.has(aloc.estoqueId)
+          );
           await Promise.all(
-            itemsToRemove.map((itemId: number) =>
-              api.patch(`/stock/items/${itemId}`, { etapaId: null })
+            alocacoesToRemove.map((aloc: any) =>
+              api.delete(`/stock/alocacoes/${aloc.id}`)
             )
           );
-        } catch (err) {
-          console.error('Erro ao desvincular itens de estoque da etapa:', err);
+          
+          // Atualizar ou criar alocações para os itens selecionados
+          for (const estoqueItem of etapaForm.estoqueItems) {
+            const existingAloc = currentAlocacoesMap.get(estoqueItem.itemId);
+            if (existingAloc) {
+              // Atualizar alocação existente se a quantidade mudou
+              if (existingAloc.quantidade !== estoqueItem.quantidade) {
+                await api.patch(`/stock/alocacoes/${existingAloc.id}`, {
+                  quantidade: estoqueItem.quantidade,
+                });
+              }
+            } else {
+              // Criar nova alocação
+              await api.post('/stock/alocacoes', {
+                estoqueId: estoqueItem.itemId,
+                projetoId: Number(id),
+                etapaId: etapaId,
+                quantidade: estoqueItem.quantidade,
+              });
+            }
+          }
+        } catch (err: any) {
+          console.error('Erro ao atualizar alocações de estoque:', err);
+          setError(err.response?.data?.message ?? 'Erro ao atualizar alocações de estoque');
         }
       } else {
         const created = await api.post('/tasks', payload);
         etapaId = created.data.id;
-      }
-
-      // Relacionar itens de estoque selecionados com a etapa
-      if (etapaForm.estoqueItems && etapaForm.estoqueItems.length > 0) {
-        try {
-          await Promise.all(
-            etapaForm.estoqueItems.map((estoqueItem) =>
-              api.patch(`/stock/items/${estoqueItem.itemId}`, { 
-                etapaId,
-                quantidade: estoqueItem.quantidade 
-              })
-            )
-          );
-        } catch (err) {
-          console.error('Erro ao relacionar itens de estoque com a etapa:', err);
+        
+        // Criar alocações para os itens de estoque selecionados (nova etapa)
+        if (etapaForm.estoqueItems && etapaForm.estoqueItems.length > 0) {
+          try {
+            await Promise.all(
+              etapaForm.estoqueItems.map((estoqueItem) =>
+                api.post('/stock/alocacoes', {
+                  estoqueId: estoqueItem.itemId,
+                  projetoId: Number(id),
+                  etapaId: etapaId,
+                  quantidade: estoqueItem.quantidade,
+                })
+              )
+            );
+          } catch (err: any) {
+            console.error('Erro ao criar alocações de estoque:', err);
+            setError(err.response?.data?.message ?? 'Erro ao alocar itens de estoque');
+          }
         }
       }
 
@@ -418,19 +481,22 @@ export default function ProjectDetails() {
       return `${year}-${month}-${day}T${hours}:${minutes}`;
     };
 
-    // Carregar itens de estoque relacionados à etapa
+    // Carregar alocações de estoque relacionadas à etapa
     let estoqueItems: Array<{ itemId: number; quantidade: number }> = [];
     try {
-      const { data } = await api.get(`/stock/items?etapaId=${etapa.id}`);
-      if (data && Array.isArray(data)) {
-        estoqueItems = data.map((item: any) => ({
-          itemId: item.id,
-          quantidade: item.quantidade || 1,
+      const { data: alocacoes } = await api.get(`/stock/alocacoes?etapaId=${etapa.id}`);
+      if (alocacoes && Array.isArray(alocacoes)) {
+        estoqueItems = alocacoes.map((aloc: any) => ({
+          itemId: aloc.estoqueId,
+          quantidade: aloc.quantidade,
         }));
       }
     } catch (err) {
-      console.error('Erro ao carregar itens de estoque da etapa:', err);
+      console.error('Erro ao carregar alocações de estoque da etapa:', err);
     }
+    
+    // Carregar itens disponíveis ajustando para esta etapa (adiciona de volta as alocações desta etapa)
+    await loadAvailableStockItems(etapa.id);
 
     setEtapaForm({
       nome: etapa.nome || '',
@@ -451,8 +517,6 @@ export default function ProjectDetails() {
       estoqueItems,
     });
     
-    // Carregar itens de estoque disponíveis
-    await loadAvailableStockItems();
     setShowEtapaModal(true);
   }
 
@@ -1224,46 +1288,23 @@ export default function ProjectDetails() {
                     </div>
                   )}
 
-                  {/* Estoque e Compras da Etapa */}
+                  {/* Estoque da Etapa */}
                   <div className="mt-3 pt-3 border-t border-white/10">
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-xs text-white/70 block font-medium">
-                        Estoque e Compras
-                      </label>
-                      {(isDiretor || isSupervisor) && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedEtapaForCompra(etapa);
-                            setCompraForm({
-                              item: '',
-                              descricao: '',
-                              quantidade: 1,
-                              cotacoes: [],
-                              selectedCotacaoIndex: 0,
-                              imagemUrl: '',
-                            });
-                            setShowCompraModal(true);
-                          }}
-                          className="px-2 py-1 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                        >
-                          + Solicitar Compra
-                        </button>
-                      )}
-                    </div>
+                    <label className="text-xs text-white/70 block font-medium mb-2">
+                      Estoque
+                    </label>
                     
                     {loadingEstoqueCompras[etapa.id] ? (
                       <p className="text-xs text-white/50">Carregando...</p>
                     ) : (
                       <div className="space-y-2">
-                        {/* Estoque */}
-                        {etapaEstoque[etapa.id] && etapaEstoque[etapa.id].length > 0 && (
+                        {etapaEstoque[etapa.id] && etapaEstoque[etapa.id].length > 0 ? (
                           <div>
                             <p className="text-xs text-white/60 mb-1">Estoque ({etapaEstoque[etapa.id].length}):</p>
                             <div className="space-y-1">
                               {etapaEstoque[etapa.id].map((item: any) => (
                                 <div key={item.id} className="text-xs text-white/80 flex items-center justify-between bg-white/5 p-2 rounded">
-                                  <span>{item.item} - Qtd: {item.quantidade}</span>
+                                  <span>{item.item} - Qtd Alocada: {item.quantidade}</span>
                                   <span className="text-primary">
                                     {item.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                   </span>
@@ -1271,35 +1312,8 @@ export default function ProjectDetails() {
                               ))}
                             </div>
                           </div>
-                        )}
-                        
-                        {/* Compras */}
-                        {etapaCompras[etapa.id] && etapaCompras[etapa.id].length > 0 && (
-                          <div>
-                            <p className="text-xs text-white/60 mb-1">Compras ({etapaCompras[etapa.id].length}):</p>
-                            <div className="space-y-1">
-                              {etapaCompras[etapa.id].map((compra: any) => (
-                                <div key={compra.id} className="text-xs text-white/80 flex items-center justify-between bg-white/5 p-2 rounded">
-                                  <span>{compra.item} - Qtd: {compra.quantidade}</span>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-primary">
-                                      {compra.valorUnitario 
-                                        ? (compra.quantidade * compra.valorUnitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                                        : 'Aguardando cotação'}
-                                    </span>
-                                    <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(compra.status)}`}>
-                                      {getStatusLabel(compra.status)}
-                                    </span>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        
-                        {(!etapaEstoque[etapa.id] || etapaEstoque[etapa.id].length === 0) &&
-                         (!etapaCompras[etapa.id] || etapaCompras[etapa.id].length === 0) && (
-                          <p className="text-xs text-white/50">Nenhum item de estoque ou compra relacionada</p>
+                        ) : (
+                          <p className="text-xs text-white/50">Nenhum item de estoque relacionado</p>
                         )}
                       </div>
                     )}
@@ -1312,11 +1326,80 @@ export default function ProjectDetails() {
       </div>
 
       {/* Compras */}
-      {project.compras.length > 0 && (
-        <div className="bg-neutral/80 border border-white/10 rounded-xl p-6">
-          <h3 className="text-lg font-semibold border-b border-white/10 pb-2 mb-4">
+      {/* Compras Relacionadas */}
+      <div className="bg-neutral/80 border border-white/10 rounded-xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold border-b border-white/10 pb-2">
             Compras Relacionadas ({project.compras.length})
           </h3>
+          {(isDiretor || isSupervisor) && (
+            <div className="flex items-center gap-2">
+              {project.etapas.length > 1 && (
+                <select
+                  value={selectedEtapaForCompra?.id || ''}
+                  onChange={(e) => {
+                    const etapaId = Number(e.target.value);
+                    const etapa = project.etapas.find((e) => e.id === etapaId);
+                    if (etapa) {
+                      setSelectedEtapaForCompra(etapa);
+                    }
+                  }}
+                  className="px-3 py-2 rounded-md bg-white/10 border border-white/30 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 0.75rem center',
+                    paddingRight: '2.5rem'
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">Selecione a etapa</option>
+                  {project.etapas.map((etapa) => (
+                    <option key={etapa.id} value={etapa.id} className="bg-neutral text-white">
+                      {etapa.nome}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  // Se houver apenas uma etapa, selecionar automaticamente
+                  if (project.etapas.length === 1) {
+                    setSelectedEtapaForCompra(project.etapas[0]);
+                    setCompraForm({
+                      item: '',
+                      descricao: '',
+                      quantidade: 1,
+                      cotacoes: [],
+                      selectedCotacaoIndex: 0,
+                      imagemUrl: '',
+                    });
+                    setShowCompraModal(true);
+                  } else if (selectedEtapaForCompra) {
+                    // Se houver múltiplas etapas e uma já foi selecionada
+                    setCompraForm({
+                      item: '',
+                      descricao: '',
+                      quantidade: 1,
+                      cotacoes: [],
+                      selectedCotacaoIndex: 0,
+                      imagemUrl: '',
+                    });
+                    setShowCompraModal(true);
+                  } else {
+                    setError('Selecione uma etapa antes de solicitar a compra');
+                  }
+                }}
+                disabled={project.etapas.length > 1 && !selectedEtapaForCompra}
+                className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                + Solicitar Compra
+              </button>
+            </div>
+          )}
+        </div>
+        
+        {project.compras.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
               <thead className="bg-white/5 text-white/70">
@@ -1350,8 +1433,8 @@ export default function ProjectDetails() {
                     <td className="px-4 py-2 font-semibold">
                       {compra.valorUnitario 
                         ? (compra.quantidade * compra.valorUnitario).toLocaleString('pt-BR', {
-                            style: 'currency',
-                            currency: 'BRL',
+                        style: 'currency',
+                        currency: 'BRL',
                           })
                         : 'Aguardando cotação'}
                     </td>
@@ -1365,8 +1448,10 @@ export default function ProjectDetails() {
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-white/50 text-sm">Nenhuma compra relacionada a este projeto</p>
+        )}
+      </div>
       
       {/* Modal Enviar Entrega */}
       {showEntregaModal && selectedEntregaEtapa && (
@@ -1735,16 +1820,16 @@ export default function ProjectDetails() {
                       return isResponsavel || isSupervisor;
                     })
                     .map((user) => {
-                      if (!user) return null;
-                      const cargoNome = typeof user.cargo === 'string' 
-                        ? user.cargo 
-                        : (user.cargo?.nome || 'Sem cargo');
-                      return (
-                        <option key={user.id} value={user.id} className="bg-neutral text-white">
-                          {user.nome} ({cargoNome})
-                        </option>
-                      );
-                    })}
+                    if (!user) return null;
+                    const cargoNome = typeof user.cargo === 'string' 
+                      ? user.cargo 
+                      : (user.cargo?.nome || 'Sem cargo');
+                    return (
+                      <option key={user.id} value={user.id} className="bg-neutral text-white">
+                        {user.nome} ({cargoNome})
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
 
@@ -1987,11 +2072,21 @@ export default function ProjectDetails() {
                         // Filtrar itens já selecionados
                         return !etapaForm.estoqueItems.some((ei) => ei.itemId === item.id);
                       })
-                      .map((item) => (
-                        <option key={item.id} value={item.id} className="bg-neutral text-white">
-                          {item.item} - Disponível: {item.quantidade} - {item.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                        </option>
-                      ))}
+                      .map((item) => {
+                        // Calcular quantidade já alocada nesta etapa para este item
+                        const quantidadeAlocadaNestaEtapa = etapaForm.estoqueItems
+                          .filter((ei) => ei.itemId === item.id)
+                          .reduce((sum, ei) => sum + ei.quantidade, 0);
+                        
+                        // Quantidade disponível real = quantidadeDisponivel original - quantidade já alocada nesta etapa
+                        const quantidadeDisponivelReal = (item.quantidadeDisponivel ?? item.quantidade) - quantidadeAlocadaNestaEtapa;
+                        
+                        return (
+                          <option key={item.id} value={item.id} className="bg-neutral text-white">
+                            {item.item} - Disponível: {quantidadeDisponivelReal} - {item.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </option>
+                        );
+                      })}
                   </select>
                   
                   {selectedStockItemId && (
@@ -1999,28 +2094,88 @@ export default function ProjectDetails() {
                       <input
                         type="number"
                         min="1"
-                        max={availableStockItems.find((i) => i.id === selectedStockItemId)?.quantidade || 1}
                         value={selectedStockQuantity}
-                        onChange={(e) => setSelectedStockQuantity(Math.max(1, Number(e.target.value)))}
+                        onChange={(e) => {
+                          const item = availableStockItems.find((i) => i.id === selectedStockItemId);
+                          if (!item) return;
+                          
+                          // Calcular quantidade já alocada nesta etapa para este item
+                          const quantidadeAlocadaNestaEtapa = etapaForm.estoqueItems
+                            .filter((ei) => ei.itemId === item.id)
+                            .reduce((sum, ei) => sum + ei.quantidade, 0);
+                          
+                          // Quantidade disponível real = quantidadeDisponivel original - quantidade já alocada nesta etapa
+                          const quantidadeDisponivelReal = (item.quantidadeDisponivel ?? item.quantidade) - quantidadeAlocadaNestaEtapa;
+                          
+                          const newValue = Math.max(1, Number(e.target.value));
+                          setSelectedStockQuantity(Math.min(newValue, quantidadeDisponivelReal));
+                        }}
                         placeholder="Qtd"
                         className="w-24 bg-white/10 border border-white/30 rounded-md px-3 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       />
+                      {availableStockItems.find((i) => i.id === selectedStockItemId) && (() => {
+                        const item = availableStockItems.find((i) => i.id === selectedStockItemId);
+                        if (!item) return null;
+                        
+                        // Calcular quantidade já alocada nesta etapa para este item
+                        const quantidadeAlocadaNestaEtapa = etapaForm.estoqueItems
+                          .filter((ei) => ei.itemId === item.id)
+                          .reduce((sum, ei) => sum + ei.quantidade, 0);
+                        
+                        // Quantidade disponível real = quantidadeDisponivel original - quantidade já alocada nesta etapa
+                        const quantidadeDisponivelReal = (item.quantidadeDisponivel ?? item.quantidade) - quantidadeAlocadaNestaEtapa;
+                        
+                        return (
+                          <span className="text-xs text-white/60">
+                            Disponível: {quantidadeDisponivelReal}
+                          </span>
+                        );
+                      })()}
                       <button
                         type="button"
                         onClick={() => {
                           if (selectedStockItemId && selectedStockQuantity > 0) {
                             const item = availableStockItems.find((i) => i.id === selectedStockItemId);
-                            if (item && selectedStockQuantity <= item.quantidade) {
-                              setEtapaForm({
-                                ...etapaForm,
-                                estoqueItems: [
-                                  ...etapaForm.estoqueItems,
-                                  { itemId: selectedStockItemId, quantidade: selectedStockQuantity },
-                                ],
-                              });
+                            if (!item) return;
+                            
+                            // Calcular quantidade já alocada nesta etapa para este item
+                            const quantidadeAlocadaNestaEtapa = etapaForm.estoqueItems
+                              .filter((ei) => ei.itemId === selectedStockItemId)
+                              .reduce((sum, ei) => sum + ei.quantidade, 0);
+                            
+                            // Quantidade disponível real = quantidadeDisponivel original - quantidade já alocada nesta etapa
+                            const quantidadeDisponivelReal = (item.quantidadeDisponivel ?? item.quantidade) - quantidadeAlocadaNestaEtapa;
+                            
+                            if (selectedStockQuantity <= quantidadeDisponivelReal) {
+                              // Verificar se já existe na lista
+                              const existingIndex = etapaForm.estoqueItems.findIndex(
+                                (ei) => ei.itemId === selectedStockItemId
+                              );
+                              
+                              if (existingIndex >= 0) {
+                                // Atualizar quantidade existente
+                                const newItems = [...etapaForm.estoqueItems];
+                                newItems[existingIndex].quantidade += selectedStockQuantity;
+                                setEtapaForm({
+                                  ...etapaForm,
+                                  estoqueItems: newItems,
+                                });
+                              } else {
+                                // Adicionar novo item
+                                setEtapaForm({
+                                  ...etapaForm,
+                                  estoqueItems: [
+                                    ...etapaForm.estoqueItems,
+                                    { itemId: selectedStockItemId, quantidade: selectedStockQuantity },
+                                  ],
+                                });
+                              }
                               setSelectedStockItemId(null);
                               setSelectedStockQuantity(1);
                               setStockSearchTerm('');
+                              setError(null);
+                            } else {
+                              setError(`Quantidade solicitada (${selectedStockQuantity}) excede a disponível (${quantidadeDisponivelReal})`);
                             }
                           }
                         }}
@@ -2038,6 +2193,15 @@ export default function ProjectDetails() {
                     {etapaForm.estoqueItems.map((estoqueItem, index) => {
                       const item = availableStockItems.find((i) => i.id === estoqueItem.itemId);
                       if (!item) return null;
+                      
+                      // Calcular quantidade já alocada nesta etapa para este item (exceto o item atual)
+                      const quantidadeAlocadaNestaEtapa = etapaForm.estoqueItems
+                        .filter((ei, i) => ei.itemId === estoqueItem.itemId && i !== index)
+                        .reduce((sum, ei) => sum + ei.quantidade, 0);
+                      
+                      // Quantidade disponível = quantidadeDisponivel original + quantidade já alocada nesta etapa (exceto atual)
+                      const quantidadeDisponivelReal = (item.quantidadeDisponivel ?? item.quantidade) + quantidadeAlocadaNestaEtapa;
+                      
                       return (
                         <div
                           key={`${estoqueItem.itemId}-${index}`}
@@ -2045,10 +2209,31 @@ export default function ProjectDetails() {
                         >
                           <div className="flex-1">
                             <span className="text-sm text-white/90 font-medium">{item.item}</span>
-                            <div className="text-xs text-white/60 mt-1">
-                              Quantidade: {estoqueItem.quantidade} | 
-                              Valor Unitário: {item.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} | 
-                              Total: {(item.valorUnitario * estoqueItem.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs text-white/60">Quantidade:</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max={quantidadeDisponivelReal}
+                                value={estoqueItem.quantidade}
+                                onChange={(e) => {
+                                  const newQuantidade = Math.max(1, Number(e.target.value));
+                                  const finalQuantidade = Math.min(newQuantidade, quantidadeDisponivelReal);
+                                  
+                                  const updatedItems = [...etapaForm.estoqueItems];
+                                  updatedItems[index] = { ...updatedItems[index], quantidade: finalQuantidade };
+                                  setEtapaForm({
+                                    ...etapaForm,
+                                    estoqueItems: updatedItems,
+                                  });
+                                }}
+                                className="w-20 bg-white/10 border border-white/30 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                              />
+                              <span className="text-xs text-white/60">
+                                | Valor Unitário: {item.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} | 
+                                Total: {(item.valorUnitario * estoqueItem.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} |
+                                Disponível: {quantidadeDisponivelReal - estoqueItem.quantidade}
+                              </span>
                             </div>
                           </div>
                           <button
@@ -2205,13 +2390,13 @@ export default function ProjectDetails() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Descrição</label>
+                <label className="block text-sm font-medium text-white/90 mb-2">Motivo da Solicitação</label>
                 <textarea
                   value={compraForm.descricao}
                   onChange={(e) => setCompraForm((prev) => ({ ...prev, descricao: e.target.value }))}
                   rows={3}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="Descrição do item"
+                  placeholder="Descreva o motivo da solicitação..."
                 />
               </div>
 
