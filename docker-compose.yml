@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: erp-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-erp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senha123}
+      POSTGRES_DB: ${POSTGRES_DB:-erpdb}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-erp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erp-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: erp-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-erp}:${POSTGRES_PASSWORD:-senha123}@db:5432/${POSTGRES_DB:-erpdb}
+      JWT_SECRET: ${JWT_SECRET:-super-segredo-alterar-em-producao}
+      PORT: ${BACKEND_PORT:-3000}
+      NODE_ENV: ${NODE_ENV:-production}
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    volumes:
+      # Montar apenas o necessário para desenvolvimento (opcional)
+      - ./backend/prisma:/app/prisma:ro
+    command: >
+      sh -c "
+        echo '⏳ Aguardando banco de dados...' &&
+        sleep 5 &&
+        echo '📦 Executando migrations...' &&
+        npx prisma migrate deploy &&
+        echo '🌱 Executando seed (se necessário)...' &&
+        npx prisma db seed || echo 'Seed não executado (pode ser normal)' &&
+        echo '🚀 Iniciando servidor...' &&
+        node dist/main.js
+      "
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - erp-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    container_name: erp-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    networks:
+      - erp-network
+
+volumes:
+  db_data:
+    driver: local
+
+networks:
+  erp-network:
+    driver: bridge

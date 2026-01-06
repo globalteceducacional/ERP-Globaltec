@@ -1,0 +1,88 @@
+version: '3.8'
+
+# Docker Compose para desenvolvimento
+# Use: docker-compose -f docker-compose.dev.yml up
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: erp-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-erp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-senha123}
+      POSTGRES_DB: ${POSTGRES_DB:-erpdb}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - db_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-erp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - erp-network-dev
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: erp-backend-dev
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-erp}:${POSTGRES_PASSWORD:-senha123}@db:5432/${POSTGRES_DB:-erpdb}
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-key}
+      PORT: ${BACKEND_PORT:-3000}
+      NODE_ENV: development
+    ports:
+      - "${BACKEND_PORT:-3000}:3000"
+    volumes:
+      # Montar código fonte para hot reload (desenvolvimento)
+      - ./backend/src:/app/src:ro
+      - ./backend/prisma:/app/prisma:ro
+      - ./backend/package.json:/app/package.json:ro
+    command: >
+      sh -c "
+        echo '⏳ Aguardando banco de dados...' &&
+        sleep 5 &&
+        echo '📦 Executando migrations...' &&
+        npx prisma migrate deploy &&
+        echo '🌱 Executando seed (se necessário)...' &&
+        npx prisma db seed || echo 'Seed não executado (pode ser normal)' &&
+        echo '🚀 Iniciando servidor em modo desenvolvimento...' &&
+        npm run start:dev
+      "
+    networks:
+      - erp-network-dev
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+    container_name: erp-frontend-dev
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    volumes:
+      # Para desenvolvimento com hot reload
+      - ./frontend/src:/app/src:ro
+      - ./frontend/public:/app/public:ro
+    networks:
+      - erp-network-dev
+
+volumes:
+  db_data_dev:
+    driver: local
+
+networks:
+  erp-network-dev:
+    driver: bridge
+

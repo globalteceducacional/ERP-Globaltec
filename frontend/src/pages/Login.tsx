@@ -1,0 +1,90 @@
+import { FormEvent, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api } from '../services/api';
+import { useAuthStore } from '../store/auth';
+import { Usuario } from '../types';
+import { getFirstAllowedPage } from '../utils/getFirstAllowedPage';
+
+export default function Login() {
+  const navigate = useNavigate();
+  const setCredentials = useAuthStore((state) => state.setCredentials);
+  const logout = useAuthStore((state) => state.logout);
+
+  const [email, setEmail] = useState('');
+  const [senha, setSenha] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Garantir que o usuário está deslogado ao entrar na página de login
+  useEffect(() => {
+    logout();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setLoading(true);
+
+    try {
+      // Limpar qualquer estado anterior antes de fazer login
+      logout();
+      
+      const { data } = await api.post<{ token: string; user: Usuario }>('/auth/login', {
+        email,
+        senha,
+      });
+      setCredentials({ token: data.token, user: data.user });
+      // Redirecionar para a primeira página permitida do usuário
+      const firstPage = getFirstAllowedPage(data.user);
+      navigate(firstPage, { replace: true });
+    } catch (err: any) {
+      setError(err.response?.data?.message ?? 'Erro ao realizar login');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-neutral">
+      <div className="w-full max-w-md bg-neutral/80 border border-white/10 rounded-xl p-10 shadow-xl">
+        <h1 className="text-3xl font-bold mb-2 text-center">ERP Globaltec</h1>
+        <p className="text-white/60 text-center mb-8">Acesse com suas credenciais</p>
+
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+          <label className="text-sm text-white/70">
+            E-mail
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="mt-1 w-full rounded-md border border-white/10 bg-neutral/60 px-3 py-2 focus:border-primary focus:outline-none"
+              required
+            />
+          </label>
+
+          <label className="text-sm text-white/70">
+            Senha
+            <input
+              type="password"
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              className="mt-1 w-full rounded-md border border-white/10 bg-neutral/60 px-3 py-2 focus:border-primary focus:outline-none"
+              required
+            />
+          </label>
+
+          {error && <span className="text-danger text-sm">{error}</span>}
+
+          <button
+            type="submit"
+            disabled={loading}
+            className="bg-primary hover:bg-primary/80 disabled:bg-primary/40 px-4 py-2 rounded-md font-semibold"
+          >
+            {loading ? 'Entrando...' : 'Entrar'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}

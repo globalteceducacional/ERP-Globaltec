@@ -1,0 +1,344 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Configuração do seed
+// Execute: npx prisma db seed
+
+model Cargo {
+  id          Int      @id @default(autoincrement())
+  nome        String   @unique
+  descricao   String?
+  ativo       Boolean  @default(true)
+  nivelAcesso CargoNivel @default(NIVEL_0)
+  herdaPermissoes Boolean @default(true)
+  paginasPermitidas Json?  // Array de strings com as rotas permitidas: ["/dashboard", "/projects", ...]
+  dataCriacao DateTime @default(now())
+  usuarios    Usuario[]
+  permissions CargoPermission[]
+  
+  @@map("Cargo")
+}
+
+enum ProjetoStatus {
+  EM_ANDAMENTO
+  FINALIZADO
+}
+
+enum EtapaStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  EM_ANALISE
+  APROVADA
+  REPROVADA
+}
+
+enum EtapaEntregaStatus {
+  EM_ANALISE
+  APROVADA
+  RECUSADA
+}
+
+enum ChecklistItemStatus {
+  PENDENTE
+  EM_ANALISE
+  APROVADO
+  REPROVADO
+}
+
+enum CargoNivel {
+  NIVEL_0
+  NIVEL_1
+  NIVEL_2
+  NIVEL_3
+  NIVEL_4
+}
+
+enum SubetapaStatus {
+  PENDENTE
+  EM_ANDAMENTO
+  CONCLUIDA
+}
+
+enum CompraStatus {
+  SOLICITADO
+  REPROVADO
+  PENDENTE
+  COMPRADO_ACAMINHO
+  ENTREGUE
+}
+
+enum EstoqueStatus {
+  DISPONIVEL
+  ALOCADO
+  RESERVADO
+}
+
+enum NotificacaoTipo {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+model Usuario {
+  id                   Int                   @id @default(autoincrement())
+  nome                 String
+  dataNascimento       DateTime?
+  formacao             String?
+  funcao               String?
+  cargoId              Int
+  cargo                Cargo                 @relation(fields: [cargoId], references: [id])
+  email                String                @unique
+  telefone             String?
+  senha                String
+  comprasSolicitadas    Compra[]              @relation("SolicitadoPor")
+  ativo                Boolean               @default(false)
+  dataCadastro         DateTime              @default(now())
+  projetosResponsavel  ProjetoResponsavel[]
+  projetos             Projeto[]             @relation("Supervisor")
+  etapasExecutadas     Etapa[]               @relation("Executor")
+  etapasIntegrantes    EtapaIntegrante[]
+  ocorrenciasEnviadas  Ocorrencia[]          @relation("OcorrenciasEnviadas")
+  ocorrenciasRecebidas Ocorrencia[]          @relation("OcorrenciasRecebidas")
+  requerimentosEnviados  Requerimento[]      @relation("RequerimentosEnviados")
+  requerimentosRecebidos Requerimento[]      @relation("RequerimentosRecebidos")
+  notificacoes         Notificacao[]
+  entregasExecutadas   EtapaEntrega[]        @relation("EtapaEntregaExecutor")
+  entregasAvaliadas    EtapaEntrega[]        @relation("EtapaEntregaAvaliador")
+  checklistEntregasExecutadas ChecklistItemEntrega[] @relation("ChecklistItemEntregaExecutor")
+  checklistEntregasAvaliadas ChecklistItemEntrega[] @relation("ChecklistItemEntregaAvaliador")
+}
+
+model Projeto {
+  id            Int                  @id @default(autoincrement())
+  nome          String
+  resumo        String?
+  objetivo      String?
+  valorTotal    Float                @default(0)
+  valorInsumos  Float                @default(0)
+  status        ProjetoStatus        @default(EM_ANDAMENTO)
+  dataCriacao   DateTime             @default(now())
+  dataFinalizacao DateTime?
+  planilhaJson  Json?
+  supervisorId  Int?
+  supervisor    Usuario?             @relation("Supervisor", fields: [supervisorId], references: [id])
+  etapas        Etapa[]
+  responsaveis  ProjetoResponsavel[]
+  compras       Compra[]
+  estoqueItems  Estoque[]
+  estoqueAlocacoes EstoqueAlocacao[]
+}
+
+model ProjetoResponsavel {
+  projetoId Int
+  usuarioId Int
+  projeto   Projeto @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@id([projetoId, usuarioId])
+}
+
+model EtapaIntegrante {
+  etapaId   Int
+  usuarioId Int
+  etapa     Etapa   @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@id([etapaId, usuarioId])
+}
+
+model Etapa {
+  id          Int           @id @default(autoincrement())
+  nome        String
+  descricao   String?
+  status      EtapaStatus   @default(PENDENTE)
+  dataInicio  DateTime?
+  dataFim     DateTime?
+  valorInsumos Float        @default(0)
+  iniciada    Boolean       @default(false)
+  checklistJson Json?       // Array de itens do checklist: [{ texto: string, concluido: boolean }]
+  projetoId   Int
+  projeto     Projeto       @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  executorId  Int
+  executor    Usuario       @relation("Executor", fields: [executorId], references: [id])
+  integrantes EtapaIntegrante[]
+  subetapas   Subetapa[]
+  requerimentos Requerimento[]
+  estoqueItens Estoque[]
+  entregas    EtapaEntrega[]
+  checklistEntregas ChecklistItemEntrega[]
+  compras     Compra[]
+  estoqueAlocacoes EstoqueAlocacao[]
+}
+
+model EtapaEntrega {
+  id             Int                 @id @default(autoincrement())
+  descricao      String
+  imagemUrl      String?
+  status         EtapaEntregaStatus  @default(EM_ANALISE)
+  dataEnvio      DateTime            @default(now())
+  comentario     String?
+  etapaId        Int
+  executorId     Int
+  avaliadoPorId  Int?
+  dataAvaliacao  DateTime?
+
+  etapa          Etapa              @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  executor       Usuario            @relation("EtapaEntregaExecutor", fields: [executorId], references: [id])
+  avaliadoPor    Usuario?           @relation("EtapaEntregaAvaliador", fields: [avaliadoPorId], references: [id])
+}
+
+model ChecklistItemEntrega {
+  id             Int                 @id @default(autoincrement())
+  etapaId        Int
+  checklistIndex Int                 // Índice do item no array checklistJson
+  descricao      String
+  imagemUrl      String?             // Mantido para compatibilidade (deprecated)
+  documentoUrl   String?             // Mantido para compatibilidade (deprecated)
+  imagensUrls    Json?               // Array de URLs/imagens (base64 ou URLs)
+  documentosUrls Json?              // Array de URLs/documentos (base64 ou URLs)
+  status         ChecklistItemStatus @default(PENDENTE)
+  dataEnvio      DateTime            @default(now())
+  comentario     String?
+  executorId     Int
+  avaliadoPorId  Int?
+  dataAvaliacao  DateTime?
+
+  etapa          Etapa              @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  executor       Usuario            @relation("ChecklistItemEntregaExecutor", fields: [executorId], references: [id])
+  avaliadoPor    Usuario?           @relation("ChecklistItemEntregaAvaliador", fields: [avaliadoPorId], references: [id])
+
+  @@unique([etapaId, checklistIndex])
+  @@index([etapaId])
+  @@index([executorId])
+}
+
+model Permission {
+  id          Int              @id @default(autoincrement())
+  modulo      String
+  acao        String
+  descricao   String?
+  cargos      CargoPermission[]
+
+  @@unique([modulo, acao])
+}
+
+model CargoPermission {
+  cargoId      Int
+  permissionId Int
+  cargo        Cargo      @relation(fields: [cargoId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([cargoId, permissionId])
+}
+
+model Subetapa {
+  id         Int            @id @default(autoincrement())
+  nome       String
+  descricao  String?
+  status     SubetapaStatus @default(PENDENTE)
+  dataInicio DateTime?
+  dataFim    DateTime?
+  etapaId    Int
+  etapa      Etapa          @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+}
+
+model Compra {
+  id                   Int          @id @default(autoincrement())
+  item                 String
+  descricao            String?      // Motivo da solicitação
+  quantidade           Int
+  valorUnitario        Float?       // Valor unitário da cotação selecionada (opcional para solicitações)
+  imagemUrl            String?
+  cotacoesJson         Json?        // Array de cotações: [{ valorUnitario, frete, impostos, link }]
+  status               CompraStatus @default(PENDENTE)
+  dataSolicitacao      DateTime     @default(now())
+  dataConfirmacao      DateTime?
+  nfUrl                String?      // URL da Nota Fiscal (base64 ou URL)
+  comprovantePagamentoUrl String?   // URL do comprovante de pagamento (base64 ou URL)
+  projetoId            Int?
+  projeto              Projeto?     @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  etapaId              Int?
+  etapa                Etapa?       @relation(fields: [etapaId], references: [id], onDelete: SetNull)
+  solicitadoPorId      Int?
+  solicitadoPor        Usuario?     @relation("SolicitadoPor", fields: [solicitadoPorId], references: [id], onDelete: SetNull)
+  motivoRejeicao       String?      // Motivo da rejeição quando status for REPROVADO
+}
+
+model Estoque {
+  id          Int           @id @default(autoincrement())
+  item        String
+  descricao   String?
+  quantidade  Int           // Quantidade total disponível no estoque
+  valorUnitario Float
+  imagemUrl   String?
+  cotacoesJson Json?        // Array de cotações: [{ valorUnitario, frete, impostos, link }]
+  status      EstoqueStatus @default(DISPONIVEL)
+  projetoId   Int?
+  projeto     Projeto?      @relation(fields: [projetoId], references: [id])
+  etapaId     Int?
+  etapa       Etapa?        @relation(fields: [etapaId], references: [id])
+  alocacoes   EstoqueAlocacao[] // Alocações deste item para projetos/etapas
+}
+
+model EstoqueAlocacao {
+  id          Int      @id @default(autoincrement())
+  estoqueId   Int
+  estoque     Estoque  @relation(fields: [estoqueId], references: [id], onDelete: Cascade)
+  projetoId   Int?
+  projeto     Projeto? @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  etapaId     Int?
+  etapa       Etapa?   @relation(fields: [etapaId], references: [id], onDelete: Cascade)
+  quantidade  Int      // Quantidade alocada para este projeto/etapa
+  dataAlocacao DateTime @default(now())
+  
+  @@index([estoqueId])
+  @@index([projetoId])
+  @@index([etapaId])
+}
+
+model Ocorrencia {
+  id            Int       @id @default(autoincrement())
+  texto         String
+  anexo         String?
+  status        String    @default("pendente")
+  dataCriacao   DateTime  @default(now())
+  usuarioId     Int
+  destinatarioId Int?
+  usuario       Usuario   @relation("OcorrenciasEnviadas", fields: [usuarioId], references: [id])
+  destinatario  Usuario?  @relation("OcorrenciasRecebidas", fields: [destinatarioId], references: [id])
+}
+
+model Requerimento {
+  id             Int       @id @default(autoincrement())
+  texto          String
+  anexo          String?
+  anexoResposta  String?
+  resposta       String?
+  status         String    @default("pendente")
+  dataCriacao    DateTime  @default(now())
+  dataResposta   DateTime?
+  usuarioId      Int
+  destinatarioId Int?
+  etapaId        Int?
+  usuario        Usuario   @relation("RequerimentosEnviados", fields: [usuarioId], references: [id])
+  destinatario   Usuario?  @relation("RequerimentosRecebidos", fields: [destinatarioId], references: [id])
+  etapa          Etapa?    @relation(fields: [etapaId], references: [id])
+}
+
+model Notificacao {
+  id          Int             @id @default(autoincrement())
+  titulo      String
+  mensagem    String
+  tipo        NotificacaoTipo @default(INFO)
+  lida        Boolean         @default(false)
+  dataCriacao DateTime        @default(now())
+  usuarioId   Int
+  usuario     Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+}
