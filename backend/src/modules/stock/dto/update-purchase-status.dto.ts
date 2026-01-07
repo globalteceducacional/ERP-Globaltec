@@ -1,4 +1,4 @@
-import { CompraStatus } from '@prisma/client';
+import { CompraStatus, StatusEntrega } from '@prisma/client';
 import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
 
 export class UpdatePurchaseStatusDto {
@@ -8,5 +8,28 @@ export class UpdatePurchaseStatusDto {
   @IsOptional()
   @IsString()
   @MaxLength(300)
+  observacaoStatus?: string;
+
+  @IsOptional()
+  @IsEnum(StatusEntrega)
+  statusEntrega?: StatusEntrega;
+
+  @IsOptional()
+  @IsString()
+  dataEntrega?: string; // Data da entrega no formato ISO string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  enderecoEntrega?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  recebidoPor?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
   observacao?: string;
 }

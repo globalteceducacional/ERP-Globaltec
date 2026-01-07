@@ -16,8 +16,23 @@ export class CotacaoDto {
   impostos: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  desconto?: number;
+
+  @IsOptional()
   @IsString()
   link?: string;
+
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  fornecedorId?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  formaPagamento?: string;
 }
 
 export class CreatePurchaseDto {
@@ -73,4 +88,17 @@ export class CreatePurchaseDto {
   @IsOptional()
   @IsEnum(CompraStatus)
   status?: CompraStatus;
+
+  @IsOptional()
+  dataCompra?: string; // Data da compra no formato ISO string (será convertida para DateTime)
+
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  categoriaId?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  observacao?: string;
 }

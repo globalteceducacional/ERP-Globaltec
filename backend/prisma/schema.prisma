@@ -73,6 +73,13 @@ enum CompraStatus {
   ENTREGUE
 }
 
+enum StatusEntrega {
+  NAO_ENTREGUE
+  PARCIAL
+  ENTREGUE
+  CANCELADO
+}
+
 enum EstoqueStatus {
   DISPONIVEL
   ALOCADO
@@ -256,10 +263,11 @@ model Compra {
   quantidade           Int
   valorUnitario        Float?       // Valor unitário da cotação selecionada (opcional para solicitações)
   imagemUrl            String?
-  cotacoesJson         Json?        // Array de cotações: [{ valorUnitario, frete, impostos, link }]
+  cotacoesJson         Json?        // Array de cotações: [{ valorUnitario, frete, impostos, link, fornecedorId }]
   status               CompraStatus @default(PENDENTE)
   dataSolicitacao      DateTime     @default(now())
   dataConfirmacao      DateTime?
+  dataCompra           DateTime?    // Data em que a compra foi realizada
   nfUrl                String?      // URL da Nota Fiscal (base64 ou URL)
   comprovantePagamentoUrl String?   // URL do comprovante de pagamento (base64 ou URL)
   projetoId            Int?
@@ -269,6 +277,14 @@ model Compra {
   solicitadoPorId      Int?
   solicitadoPor        Usuario?     @relation("SolicitadoPor", fields: [solicitadoPorId], references: [id], onDelete: SetNull)
   motivoRejeicao       String?      // Motivo da rejeição quando status for REPROVADO
+  categoriaId          Int?
+  categoria            CategoriaCompra? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  formaPagamento       String?      // Forma de pagamento: Cartão de Crédito, Pix, Bônus, Boleto, etc.
+  statusEntrega        StatusEntrega? // Status de entrega: NAO_ENTREGUE, PARCIAL, ENTREGUE, CANCELADO
+  dataEntrega          DateTime?    // Data da entrega
+  enderecoEntrega      String?      // Endereço de entrega
+  recebidoPor          String?      // Nome de quem recebeu o material
+  observacao           String?      // Observações gerais
 }
 
 model Estoque {
@@ -341,4 +357,30 @@ model Notificacao {
   dataCriacao DateTime        @default(now())
   usuarioId   Int
   usuario     Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+}
+
+model Fornecedor {
+  id            Int      @id @default(autoincrement())
+  razaoSocial   String
+  nomeFantasia  String
+  cnpj          String   @unique
+  endereco      String?
+  contato       String?
+  ativo         Boolean  @default(true)
+  dataCriacao   DateTime @default(now())
+  dataAtualizacao DateTime @updatedAt
+
+  @@map("Fornecedor")
+}
+
+model CategoriaCompra {
+  id              Int      @id @default(autoincrement())
+  nome            String   @unique
+  descricao       String?
+  ativo           Boolean  @default(true)
+  dataCriacao     DateTime @default(now())
+  dataAtualizacao DateTime @updatedAt
+  compras         Compra[]
+
+  @@map("CategoriaCompra")
 }

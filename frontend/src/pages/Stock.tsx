@@ -8,7 +8,10 @@ interface Cotacao {
   valorUnitario: number;
   frete: number;
   impostos: number;
+  desconto?: number;
   link?: string;
+  fornecedorId?: number;
+  formaPagamento?: string;
 }
 
 interface StockItem {
@@ -38,11 +41,55 @@ interface Purchase {
   nfUrl?: string | null;
   comprovantePagamentoUrl?: string | null;
   cotacoesJson?: Cotacao[] | null;
+  dataCompra?: string | null;
+  formaPagamento?: string | null;
+  statusEntrega?: string | null;
+  dataEntrega?: string | null;
+  enderecoEntrega?: string | null;
+  recebidoPor?: string | null;
+  observacao?: string | null;
+  solicitadoPorId?: number | null;
+  solicitadoPor?: { id: number; nome: string } | null;
 }
+
+// Opções de status de entrega
+const statusEntregaOptions = [
+  { value: 'NAO_ENTREGUE', label: 'Não Entregue' },
+  { value: 'PARCIAL', label: 'Parcial' },
+  { value: 'ENTREGUE', label: 'Entregue' },
+  { value: 'CANCELADO', label: 'Cancelado' },
+];
+
+// Opções de forma de pagamento
+const formasPagamento = [
+  'Cartão de Crédito',
+  'Cartão de Débito',
+  'Pix',
+  'Boleto',
+  'Transferência Bancária',
+  'Dinheiro',
+  'Bônus',
+  'Outro',
+];
 
 interface Projeto {
   id: number;
   nome: string;
+}
+
+interface Supplier {
+  id: number;
+  razaoSocial: string;
+  nomeFantasia: string;
+  cnpj: string;
+  ativo: boolean;
+}
+
+interface Category {
+  id: number;
+  nome: string;
+  descricao?: string | null;
+  ativo: boolean;
 }
 
 interface CreateItemForm {
@@ -69,12 +116,17 @@ interface CreatePurchaseForm extends Omit<CreateItemForm, 'valorUnitario'> {
   projetoId: number;
   cotacoes: Cotacao[];
   selectedCotacaoIndex: number;
+  dataCompra?: string;
+  categoriaId?: number;
+  observacao?: string;
 }
 
 export default function Stock() {
   const [items, setItems] = useState<StockItem[]>([]);
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [projects, setProjects] = useState<Projeto[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [etapas, setEtapas] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showItemModal, setShowItemModal] = useState(false);
@@ -93,6 +145,11 @@ export default function Stock() {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [purchaseToUpdateStatus, setPurchaseToUpdateStatus] = useState<Purchase | null>(null);
   const [newStatus, setNewStatus] = useState<string>('');
+  const [newStatusEntrega, setNewStatusEntrega] = useState<string>('');
+  const [newDataEntrega, setNewDataEntrega] = useState<string>('');
+  const [newEnderecoEntrega, setNewEnderecoEntrega] = useState<string>('');
+  const [newRecebidoPor, setNewRecebidoPor] = useState<string>('');
+  const [newObservacao, setNewObservacao] = useState<string>('');
   const [selectedProjectFilter, setSelectedProjectFilter] = useState<number | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedPurchases, setSelectedPurchases] = useState<number[]>([]);
@@ -105,8 +162,24 @@ export default function Stock() {
   const [purchaseToApprove, setPurchaseToApprove] = useState<Purchase | null>(null);
   const [showViewRequestModal, setShowViewRequestModal] = useState(false);
   const [purchaseToView, setPurchaseToView] = useState<Purchase | null>(null);
-  const [approveCotacoes, setApproveCotacoes] = useState<Cotacao[]>([{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }]);
+  const [approveCotacoes, setApproveCotacoes] = useState<Cotacao[]>([{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }]);
   const [selectedCotacaoIndex, setSelectedCotacaoIndex] = useState<number>(0);
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [supplierForm, setSupplierForm] = useState({
+    razaoSocial: '',
+    nomeFantasia: '',
+    cnpj: '',
+    endereco: '',
+    contato: '',
+    ativo: true,
+  });
+  const [creatingSupplier, setCreatingSupplier] = useState(false);
+  const [supplierModalError, setSupplierModalError] = useState<string | null>(null);
+  const [currentCotacaoIndex, setCurrentCotacaoIndex] = useState<number | null>(null);
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [categoryForm, setCategoryForm] = useState({ nome: '', descricao: '' });
+  const [creatingCategory, setCreatingCategory] = useState(false);
+  const [categoryModalError, setCategoryModalError] = useState<string | null>(null);
   const [itemForm, setItemForm] = useState<CreateItemForm>({
     item: '',
     codigo: '',
@@ -126,9 +199,12 @@ export default function Stock() {
     imagemUrl: '',
     nfUrl: '',
     comprovantePagamentoUrl: '',
-    cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
+    cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
     projetoId: 0,
     selectedCotacaoIndex: 0,
+    dataCompra: '',
+    categoriaId: undefined,
+    observacao: '',
   });
 
   // Regras de validação para item de estoque
@@ -164,17 +240,177 @@ export default function Stock() {
 
   async function load() {
     try {
-      const [{ data: itemsData }, { data: purchasesData }, { data: purchasesAllData }, { data: projectsData }] = await Promise.all([
+      const [{ data: itemsData }, { data: purchasesData }, { data: purchasesAllData }, { data: projectsData }, { data: suppliersData }, { data: categoriesData }] = await Promise.all([
         api.get<StockItem[]>('/stock/items'),
         api.get<Purchase[]>('/stock/purchases?excludeSolicitado=true'),
         api.get<Purchase[]>('/stock/purchases'),
         api.get<Projeto[]>('/projects'),
+        api.get<Supplier[]>('/suppliers'),
+        api.get<Category[]>('/categories'),
       ]);
       setItems(itemsData);
       setPurchases(purchasesAllData); // Todas as compras para a aba Solicitações
       setProjects(projectsData);
+      setSuppliers(suppliersData);
+      setCategories(categoriesData);
     } catch (err: any) {
       setError(err.response?.data?.message ?? 'Erro ao carregar estoque');
+    }
+  }
+
+  function getSupplierName(fornecedorId?: number): string {
+    if (!fornecedorId) return '-';
+    const supplier = suppliers.find((s) => s.id === fornecedorId);
+    return supplier ? supplier.nomeFantasia : '-';
+  }
+
+  function getCategoryName(categoriaId?: number): string {
+    if (!categoriaId) return '-';
+    const category = categories.find((c) => c.id === categoriaId);
+    return category ? category.nome : '-';
+  }
+
+  function openCategoryModal() {
+    setCategoryForm({ nome: '', descricao: '' });
+    setCategoryModalError(null);
+    setShowCategoryModal(true);
+  }
+
+  async function handleCreateCategory(e: FormEvent) {
+    e.preventDefault();
+    setCategoryModalError(null);
+
+    if (!categoryForm.nome.trim()) {
+      setCategoryModalError('Nome da categoria é obrigatório');
+      return;
+    }
+
+    setCreatingCategory(true);
+
+    try {
+      const payload: any = {
+        nome: categoryForm.nome.trim(),
+        ativo: true,
+      };
+
+      if (categoryForm.descricao && categoryForm.descricao.trim()) {
+        payload.descricao = categoryForm.descricao.trim();
+      }
+
+      const { data: newCategory } = await api.post<Category>('/categories', payload);
+      
+      // Atualizar lista de categorias
+      setCategories([...categories, newCategory]);
+      
+      // Selecionar a categoria recém-criada no formulário de compra
+      setPurchaseForm({ ...purchaseForm, categoriaId: newCategory.id });
+
+      toast.success('Categoria criada com sucesso!');
+      setShowCategoryModal(false);
+    } catch (err: any) {
+      const errorMessage = formatApiError(err);
+      setCategoryModalError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setCreatingCategory(false);
+    }
+  }
+
+  // Função para formatar CNPJ
+  function formatCNPJ(cnpj: string): string {
+    const cleaned = cnpj.replace(/\D/g, '');
+    if (cleaned.length <= 14) {
+      return cleaned
+        .replace(/(\d{2})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1.$2')
+        .replace(/(\d{3})(\d)/, '$1/$2')
+        .replace(/(\d{4})(\d)/, '$1-$2');
+    }
+    return cleaned;
+  }
+
+  // Função para validar CNPJ básico
+  function validateCNPJ(cnpj: string): boolean {
+    const cleaned = cnpj.replace(/\D/g, '');
+    return cleaned.length === 14;
+  }
+
+  function openSupplierModal(cotacaoIndex: number) {
+    setCurrentCotacaoIndex(cotacaoIndex);
+    setSupplierForm({
+      razaoSocial: '',
+      nomeFantasia: '',
+      cnpj: '',
+      endereco: '',
+      contato: '',
+      ativo: true,
+    });
+    setSupplierModalError(null);
+    setShowSupplierModal(true);
+  }
+
+  async function handleCreateSupplier(e: FormEvent) {
+    e.preventDefault();
+    setSupplierModalError(null);
+
+    // Validações básicas
+    if (!supplierForm.razaoSocial.trim()) {
+      setSupplierModalError('Razão Social é obrigatória');
+      return;
+    }
+    if (!supplierForm.nomeFantasia.trim()) {
+      setSupplierModalError('Nome Fantasia é obrigatório');
+      return;
+    }
+    if (!validateCNPJ(supplierForm.cnpj)) {
+      setSupplierModalError('CNPJ inválido. Deve conter 14 dígitos.');
+      return;
+    }
+
+    setCreatingSupplier(true);
+
+    try {
+      const cleanedCNPJ = supplierForm.cnpj.replace(/\D/g, '');
+      const payload: any = {
+        razaoSocial: supplierForm.razaoSocial.trim(),
+        nomeFantasia: supplierForm.nomeFantasia.trim(),
+        cnpj: cleanedCNPJ,
+        ativo: supplierForm.ativo,
+      };
+
+      if (supplierForm.endereco && supplierForm.endereco.trim()) {
+        payload.endereco = supplierForm.endereco.trim();
+      }
+      if (supplierForm.contato && supplierForm.contato.trim()) {
+        payload.contato = supplierForm.contato.trim();
+      }
+
+      const { data: newSupplier } = await api.post<Supplier>('/suppliers', payload);
+      
+      // Atualizar lista de fornecedores
+      setSuppliers([...suppliers, newSupplier]);
+      
+      // Selecionar o fornecedor recém-criado na cotação atual
+      if (currentCotacaoIndex !== null) {
+        // Verificar se está no modal de aprovação ou no formulário de compra
+        if (showViewRequestModal && approveCotacoes.length > currentCotacaoIndex) {
+          const newCotacoes = [...approveCotacoes];
+          newCotacoes[currentCotacaoIndex].fornecedorId = newSupplier.id;
+          setApproveCotacoes(newCotacoes);
+        } else if (purchaseForm.cotacoes.length > currentCotacaoIndex) {
+          updateCotacao(purchaseForm, setPurchaseForm, currentCotacaoIndex, 'fornecedorId', newSupplier.id);
+        }
+      }
+
+      toast.success('Fornecedor criado com sucesso!');
+      setShowSupplierModal(false);
+      setCurrentCotacaoIndex(null);
+    } catch (err: any) {
+      const errorMessage = formatApiError(err);
+      setSupplierModalError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setCreatingSupplier(false);
     }
   }
 
@@ -269,14 +505,39 @@ export default function Stock() {
     }
   }
 
+  function getStatusEntregaLabel(status: string): string {
+    const labels: Record<string, string> = {
+      NAO_ENTREGUE: 'Não Entregue',
+      PARCIAL: 'Parcial',
+      ENTREGUE: 'Entregue',
+      CANCELADO: 'Cancelado',
+    };
+    return labels[status] || status;
+  }
+
+  function getStatusEntregaColor(status: string): string {
+    switch (status) {
+      case 'NAO_ENTREGUE':
+        return 'bg-yellow-500/20 text-yellow-300';
+      case 'PARCIAL':
+        return 'bg-orange-500/20 text-orange-300';
+      case 'ENTREGUE':
+        return 'bg-green-500/20 text-green-300';
+      case 'CANCELADO':
+        return 'bg-red-500/20 text-red-300';
+      default:
+        return 'bg-gray-500/20 text-gray-300';
+    }
+  }
+
   function calculateTotal(cotacao: Cotacao, quantidade: number): number {
-    return (cotacao.valorUnitario + cotacao.frete + cotacao.impostos) * quantidade;
+    return (cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)) * quantidade;
   }
 
   function addCotacao<T extends { cotacoes: Cotacao[] }>(form: T, setForm: (f: T) => void) {
     setForm({
       ...form,
-      cotacoes: [...form.cotacoes, { valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
+      cotacoes: [...form.cotacoes, { valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
     });
   }
 
@@ -740,7 +1001,7 @@ export default function Stock() {
 
       console.log('Cotação selecionada:', selectedCotacao);
 
-      const totalPorUnidade = selectedCotacao.valorUnitario + selectedCotacao.frete + selectedCotacao.impostos;
+      const totalPorUnidade = selectedCotacao.valorUnitario + selectedCotacao.frete + selectedCotacao.impostos - (selectedCotacao.desconto || 0);
       console.log('Total por unidade calculado:', totalPorUnidade);
 
       // Preparar payload removendo campos undefined/vazios
@@ -804,6 +1065,20 @@ export default function Stock() {
         console.log('✗ comprovantePagamentoUrl omitida (vazia ou undefined)');
       }
       
+      if (purchaseForm.dataCompra && purchaseForm.dataCompra.trim().length > 0) {
+        payload.dataCompra = purchaseForm.dataCompra.trim();
+        console.log('✓ dataCompra adicionada:', payload.dataCompra);
+      } else {
+        console.log('✗ dataCompra omitida (vazia ou undefined)');
+      }
+
+      if (purchaseForm.categoriaId) {
+        payload.categoriaId = Number(purchaseForm.categoriaId);
+        console.log('✓ categoriaId adicionada:', payload.categoriaId);
+      } else {
+        console.log('✗ categoriaId omitida (não selecionada)');
+      }
+      
       // Sempre enviar cotações (array com pelo menos uma cotação)
       if (purchaseForm.cotacoes.length > 0) {
         const cotacoesFiltradas = purchaseForm.cotacoes
@@ -811,8 +1086,9 @@ export default function Stock() {
             const valorUnitario = Number(cot.valorUnitario) || 0;
             const frete = Number(cot.frete) || 0;
             const impostos = Number(cot.impostos) || 0;
+            const desconto = Number(cot.desconto) || 0;
             
-            console.log(`Cotação ${index + 1} raw:`, { valorUnitario: cot.valorUnitario, frete: cot.frete, impostos: cot.impostos });
+            console.log(`Cotação ${index + 1} raw:`, { valorUnitario: cot.valorUnitario, frete: cot.frete, impostos: cot.impostos, desconto: cot.desconto });
             
             // Só incluir se todos os valores forem válidos (maiores que 0)
             if (valorUnitario > 0 && frete >= 0 && impostos >= 0) {
@@ -821,8 +1097,17 @@ export default function Stock() {
                 frete,
                 impostos,
               };
+              if (desconto > 0) {
+                cotacao.desconto = desconto;
+              }
               if (cot.link && cot.link.trim().length > 0) {
                 cotacao.link = cot.link.trim();
+              }
+              if (cot.fornecedorId) {
+                cotacao.fornecedorId = Number(cot.fornecedorId);
+              }
+              if (cot.formaPagamento && cot.formaPagamento.trim().length > 0) {
+                cotacao.formaPagamento = cot.formaPagamento.trim();
               }
               console.log(`✓ Cotação ${index + 1} válida:`, cotacao);
               return cotacao;
@@ -877,9 +1162,12 @@ export default function Stock() {
         imagemUrl: '',
         nfUrl: '',
         comprovantePagamentoUrl: '',
-        cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
+        cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
         projetoId: 0,
         selectedCotacaoIndex: 0,
+        dataCompra: '',
+        categoriaId: undefined,
+        observacao: '',
       });
       load();
       toast.success('Compra criada com sucesso!');
@@ -939,12 +1227,41 @@ export default function Stock() {
     setError(null);
 
     try {
-      await api.patch(`/stock/purchases/${purchaseToUpdateStatus.id}/status`, {
+      const payload: { 
+        status: string; 
+        statusEntrega?: string;
+        dataEntrega?: string;
+        enderecoEntrega?: string;
+        recebidoPor?: string;
+        observacao?: string;
+      } = {
         status: newStatus,
-      });
+      };
+      
+      // Incluir apenas statusEntrega se o status for COMPRADO_ACAMINHO
+      if (newStatus === 'COMPRADO_ACAMINHO') {
+        if (newStatusEntrega) payload.statusEntrega = newStatusEntrega;
+      }
+      
+      // Incluir campos de entrega se o status for ENTREGUE (sem statusEntrega)
+      if (newStatus === 'ENTREGUE') {
+        if (newDataEntrega) payload.dataEntrega = newDataEntrega;
+        if (newEnderecoEntrega) payload.enderecoEntrega = newEnderecoEntrega;
+        if (newRecebidoPor) payload.recebidoPor = newRecebidoPor;
+      }
+      
+      // Observação pode ser adicionada em qualquer status
+      if (newObservacao) payload.observacao = newObservacao;
+      
+      await api.patch(`/stock/purchases/${purchaseToUpdateStatus.id}/status`, payload);
       setShowStatusModal(false);
       setPurchaseToUpdateStatus(null);
       setNewStatus('');
+      setNewStatusEntrega('');
+      setNewDataEntrega('');
+      setNewEnderecoEntrega('');
+      setNewRecebidoPor('');
+      setNewObservacao('');
       load();
       toast.success('Status da compra atualizado com sucesso!');
     } catch (err: any) {
@@ -985,7 +1302,8 @@ export default function Stock() {
           const valorUnitario = Number(selectedCotacao.valorUnitario) || 0;
           const frete = Number(selectedCotacao.frete) || 0;
           const impostos = Number(selectedCotacao.impostos) || 0;
-          const totalPorUnidade = valorUnitario + frete + impostos;
+          const desconto = Number(selectedCotacao.desconto) || 0;
+          const totalPorUnidade = valorUnitario + frete + impostos - desconto;
           
           // Só atualizar valorUnitario se o total for maior que zero
           // Caso contrário, manter o valor existente
@@ -1016,12 +1334,29 @@ export default function Stock() {
         }
       }
       
+      if (purchaseForm.dataCompra && purchaseForm.dataCompra.trim().length > 0) {
+        payload.dataCompra = purchaseForm.dataCompra.trim();
+      }
+
+      // Sempre incluir categoriaId (pode ser null para limpar)
+      if (purchaseForm.categoriaId) {
+        payload.categoriaId = Number(purchaseForm.categoriaId);
+      } else {
+        payload.categoriaId = null;
+      }
+      
+      // Incluir observacao
+      if (purchaseForm.observacao !== undefined) {
+        payload.observacao = purchaseForm.observacao?.trim() || null;
+      }
+      
       if (purchaseForm.cotacoes.length > 0) {
         const cotacoesFiltradas = purchaseForm.cotacoes
           .map((cot: Cotacao) => {
             const valorUnitario = Number(cot.valorUnitario) || 0;
             const frete = Number(cot.frete) || 0;
             const impostos = Number(cot.impostos) || 0;
+            const desconto = Number(cot.desconto) || 0;
             
             // Aceitar todas as cotações válidas (valores >= 0)
             // Mesmo cotações com valores zerados são válidas
@@ -1032,8 +1367,17 @@ export default function Stock() {
                 frete,
                 impostos,
               };
+              if (desconto > 0) {
+                cotacao.desconto = desconto;
+              }
               if (cot.link && cot.link.trim().length > 0) {
                 cotacao.link = cot.link.trim();
+              }
+              if (cot.fornecedorId) {
+                cotacao.fornecedorId = Number(cot.fornecedorId);
+              }
+              if (cot.formaPagamento && cot.formaPagamento.trim().length > 0) {
+                cotacao.formaPagamento = cot.formaPagamento.trim();
               }
               return cotacao;
             }
@@ -1068,9 +1412,12 @@ export default function Stock() {
         imagemUrl: '',
         nfUrl: '',
         comprovantePagamentoUrl: '',
-        cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
+        cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
         projetoId: 0,
         selectedCotacaoIndex: 0,
+        dataCompra: '',
+        categoriaId: undefined,
+        observacao: '',
       });
       load();
     } catch (err: any) {
@@ -1379,16 +1726,19 @@ export default function Stock() {
                   />
                 </th>
                 <th className="px-4 py-3 text-left">Item</th>
-                <th className="px-4 py-3 text-left">Quantidade</th>
+                <th className="px-4 py-3 text-left">Qtd</th>
                 <th className="px-4 py-3 text-left">Cotações</th>
+                <th className="px-4 py-3 text-left">Categoria</th>
+                <th className="px-4 py-3 text-left">Solicitado Por</th>
                 <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3 text-left">Entrega</th>
                 <th className="px-4 py-3 text-left">Ações</th>
               </tr>
             </thead>
             <tbody>
               {filteredPurchases.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-white/50">
+                  <td colSpan={9} className="px-4 py-8 text-center text-white/50">
                     {purchases.length === 0 ? 'Nenhuma compra cadastrada' : 'Nenhuma compra encontrada com os filtros aplicados'}
                   </td>
                 </tr>
@@ -1432,7 +1782,7 @@ export default function Stock() {
                       {cotacoes.length > 0 ? (
                         <div className="space-y-1">
                           {cotacoes.map((cotacao: Cotacao, index: number) => {
-                            const total = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0);
+                            const total = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0);
                             const totalComQuantidade = total * (purchase.quantidade || 1);
                             return (
                               <div key={index} className="text-sm">
@@ -1466,9 +1816,74 @@ export default function Stock() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`px-2 py-1 rounded text-xs ${getStatusColor(purchase.status)}`}>
-                        {getStatusLabel(purchase.status)}
+                      <span className="text-sm text-white/80">
+                        {getCategoryName((purchase as any).categoriaId)}
                       </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className="text-sm text-white/80">
+                        {purchase.solicitadoPor?.nome || '-'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1">
+                        <span className={`px-2 py-1 rounded text-xs ${getStatusColor(purchase.status)}`}>
+                          {getStatusLabel(purchase.status)}
+                        </span>
+                        {purchase.status === 'COMPRADO_ACAMINHO' && purchase.statusEntrega && (
+                          <span className={`px-2 py-1 rounded text-xs ${getStatusEntregaColor(purchase.statusEntrega)}`}>
+                            {getStatusEntregaLabel(purchase.statusEntrega)}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-col gap-1 text-xs">
+                        {purchase.status === 'ENTREGUE' ? (
+                          <>
+                            {purchase.dataEntrega && (
+                              <span className="text-white/90">
+                                📅 {new Date(purchase.dataEntrega).toLocaleDateString('pt-BR')}
+                              </span>
+                            )}
+                            {purchase.enderecoEntrega && (
+                              <span className="text-white/80 truncate max-w-[150px]" title={purchase.enderecoEntrega}>
+                                📍 {purchase.enderecoEntrega}
+                              </span>
+                            )}
+                            {purchase.recebidoPor && (
+                              <span className="text-white/70">👤 {purchase.recebidoPor}</span>
+                            )}
+                            {purchase.observacao && (
+                              <span className="text-white/60 truncate max-w-[150px]" title={purchase.observacao}>
+                                📝 {purchase.observacao}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {purchase.dataEntrega ? (
+                              <span className="text-white/90">
+                                📅 {new Date(purchase.dataEntrega).toLocaleDateString('pt-BR')}
+                              </span>
+                            ) : purchase.dataCompra ? (
+                              <span className="text-white/50">
+                                📅 Compra: {new Date(purchase.dataCompra).toLocaleDateString('pt-BR')}
+                              </span>
+                            ) : (
+                              <span className="text-white/50">-</span>
+                            )}
+                            {purchase.recebidoPor && (
+                              <span className="text-white/70">👤 {purchase.recebidoPor}</span>
+                            )}
+                            {purchase.observacao && (
+                              <span className="text-white/60 truncate max-w-[150px]" title={purchase.observacao}>
+                                📝 {purchase.observacao}
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -1476,6 +1891,26 @@ export default function Stock() {
                           onClick={() => {
                             setPurchaseToUpdateStatus(purchase);
                             setNewStatus(purchase.status);
+                            
+                            // Inicializar campos baseado no status atual
+                            if (purchase.status === 'COMPRADO_ACAMINHO') {
+                              setNewStatusEntrega(purchase.statusEntrega || 'NAO_ENTREGUE');
+                              setNewDataEntrega('');
+                              setNewEnderecoEntrega('');
+                              setNewRecebidoPor('');
+                            } else if (purchase.status === 'ENTREGUE') {
+                              setNewStatusEntrega('');
+                              setNewDataEntrega(purchase.dataEntrega ? new Date(purchase.dataEntrega).toISOString().split('T')[0] : '');
+                              setNewEnderecoEntrega(purchase.enderecoEntrega || '');
+                              setNewRecebidoPor(purchase.recebidoPor || '');
+                            } else {
+                              setNewStatusEntrega('');
+                              setNewDataEntrega('');
+                              setNewEnderecoEntrega('');
+                              setNewRecebidoPor('');
+                            }
+                            
+                            setNewObservacao(purchase.observacao || '');
                             setShowStatusModal(true);
                           }}
                           className="px-3 py-1.5 text-sm rounded-md bg-green-600 hover:bg-green-700 text-white"
@@ -1494,10 +1929,21 @@ export default function Stock() {
                               nfUrl: purchase.nfUrl || '',
                               comprovantePagamentoUrl: purchase.comprovantePagamentoUrl || '',
                               cotacoes: purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) 
-                                ? purchase.cotacoesJson 
-                                : [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
+                                ? purchase.cotacoesJson.map((cot: any) => ({ 
+                                    valorUnitario: cot.valorUnitario || 0, 
+                                    frete: cot.frete || 0, 
+                                    impostos: cot.impostos || 0, 
+                                    desconto: cot.desconto || 0,
+                                    link: cot.link || '', 
+                                    fornecedorId: cot.fornecedorId,
+                                    formaPagamento: cot.formaPagamento || ''
+                                  }))
+                                : [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
                               projetoId: purchase.projetoId,
                               selectedCotacaoIndex: 0,
+                              dataCompra: purchase.dataCompra ? new Date(purchase.dataCompra).toISOString().split('T')[0] : '',
+                              categoriaId: (purchase as any).categoriaId || undefined,
+                              observacao: purchase.observacao || '',
                             });
                             setShowEditPurchaseModal(true);
                           }}
@@ -2349,6 +2795,47 @@ export default function Stock() {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Data de Compra</label>
+                <input
+                  type="date"
+                  value={purchaseForm.dataCompra || ''}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, dataCompra: e.target.value })}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-white/90">Categoria</label>
+                  <button
+                    type="button"
+                    onClick={openCategoryModal}
+                    className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1"
+                  >
+                    <span>+</span> Nova Categoria
+                  </button>
+                </div>
+                <select
+                  value={purchaseForm.categoriaId || ''}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, categoriaId: e.target.value ? Number(e.target.value) : undefined })}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem'
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">Selecione uma categoria (opcional)</option>
+                  {categories.filter(c => c.ativo).map((cat) => (
+                    <option key={cat.id} value={cat.id} className="bg-neutral text-white">
+                      {cat.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="border-t border-white/10 pt-4">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold">Cotações</h3>
@@ -2430,6 +2917,19 @@ export default function Stock() {
                           />
                         </div>
                         <div>
+                          <label className="block text-xs font-medium text-white/90 mb-2">Desconto (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={cotacao.desconto || 0}
+                            onChange={(e) =>
+                              updateCotacao(purchaseForm, setPurchaseForm, index, 'desconto', Number(e.target.value))
+                            }
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          />
+                        </div>
+                        <div>
                           <label className="block text-xs font-medium text-white/90 mb-2">Link</label>
                           <input
                             type="url"
@@ -2439,9 +2939,79 @@ export default function Stock() {
                             placeholder="https://..."
                           />
                         </div>
+                        <div className="col-span-2">
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-xs font-medium text-white/90">Fornecedor</label>
+                            <button
+                              type="button"
+                              onClick={() => openSupplierModal(index)}
+                              className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1"
+                            >
+                              <span>+</span> Adicionar Fornecedor
+                            </button>
+                          </div>
+                          <select
+                            value={cotacao.fornecedorId || ''}
+                            onChange={(e) => {
+                              const value = e.target.value ? Number(e.target.value) : undefined;
+                              if (value !== undefined) {
+                                updateCotacao(purchaseForm, setPurchaseForm, index, 'fornecedorId', value);
+                              } else {
+                                const newCotacoes = [...purchaseForm.cotacoes];
+                                newCotacoes[index] = { ...newCotacoes[index], fornecedorId: undefined };
+                                setPurchaseForm({ ...purchaseForm, cotacoes: newCotacoes });
+                              }
+                            }}
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                            style={{
+                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                              backgroundRepeat: 'no-repeat',
+                              backgroundPosition: 'right 0.75rem center',
+                              paddingRight: '2rem'
+                            }}
+                          >
+                            <option value="" className="bg-neutral text-white">Selecione um fornecedor (opcional)</option>
+                            {suppliers.filter(s => s.ativo).map((supplier) => (
+                              <option key={supplier.id} value={supplier.id} className="bg-neutral text-white">
+                                {supplier.nomeFantasia}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs font-medium text-white/90 mb-2">Forma de Pagamento</label>
+                          <select
+                            value={cotacao.formaPagamento || ''}
+                            onChange={(e) => updateCotacao(purchaseForm, setPurchaseForm, index, 'formaPagamento', e.target.value)}
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                            style={{
+                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                              backgroundRepeat: 'no-repeat',
+                              backgroundPosition: 'right 0.75rem center',
+                              paddingRight: '2rem'
+                            }}
+                          >
+                            <option value="" className="bg-neutral text-white">Selecione (opcional)</option>
+                            {formasPagamento.map((forma) => (
+                              <option key={forma} value={forma} className="bg-neutral text-white">
+                                {forma}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
 
                       <div className="mt-3 pt-3 border-t border-white/10">
+                        {cotacao.fornecedorId && (
+                          <div className="text-sm text-white/70 mb-2">
+                            Fornecedor: <span className="font-semibold text-white">{getSupplierName(cotacao.fornecedorId)}</span>
+                          </div>
+                        )}
+                        {cotacao.formaPagamento && (
+                          <div className="text-sm text-white/70 mb-2">
+                            Pagamento: <span className="font-semibold text-white">{cotacao.formaPagamento}</span>
+                          </div>
+                        )}
                         <div className="text-sm text-white/70">
                           Total por unidade:{' '}
                           {cotacao.link ? (
@@ -2451,14 +3021,14 @@ export default function Stock() {
                               rel="noopener noreferrer"
                               className="font-semibold text-white hover:text-primary underline cursor-pointer"
                             >
-                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos).toLocaleString('pt-BR', {
+                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)).toLocaleString('pt-BR', {
                                 style: 'currency',
                                 currency: 'BRL',
                               })}
                             </a>
                           ) : (
                             <span className="font-semibold text-white">
-                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos).toLocaleString('pt-BR', {
+                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)).toLocaleString('pt-BR', {
                                 style: 'currency',
                                 currency: 'BRL',
                               })}
@@ -2542,9 +3112,12 @@ export default function Stock() {
                     imagemUrl: '',
                     nfUrl: '',
                     comprovantePagamentoUrl: '',
-                    cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
+                    cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
                     projetoId: 0,
                     selectedCotacaoIndex: 0,
+                    dataCompra: '',
+                    categoriaId: undefined,
+                    observacao: '',
                   });
                 }}
                 className="text-white/50 hover:text-white transition-colors text-2xl"
@@ -2700,6 +3273,47 @@ export default function Stock() {
                 />
               </div>
 
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Data de Compra</label>
+                <input
+                  type="date"
+                  value={purchaseForm.dataCompra || ''}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, dataCompra: e.target.value })}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-white/90">Categoria</label>
+                  <button
+                    type="button"
+                    onClick={openCategoryModal}
+                    className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1"
+                  >
+                    <span>+</span> Nova Categoria
+                  </button>
+                </div>
+                <select
+                  value={purchaseForm.categoriaId || ''}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, categoriaId: e.target.value ? Number(e.target.value) : undefined })}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem'
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">Selecione uma categoria (opcional)</option>
+                  {categories.filter(c => c.ativo).map((cat) => (
+                    <option key={cat.id} value={cat.id} className="bg-neutral text-white">
+                      {cat.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="border-t border-white/10 pt-4">
                 <div className="flex items-center justify-between mb-4">
                   <h3 className="text-lg font-semibold">Cotações</h3>
@@ -2781,6 +3395,19 @@ export default function Stock() {
                           />
                         </div>
                         <div>
+                          <label className="block text-xs font-medium text-white/90 mb-2">Desconto (R$)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={cotacao.desconto || 0}
+                            onChange={(e) =>
+                              updateCotacao(purchaseForm, setPurchaseForm, index, 'desconto', Number(e.target.value))
+                            }
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                          />
+                        </div>
+                        <div>
                           <label className="block text-xs font-medium text-white/90 mb-2">Link</label>
                           <input
                             type="url"
@@ -2790,9 +3417,79 @@ export default function Stock() {
                             placeholder="https://..."
                           />
                         </div>
+                        <div className="col-span-2">
+                          <div className="flex items-center justify-between mb-2">
+                            <label className="block text-xs font-medium text-white/90">Fornecedor</label>
+                            <button
+                              type="button"
+                              onClick={() => openSupplierModal(index)}
+                              className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1"
+                            >
+                              <span>+</span> Adicionar Fornecedor
+                            </button>
+                          </div>
+                          <select
+                            value={cotacao.fornecedorId || ''}
+                            onChange={(e) => {
+                              const value = e.target.value ? Number(e.target.value) : undefined;
+                              if (value !== undefined) {
+                                updateCotacao(purchaseForm, setPurchaseForm, index, 'fornecedorId', value);
+                              } else {
+                                const newCotacoes = [...purchaseForm.cotacoes];
+                                newCotacoes[index] = { ...newCotacoes[index], fornecedorId: undefined };
+                                setPurchaseForm({ ...purchaseForm, cotacoes: newCotacoes });
+                              }
+                            }}
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                            style={{
+                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                              backgroundRepeat: 'no-repeat',
+                              backgroundPosition: 'right 0.75rem center',
+                              paddingRight: '2rem'
+                            }}
+                          >
+                            <option value="" className="bg-neutral text-white">Selecione um fornecedor (opcional)</option>
+                            {suppliers.filter(s => s.ativo).map((supplier) => (
+                              <option key={supplier.id} value={supplier.id} className="bg-neutral text-white">
+                                {supplier.nomeFantasia}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs font-medium text-white/90 mb-2">Forma de Pagamento</label>
+                          <select
+                            value={cotacao.formaPagamento || ''}
+                            onChange={(e) => updateCotacao(purchaseForm, setPurchaseForm, index, 'formaPagamento', e.target.value)}
+                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                            style={{
+                              backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                              backgroundRepeat: 'no-repeat',
+                              backgroundPosition: 'right 0.75rem center',
+                              paddingRight: '2rem'
+                            }}
+                          >
+                            <option value="" className="bg-neutral text-white">Selecione (opcional)</option>
+                            {formasPagamento.map((forma) => (
+                              <option key={forma} value={forma} className="bg-neutral text-white">
+                                {forma}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
 
                       <div className="mt-3 pt-3 border-t border-white/10">
+                        {cotacao.fornecedorId && (
+                          <div className="text-sm text-white/70 mb-2">
+                            Fornecedor: <span className="font-semibold text-white">{getSupplierName(cotacao.fornecedorId)}</span>
+                          </div>
+                        )}
+                        {cotacao.formaPagamento && (
+                          <div className="text-sm text-white/70 mb-2">
+                            Pagamento: <span className="font-semibold text-white">{cotacao.formaPagamento}</span>
+                          </div>
+                        )}
                         <div className="text-sm text-white/70">
                           Total por unidade:{' '}
                           {cotacao.link ? (
@@ -2802,14 +3499,14 @@ export default function Stock() {
                               rel="noopener noreferrer"
                               className="font-semibold text-white hover:text-primary underline cursor-pointer"
                             >
-                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos).toLocaleString('pt-BR', {
+                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)).toLocaleString('pt-BR', {
                                 style: 'currency',
                                 currency: 'BRL',
                               })}
                             </a>
                           ) : (
                             <span className="font-semibold text-white">
-                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos).toLocaleString('pt-BR', {
+                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)).toLocaleString('pt-BR', {
                                 style: 'currency',
                                 currency: 'BRL',
                               })}
@@ -2845,6 +3542,27 @@ export default function Stock() {
                 </div>
               </div>
 
+              {/* Informações de quem solicitou (somente leitura) */}
+              {editingPurchase?.solicitadoPor && (
+                <div className="p-4 bg-white/5 border border-white/10 rounded-lg">
+                  <span className="text-sm text-white/70">Solicitado por: </span>
+                  <span className="text-sm font-semibold text-white">{editingPurchase.solicitadoPor.nome}</span>
+                </div>
+              )}
+
+              {/* Campo de Observação */}
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Observação</label>
+                <textarea
+                  value={purchaseForm.observacao || ''}
+                  onChange={(e) => setPurchaseForm({ ...purchaseForm, observacao: e.target.value })}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary resize-none"
+                  placeholder="Observações gerais sobre esta compra..."
+                  rows={3}
+                  maxLength={1000}
+                />
+              </div>
+
               {error && (
                 <div className="bg-danger/20 border border-danger/50 text-danger px-4 py-3 rounded-md text-sm">
                   {error}
@@ -2865,9 +3583,12 @@ export default function Stock() {
                       imagemUrl: '',
                       nfUrl: '',
                       comprovantePagamentoUrl: '',
-                      cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }],
+                      cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
                       projetoId: 0,
                       selectedCotacaoIndex: 0,
+                      dataCompra: '',
+                      categoriaId: undefined,
+                      observacao: '',
                     });
                   }}
                   className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm font-semibold transition-colors"
@@ -2952,7 +3673,30 @@ export default function Stock() {
                 <label className="block text-sm font-medium text-white/90 mb-2">Novo Status *</label>
                 <select
                   value={newStatus}
-                  onChange={(e) => setNewStatus(e.target.value)}
+                  onChange={(e) => {
+                    setNewStatus(e.target.value);
+                    // Se mudar para COMPRADO_ACAMINHO, inicializar apenas statusEntrega e limpar outros campos
+                    if (e.target.value === 'COMPRADO_ACAMINHO') {
+                      setNewStatusEntrega(purchaseToUpdateStatus?.statusEntrega || 'NAO_ENTREGUE');
+                      setNewDataEntrega('');
+                      setNewEnderecoEntrega('');
+                      setNewRecebidoPor('');
+                    } 
+                    // Se mudar para ENTREGUE, inicializar campos de entrega (sem statusEntrega)
+                    else if (e.target.value === 'ENTREGUE') {
+                      setNewStatusEntrega('');
+                      setNewDataEntrega(purchaseToUpdateStatus?.dataEntrega ? new Date(purchaseToUpdateStatus.dataEntrega).toISOString().split('T')[0] : '');
+                      setNewEnderecoEntrega(purchaseToUpdateStatus?.enderecoEntrega || '');
+                      setNewRecebidoPor(purchaseToUpdateStatus?.recebidoPor || '');
+                    } 
+                    // Se mudar para outro status, limpar todos os campos
+                    else {
+                      setNewStatusEntrega('');
+                      setNewDataEntrega('');
+                      setNewEnderecoEntrega('');
+                      setNewRecebidoPor('');
+                    }
+                  }}
                   className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
                   style={{
                     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
@@ -2966,6 +3710,89 @@ export default function Stock() {
                   <option value="ENTREGUE" className="bg-neutral text-white">Entregue</option>
                 </select>
               </div>
+
+              {/* Status de Entrega - aparece quando status é COMPRADO_ACAMINHO (apenas o status, sem outros campos) */}
+              {newStatus === 'COMPRADO_ACAMINHO' && (
+                <div className="space-y-4 mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                  <h4 className="text-sm font-semibold text-blue-300 mb-3">Status de Entrega</h4>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-white/90 mb-2">Status de Entrega</label>
+                    <select
+                      value={newStatusEntrega}
+                      onChange={(e) => setNewStatusEntrega(e.target.value)}
+                      className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right 1rem center',
+                        paddingRight: '2.5rem'
+                      }}
+                    >
+                      {statusEntregaOptions.filter(option => option.value !== 'ENTREGUE').map((option) => (
+                        <option key={option.value} value={option.value} className="bg-neutral text-white">
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* Campos de Entrega completos - aparecem apenas quando status é ENTREGUE */}
+              {newStatus === 'ENTREGUE' && (
+                <div className="space-y-4 mb-6 p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                  <h4 className="text-sm font-semibold text-green-300 mb-3">Informações de Entrega</h4>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-white/90 mb-2">Data da Entrega</label>
+                    <input
+                      type="date"
+                      value={newDataEntrega}
+                      onChange={(e) => setNewDataEntrega(e.target.value)}
+                      className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-white/90 mb-2">Endereço de Entrega</label>
+                    <input
+                      type="text"
+                      value={newEnderecoEntrega}
+                      onChange={(e) => setNewEnderecoEntrega(e.target.value)}
+                      className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                      placeholder="Endereço onde foi entregue"
+                      maxLength={500}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-white/90 mb-2">Recebido por</label>
+                    <input
+                      type="text"
+                      value={newRecebidoPor}
+                      onChange={(e) => setNewRecebidoPor(e.target.value)}
+                      className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                      placeholder="Nome de quem recebeu o material (ex: Kauê, Welton...)"
+                      maxLength={100}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Campo de Observação - aparece sempre */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-white/90 mb-2">Observação</label>
+                <textarea
+                  value={newObservacao}
+                  onChange={(e) => setNewObservacao(e.target.value)}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary resize-none"
+                  placeholder="Observações gerais sobre esta compra..."
+                  rows={3}
+                  maxLength={1000}
+                />
+              </div>
+
               {error && (
                 <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md mb-4 text-sm">
                   {error}
@@ -2978,6 +3805,11 @@ export default function Stock() {
                     setShowStatusModal(false);
                     setPurchaseToUpdateStatus(null);
                     setNewStatus('');
+                    setNewStatusEntrega('');
+                    setNewDataEntrega('');
+                    setNewEnderecoEntrega('');
+                    setNewRecebidoPor('');
+                    setNewObservacao('');
                     setError(null);
                   }}
                   className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
@@ -3290,7 +4122,7 @@ export default function Stock() {
                                 
                                 cotacoes.forEach((cotacao, cotIdx) => {
                                   checkPageBreak(6);
-                                  const cotacaoTotal = cotacao.valorUnitario + cotacao.frete + cotacao.impostos;
+                                  const cotacaoTotal = cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0);
                                   const cotacaoTotalComQuantidade = cotacaoTotal * (purchase.quantidade || 0);
                                   const cotacaoText = `     Cotação ${cotIdx + 1}: Valor Unitário: ${cotacao.valorUnitario.toLocaleString('pt-BR', {
                                     style: 'currency',
@@ -3409,7 +4241,7 @@ export default function Stock() {
                   setShowViewRequestModal(false);
                   setPurchaseToView(null);
                   setError(null);
-                  setApproveCotacoes([{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }]);
+                  setApproveCotacoes([{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }]);
                   setSelectedCotacaoIndex(0);
                 }}
                 className="text-white/50 hover:text-white transition-colors text-2xl"
@@ -3465,7 +4297,50 @@ export default function Stock() {
                     {new Date((purchaseToView as any).dataSolicitacao || new Date()).toLocaleString('pt-BR')}
                   </p>
                 </div>
+                {(purchaseToView as any).dataCompra && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/70 mb-1">Data de Compra</label>
+                    <p className="text-white/90">
+                      {new Date((purchaseToView as any).dataCompra).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                )}
               </div>
+
+              {/* Informações de Entrega - Exibir quando status for ENTREGUE */}
+              {purchaseToView.status === 'ENTREGUE' && (
+                <div className="bg-white/5 p-4 rounded-md border border-white/10">
+                  <h3 className="text-lg font-semibold text-white/90 mb-3">Informações de Entrega</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    {(purchaseToView as any).dataEntrega && (
+                      <div>
+                        <label className="block text-sm font-medium text-white/70 mb-1">Data da Entrega</label>
+                        <p className="text-white/90">
+                          {new Date((purchaseToView as any).dataEntrega).toLocaleDateString('pt-BR')}
+                        </p>
+                      </div>
+                    )}
+                    {(purchaseToView as any).enderecoEntrega && (
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-white/70 mb-1">Endereço de Entrega</label>
+                        <p className="text-white/90">{(purchaseToView as any).enderecoEntrega}</p>
+                      </div>
+                    )}
+                    {(purchaseToView as any).recebidoPor && (
+                      <div>
+                        <label className="block text-sm font-medium text-white/70 mb-1">Recebido por</label>
+                        <p className="text-white/90">{(purchaseToView as any).recebidoPor}</p>
+                      </div>
+                    )}
+                    {(purchaseToView as any).observacao && (
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-white/70 mb-1">Observação</label>
+                        <p className="text-white/90 whitespace-pre-wrap">{(purchaseToView as any).observacao}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Imagem se houver */}
               {(purchaseToView as any).imagemUrl && (
@@ -3508,7 +4383,7 @@ export default function Stock() {
                           <div>
                             <span className="text-white/70">Total: </span>
                             <span className="text-primary font-semibold">
-                              {((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </span>
                           </div>
                           {cotacao.link && (
@@ -3522,6 +4397,12 @@ export default function Stock() {
                               >
                                 {cotacao.link}
                               </a>
+                            </div>
+                          )}
+                          {cotacao.fornecedorId && (
+                            <div className="col-span-2">
+                              <span className="text-white/70">Fornecedor: </span>
+                              <span className="text-white/90 font-semibold">{getSupplierName(cotacao.fornecedorId)}</span>
                             </div>
                           )}
                         </div>
@@ -3602,10 +4483,25 @@ export default function Stock() {
                             />
                           </div>
                           <div>
+                            <label className="block text-xs text-white/70 mb-1">Desconto</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={cotacao.desconto || 0}
+                              onChange={(e) => {
+                                const newCotacoes = [...approveCotacoes];
+                                newCotacoes[index].desconto = parseFloat(e.target.value) || 0;
+                                setApproveCotacoes(newCotacoes);
+                              }}
+                              className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                            />
+                          </div>
+                          <div>
                             <label className="block text-xs text-white/70 mb-1">Link (opcional)</label>
                             <input
                               type="text"
-                              value={cotacao.link}
+                              value={cotacao.link || ''}
                               onChange={(e) => {
                                 const newCotacoes = [...approveCotacoes];
                                 newCotacoes[index].link = e.target.value;
@@ -3615,18 +4511,90 @@ export default function Stock() {
                               placeholder="URL da cotação"
                             />
                           </div>
+                          <div className="col-span-2">
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="block text-xs text-white/70">Fornecedor (opcional)</label>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCurrentCotacaoIndex(index);
+                                  openSupplierModal(index);
+                                }}
+                                className="text-xs text-primary hover:text-primary/80 font-medium flex items-center gap-1"
+                              >
+                                <span>+</span> Adicionar Fornecedor
+                              </button>
+                            </div>
+                            <select
+                              value={cotacao.fornecedorId || ''}
+                              onChange={(e) => {
+                                const newCotacoes = [...approveCotacoes];
+                                newCotacoes[index].fornecedorId = e.target.value ? Number(e.target.value) : undefined;
+                                setApproveCotacoes(newCotacoes);
+                              }}
+                              className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                              style={{
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                                backgroundRepeat: 'no-repeat',
+                                backgroundPosition: 'right 0.75rem center',
+                                paddingRight: '2rem'
+                              }}
+                            >
+                              <option value="" className="bg-neutral text-white">Selecione um fornecedor</option>
+                              {suppliers.filter(s => s.ativo).map((supplier) => (
+                                <option key={supplier.id} value={supplier.id} className="bg-neutral text-white">
+                                  {supplier.nomeFantasia}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="col-span-2">
+                            <label className="block text-xs text-white/70 mb-1">Forma de Pagamento (opcional)</label>
+                            <select
+                              value={cotacao.formaPagamento || ''}
+                              onChange={(e) => {
+                                const newCotacoes = [...approveCotacoes];
+                                newCotacoes[index].formaPagamento = e.target.value;
+                                setApproveCotacoes(newCotacoes);
+                              }}
+                              className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                              style={{
+                                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                                backgroundRepeat: 'no-repeat',
+                                backgroundPosition: 'right 0.75rem center',
+                                paddingRight: '2rem'
+                              }}
+                            >
+                              <option value="" className="bg-neutral text-white">Selecione</option>
+                              {formasPagamento.map((forma) => (
+                                <option key={forma} value={forma} className="bg-neutral text-white">
+                                  {forma}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         </div>
+                        {cotacao.fornecedorId && (
+                          <div className="mt-2 text-xs text-white/70">
+                            Fornecedor: <span className="font-semibold text-white">{getSupplierName(cotacao.fornecedorId)}</span>
+                          </div>
+                        )}
+                        {cotacao.formaPagamento && (
+                          <div className="mt-2 text-xs text-white/70">
+                            Pagamento: <span className="font-semibold text-white">{cotacao.formaPagamento}</span>
+                          </div>
+                        )}
                         <div className="mt-2">
                           <span className="text-xs text-white/70">Total: </span>
                           <span className="text-primary font-semibold text-sm">
-                            {((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            {((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                           </span>
                         </div>
                       </div>
                     ))}
                     <button
                       type="button"
-                      onClick={() => setApproveCotacoes([...approveCotacoes, { valorUnitario: 0, frete: 0, impostos: 0, link: '' }])}
+                      onClick={() => setApproveCotacoes([...approveCotacoes, { valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }])}
                       className="w-full py-2 px-4 bg-white/10 hover:bg-white/20 border border-white/30 rounded-md text-white text-sm transition-colors"
                     >
                       + Adicionar Outra Cotação
@@ -3698,7 +4666,7 @@ export default function Stock() {
                       setError(null);
                       setShowViewRequestModal(false);
                       setPurchaseToView(null);
-                      setApproveCotacoes([{ valorUnitario: 0, frete: 0, impostos: 0, link: '' }]);
+                      setApproveCotacoes([{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }]);
                       setSelectedCotacaoIndex(0);
                       toast.success('Solicitação de compra aprovada com sucesso!');
                     } catch (err: any) {
@@ -3822,6 +4790,195 @@ export default function Stock() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Criar Fornecedor */}
+      {showSupplierModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-8 py-6 flex items-center justify-between">
+              <h2 className="text-2xl font-bold">Novo Fornecedor</h2>
+              <button
+                onClick={() => {
+                  setShowSupplierModal(false);
+                  setSupplierModalError(null);
+                  setCurrentCotacaoIndex(null);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleCreateSupplier} className="p-8 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
+                  Razão Social *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={supplierForm.razaoSocial}
+                  onChange={(e) => setSupplierForm({ ...supplierForm, razaoSocial: e.target.value })}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="Digite a razão social"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
+                  Nome Fantasia *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={supplierForm.nomeFantasia}
+                  onChange={(e) => setSupplierForm({ ...supplierForm, nomeFantasia: e.target.value })}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="Digite o nome fantasia"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">CNPJ *</label>
+                <input
+                  type="text"
+                  required
+                  value={supplierForm.cnpj}
+                  onChange={(e) => {
+                    const formatted = formatCNPJ(e.target.value);
+                    setSupplierForm({ ...supplierForm, cnpj: formatted });
+                  }}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="00.000.000/0000-00"
+                  maxLength={18}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Endereço</label>
+                <input
+                  type="text"
+                  value={supplierForm.endereco}
+                  onChange={(e) => setSupplierForm({ ...supplierForm, endereco: e.target.value })}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="Digite o endereço"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Contato</label>
+                <input
+                  type="text"
+                  value={supplierForm.contato}
+                  onChange={(e) => setSupplierForm({ ...supplierForm, contato: e.target.value })}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="Telefone, email ou outro contato"
+                />
+              </div>
+
+              {supplierModalError && (
+                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md text-sm">
+                  {supplierModalError}
+                </div>
+              )}
+
+              <div className="flex justify-end space-x-4 pt-4 border-t border-white/20">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSupplierModal(false);
+                    setSupplierModalError(null);
+                    setCurrentCotacaoIndex(null);
+                  }}
+                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  disabled={creatingSupplier}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingSupplier}
+                  className="px-6 py-2.5 rounded-md bg-primary hover:bg-primary/80 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {creatingSupplier ? 'Criando...' : 'Criar Fornecedor'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Criar Categoria */}
+      {showCategoryModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-8 py-6 flex items-center justify-between">
+              <h2 className="text-2xl font-bold">Nova Categoria</h2>
+              <button
+                onClick={() => {
+                  setShowCategoryModal(false);
+                  setCategoryModalError(null);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleCreateCategory} className="p-8 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
+                  Nome da Categoria *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={categoryForm.nome}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, nome: e.target.value })}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="Ex: Impressão 3D, Eletrônica, TI..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Descrição</label>
+                <textarea
+                  value={categoryForm.descricao}
+                  onChange={(e) => setCategoryForm({ ...categoryForm, descricao: e.target.value })}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary resize-none"
+                  placeholder="Descrição opcional da categoria"
+                  rows={3}
+                />
+              </div>
+
+              {categoryModalError && (
+                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md text-sm">
+                  {categoryModalError}
+                </div>
+              )}
+
+              <div className="flex justify-end space-x-4 pt-4 border-t border-white/20">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCategoryModal(false);
+                    setCategoryModalError(null);
+                  }}
+                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  disabled={creatingCategory}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingCategory}
+                  className="px-6 py-2.5 rounded-md bg-primary hover:bg-primary/80 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {creatingCategory ? 'Criando...' : 'Criar Categoria'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

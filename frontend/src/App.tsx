@@ -9,6 +9,8 @@ import Occurrences from './pages/Occurrences';
 import Requests from './pages/Requests';
 import Users from './pages/Users';
 import Cargos from './pages/Cargos';
+import Suppliers from './pages/Suppliers';
+import Categories from './pages/Categories';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
 import { ToastContainer } from './components/ToastContainer';
@@ -39,6 +41,8 @@ export default function App() {
             <Route path="/requests" element={<Requests />} />
             <Route path="/users" element={<Users />} />
             <Route path="/cargos" element={<Cargos />} />
+            <Route path="/suppliers" element={<Suppliers />} />
+            <Route path="/categories" element={<Categories />} />
           </Route>
         </Route>
 

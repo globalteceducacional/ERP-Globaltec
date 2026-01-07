@@ -1,6 +1,6 @@
 import { IsEnum, IsInt, IsNumber, IsOptional, IsPositive, IsString, MaxLength, IsArray, ValidateNested, Min } from 'class-validator';
 import { Type } from 'class-transformer';
-import { CompraStatus } from '@prisma/client';
+import { CompraStatus, StatusEntrega } from '@prisma/client';
 
 export class CotacaoUpdateDto {
   @IsNumber()
@@ -16,8 +16,23 @@ export class CotacaoUpdateDto {
   impostos: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  desconto?: number;
+
+  @IsOptional()
   @IsString()
   link?: string;
+
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  fornecedorId?: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  formaPagamento?: string;
 }
 
 export class UpdatePurchaseDto {
@@ -70,5 +85,36 @@ export class UpdatePurchaseDto {
   @IsOptional()
   @IsEnum(CompraStatus)
   status?: CompraStatus;
+
+  @IsOptional()
+  dataCompra?: string; // Data da compra no formato ISO string (será convertida para DateTime)
+
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  categoriaId?: number;
+
+  @IsOptional()
+  @IsEnum(StatusEntrega)
+  statusEntrega?: StatusEntrega;
+
+  @IsOptional()
+  @IsString()
+  dataEntrega?: string; // Data da entrega no formato ISO string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  enderecoEntrega?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  recebidoPor?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  observacao?: string;
 }
 

@@ -260,6 +260,7 @@ export class StockService {
         projeto: true, 
         etapa: true,
         solicitadoPor: { include: { cargo: true } },
+        categoria: true,
       } as any,
       orderBy: { dataSolicitacao: 'desc' },
     });
@@ -320,6 +321,15 @@ export class StockService {
     if (data.cotacoes) {
       createData.cotacoesJson = data.cotacoes as any;
     }
+    if (data.dataCompra) {
+      createData.dataCompra = new Date(data.dataCompra);
+    }
+    if (data.categoriaId) {
+      createData.categoriaId = data.categoriaId;
+    }
+    if (data.observacao && data.observacao.trim().length > 0) {
+      createData.observacao = data.observacao.trim();
+    }
 
     console.log('[createPurchase] createData antes de salvar:', {
       ...createData,
@@ -348,6 +358,25 @@ export class StockService {
 
     if (data.status === CompraStatus.COMPRADO_ACAMINHO || data.status === CompraStatus.ENTREGUE) {
       updateData.dataConfirmacao = new Date();
+    }
+
+    // Incluir statusEntrega se fornecido e status for COMPRADO_ACAMINHO
+    if (data.statusEntrega !== undefined) {
+      updateData.statusEntrega = data.statusEntrega;
+    }
+    
+    // Campos de entrega
+    if (data.dataEntrega !== undefined) {
+      updateData.dataEntrega = data.dataEntrega ? new Date(data.dataEntrega) : null;
+    }
+    if (data.enderecoEntrega !== undefined) {
+      updateData.enderecoEntrega = data.enderecoEntrega || null;
+    }
+    if (data.recebidoPor !== undefined) {
+      updateData.recebidoPor = data.recebidoPor || null;
+    }
+    if (data.observacao !== undefined) {
+      updateData.observacao = data.observacao || null;
     }
 
     const compra = await this.prisma.compra.update({
@@ -417,6 +446,27 @@ export class StockService {
       if (data.status === CompraStatus.COMPRADO_ACAMINHO || data.status === CompraStatus.ENTREGUE) {
         updateData.dataConfirmacao = new Date();
       }
+    }
+    if (data.dataCompra !== undefined) {
+      updateData.dataCompra = data.dataCompra ? new Date(data.dataCompra) : null;
+    }
+    if (data.categoriaId !== undefined) {
+      updateData.categoriaId = data.categoriaId || null;
+    }
+    if (data.statusEntrega !== undefined) {
+      updateData.statusEntrega = data.statusEntrega || null;
+    }
+    if (data.dataEntrega !== undefined) {
+      updateData.dataEntrega = data.dataEntrega ? new Date(data.dataEntrega) : null;
+    }
+    if (data.enderecoEntrega !== undefined) {
+      updateData.enderecoEntrega = data.enderecoEntrega || null;
+    }
+    if (data.recebidoPor !== undefined) {
+      updateData.recebidoPor = data.recebidoPor || null;
+    }
+    if (data.observacao !== undefined) {
+      updateData.observacao = data.observacao || null;
     }
 
     // Atualizar a compra primeiro para garantir que todos os dados estejam atualizados
@@ -591,6 +641,7 @@ export class StockService {
         projeto: true,
         etapa: true,
         solicitadoPor: { include: { cargo: true } },
+        categoria: true,
       } as any,
     });
   }
@@ -612,6 +663,7 @@ export class StockService {
         projeto: true,
         etapa: true,
         solicitadoPor: { include: { cargo: true } },
+        categoria: true,
       } as any,
     });
 

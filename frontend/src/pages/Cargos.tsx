@@ -22,6 +22,8 @@ const todasPaginas = [
   { value: '/projects', label: 'Projetos' },
   { value: '/tasks/my', label: 'Meu Trabalho' },
   { value: '/stock', label: 'Compras & Estoque' },
+  { value: '/suppliers', label: 'Fornecedores' },
+  { value: '/categories', label: 'Categorias' },
   { value: '/occurrences', label: 'Ocorrências' },
   { value: '/requests', label: 'Requerimentos' },
   { value: '/users', label: 'Usuários' },

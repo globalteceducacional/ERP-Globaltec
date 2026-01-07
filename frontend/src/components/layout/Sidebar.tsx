@@ -6,6 +6,8 @@ const links = [
   { to: '/projects', label: 'Projetos' },
   { to: '/tasks/my', label: 'Meu Trabalho' },
   { to: '/stock', label: 'Compras & Estoque' },
+  { to: '/suppliers', label: 'Fornecedores' },
+  { to: '/categories', label: 'Categorias' },
   { to: '/occurrences', label: 'Ocorrências' },
   { to: '/requests', label: 'Requerimentos' },
   { to: '/users', label: 'Usuários' },
@@ -28,11 +30,12 @@ export function Sidebar() {
     userCargoNome = user.cargo;
     // Se for formato antigo, usar lógica hardcoded para compatibilidade
     const allowedMap: Record<string, string[]> = {
-      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/occurrences', '/requests', '/users', '/cargos'],
+      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences', '/requests', '/users', '/cargos'],
+      GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences', '/requests', '/users', '/cargos'],
       SUPERVISOR: ['/tasks/my', '/occurrences', '/requests'],
       EXECUTOR: ['/tasks/my', '/occurrences', '/requests'],
-      COTADOR: ['/tasks/my', '/stock', '/occurrences'],
-      PAGADOR: ['/tasks/my', '/stock', '/occurrences'],
+      COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences'],
+      PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences'],
     };
     paginasPermitidas = allowedMap[userCargoNome] || [];
   } else if (user.cargo && typeof user.cargo === 'object' && 'nome' in user.cargo) {
@@ -50,11 +53,12 @@ export function Sidebar() {
     if (paginasPermitidas.length === 0) {
       // Fallback para compatibilidade com sistema antigo
       const allowedMap: Record<string, string[]> = {
-        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/occurrences', '/requests', '/users', '/cargos'],
+        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences', '/requests', '/users', '/cargos'],
+        GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences', '/requests', '/users', '/cargos'],
         SUPERVISOR: ['/tasks/my', '/occurrences', '/requests'],
         EXECUTOR: ['/tasks/my', '/occurrences', '/requests'],
-        COTADOR: ['/tasks/my', '/stock', '/occurrences'],
-        PAGADOR: ['/tasks/my', '/stock', '/occurrences'],
+        COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences'],
+        PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences'],
       };
       return allowedMap[userCargoNome]?.includes(link.to) || false;
     }
