@@ -991,8 +991,7 @@ export default function ProjectDetails() {
                        ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) && 
                        !temItensMarcados && 
                        totalItens > 0 && (
-                        <span className="text-xs text-yellow-400">
-                          Marque itens do checklist para enviar
+                        <span>
                         </span>
                       )}
                       {canEnviarEntrega && (
@@ -1278,10 +1277,7 @@ export default function ProjectDetails() {
                       {isExecutor && 
                        ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) && 
                        !temItensMarcados && (
-                        <div className="mt-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
-                          <p className="text-xs text-yellow-300">
-                            💡 Como executor, marque pelo menos um item do checklist para poder enviar a entrega com descrição e imagem.
-                          </p>
+                        <div>
                         </div>
                       )}
                     </div>

@@ -28,8 +28,8 @@ FROM nginx:1.27-alpine
 # Copiar arquivos compilados
 COPY --from=builder /app/dist /usr/share/nginx/html
 
-# Copiar configuração customizada do nginx (opcional)
-# COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Copiar configuração customizada do nginx
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Expor porta
 EXPOSE 80

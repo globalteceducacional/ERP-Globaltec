@@ -1,7 +1,10 @@
 # Etapa de build
-FROM node:20-alpine AS builder
+FROM node:20-slim AS builder
 
 WORKDIR /app
+
+# Instalar dependências do sistema para Prisma
+RUN apt-get update && apt-get install -y openssl libssl-dev && rm -rf /var/lib/apt/lists/*
 
 # Copiar arquivos de dependências
 COPY package.json package-lock.json* ./
@@ -21,15 +24,15 @@ COPY src ./src
 RUN npm run build
 
 # Verificar se o build foi bem-sucedido
-RUN test -f dist/main.js || (echo "❌ ERRO: main.js não encontrado após build!" && exit 1)
+RUN test -f dist/src/main.js || (echo "❌ ERRO: main.js não encontrado após build!" && ls -laR dist/ && exit 1)
 
 # Etapa final (produção)
-FROM node:20-alpine
+FROM node:20-slim
 
 WORKDIR /app
 
 # Instalar dependências do sistema necessárias
-RUN apk add --no-cache wget
+RUN apt-get update && apt-get install -y openssl wget ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # Copiar arquivos de dependências
 COPY package.json package-lock.json* ./
@@ -38,7 +41,7 @@ COPY package.json package-lock.json* ./
 RUN npm ci --omit=dev
 
 # Instalar Prisma CLI globalmente para migrations
-RUN npm install -g prisma@latest
+RUN npm install -g prisma@5.22.0
 
 # Copiar schema do Prisma
 COPY prisma ./prisma
@@ -50,11 +53,11 @@ RUN prisma generate
 COPY --from=builder /app/dist ./dist
 
 # Verificar se os arquivos foram copiados corretamente
-RUN test -f dist/main.js || (echo "❌ main.js não encontrado!" && exit 1)
+RUN test -f dist/src/main.js || (echo "❌ main.js não encontrado!" && exit 1)
 
 # Criar usuário não-root para segurança
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001 && \
+RUN groupadd -g 1001 nodejs && \
+    useradd -m -u 1001 -g nodejs nodejs && \
     chown -R nodejs:nodejs /app
 
 USER nodejs
@@ -62,9 +65,9 @@ USER nodejs
 # Expor porta
 EXPOSE 3000
 
-# Health check endpoint (será adicionado no main.ts)
+# Health check endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
 # Comando para iniciar
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]

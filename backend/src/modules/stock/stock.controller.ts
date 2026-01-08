@@ -16,7 +16,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { CompraStatus, EstoqueStatus } from '@prisma/client';
+import { CompraStatus } from '@prisma/client';
 import { CreateStockItemDto } from './dto/create-stock-item.dto';
 import { UpdateStockItemDto } from './dto/update-stock-item.dto';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
@@ -35,16 +35,10 @@ export class StockController {
 
   @Get('items')
   listItems(
-    @Query('status') status?: EstoqueStatus,
     @Query('search') search?: string,
-    @Query('projetoId') projetoId?: string,
-    @Query('etapaId') etapaId?: string,
   ) {
     return this.stockService.listItems({ 
-      status, 
       search,
-      projetoId: projetoId ? Number(projetoId) : undefined,
-      etapaId: etapaId ? Number(etapaId) : undefined,
     });
   }
 
@@ -133,11 +127,13 @@ export class StockController {
     @Query('estoqueId') estoqueId?: string,
     @Query('projetoId') projetoId?: string,
     @Query('etapaId') etapaId?: string,
+    @Query('usuarioId') usuarioId?: string,
   ) {
     return this.stockService.listAlocacoes(
       estoqueId ? Number(estoqueId) : undefined,
       projetoId ? Number(projetoId) : undefined,
       etapaId ? Number(etapaId) : undefined,
+      usuarioId ? Number(usuarioId) : undefined,
     );
   }
 

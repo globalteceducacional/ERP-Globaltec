@@ -131,7 +131,7 @@ export default function Suppliers() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
-    if (!validation.validate(form)) {
+    if (!validation.validateAll(form)) {
       setModalError('Por favor, corrija os erros no formulário');
       return;
     }
@@ -368,9 +368,9 @@ export default function Suppliers() {
                   value={form.razaoSocial}
                   onChange={(e) => {
                     setForm({ ...form, razaoSocial: e.target.value });
-                    validation.validateField('razaoSocial', e.target.value);
+                    validation.handleChange('razaoSocial', e.target.value);
                   }}
-                  onBlur={() => validation.validateField('razaoSocial', form.razaoSocial)}
+                  onBlur={() => validation.handleBlur('razaoSocial')}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   placeholder="Digite a razão social"
                 />
@@ -389,9 +389,9 @@ export default function Suppliers() {
                   value={form.nomeFantasia}
                   onChange={(e) => {
                     setForm({ ...form, nomeFantasia: e.target.value });
-                    validation.validateField('nomeFantasia', e.target.value);
+                    validation.handleChange('nomeFantasia', e.target.value);
                   }}
-                  onBlur={() => validation.validateField('nomeFantasia', form.nomeFantasia)}
+                  onBlur={() => validation.handleBlur('nomeFantasia')}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   placeholder="Digite o nome fantasia"
                 />
@@ -409,9 +409,9 @@ export default function Suppliers() {
                   onChange={(e) => {
                     const formatted = formatCNPJ(e.target.value);
                     setForm({ ...form, cnpj: formatted });
-                    validation.validateField('cnpj', formatted);
+                    validation.handleChange('cnpj', formatted);
                   }}
-                  onBlur={() => validation.validateField('cnpj', form.cnpj)}
+                  onBlur={() => validation.handleBlur('cnpj')}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   placeholder="00.000.000/0000-00"
                   maxLength={18}

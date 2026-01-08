@@ -29,6 +29,11 @@ export class SuppliersController {
     return this.suppliersService.findAllIncludingInactive();
   }
 
+  @Get('cnpj/:cnpj')
+  async fetchCNPJData(@Param('cnpj') cnpj: string) {
+    return this.suppliersService.fetchCNPJData(cnpj);
+  }
+
   @Get(':id')
   findOne(@Param('id', ParseIntPipe) id: number) {
     return this.suppliersService.findOne(id);

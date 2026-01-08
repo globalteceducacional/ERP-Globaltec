@@ -50,16 +50,7 @@ export class CreateStockItemDto {
   cotacoes?: CotacaoItemDto[];
 
   @IsOptional()
-  @IsEnum(EstoqueStatus)
-  status?: EstoqueStatus;
-
-  @IsOptional()
   @IsInt()
   @IsPositive()
-  projetoId?: number;
-
-  @IsOptional()
-  @IsInt()
-  @IsPositive()
-  etapaId?: number;
+  categoriaId?: number;
 }

@@ -96,4 +96,78 @@ export class SuppliersService {
       },
     });
   }
+
+  async fetchCNPJData(cnpj: string) {
+    // Limpar CNPJ (remover caracteres não numéricos)
+    const cleaned = cnpj.replace(/\D/g, '');
+
+    if (cleaned.length !== 14) {
+      throw new BadRequestException('CNPJ inválido. Deve conter 14 dígitos.');
+    }
+
+    try {
+      // Usando a API ReceitaWS (gratuita e sem necessidade de autenticação)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos de timeout
+
+      const response = await fetch(`https://www.receitaws.com.br/v1/${cleaned}`, {
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new BadRequestException('Erro ao buscar dados do CNPJ na ReceitaWS');
+      }
+
+      const data = await response.json();
+
+      // Verificar se a API retornou erro
+      if (data.status === 'ERROR' || data.status === 'INVALID') {
+        throw new BadRequestException(data.message || 'CNPJ não encontrado ou inválido');
+      }
+
+      // Formatar endereço
+      const enderecoParts = [];
+      if (data.logradouro) {
+        enderecoParts.push(data.logradouro);
+        if (data.numero) {
+          enderecoParts.push(`Nº ${data.numero}`);
+        }
+      }
+      if (data.bairro) {
+        enderecoParts.push(data.bairro);
+      }
+      if (data.municipio) {
+        enderecoParts.push(data.municipio);
+      }
+      if (data.uf) {
+        enderecoParts.push(data.uf);
+      }
+      if (data.cep) {
+        enderecoParts.push(`CEP: ${data.cep}`);
+      }
+
+      const endereco = enderecoParts.length > 0 ? enderecoParts.join(', ') : null;
+
+      // Retornar dados formatados
+      return {
+        razaoSocial: data.nome || null,
+        nomeFantasia: data.fantasia || data.nome || null,
+        endereco: endereco,
+        contato: data.telefone || data.email || null,
+        cnpj: cleaned,
+      };
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        throw new BadRequestException('Tempo de espera excedido ao buscar dados do CNPJ');
+      }
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Erro ao buscar dados do CNPJ. Verifique se o CNPJ está correto.',
+      );
+    }
+  }
 }

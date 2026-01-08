@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15-alpine
@@ -14,7 +12,7 @@ services:
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-erp}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-erp} -d ${POSTGRES_DB:-erpdb}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -36,7 +34,7 @@ services:
       PORT: ${BACKEND_PORT:-3000}
       NODE_ENV: ${NODE_ENV:-production}
     ports:
-      - "${BACKEND_PORT:-3000}:3000"
+      - "${BACKEND_PORT:-3001}:3001"
     volumes:
       # Montar apenas o necessário para desenvolvimento (opcional)
       - ./backend/prisma:/app/prisma:ro
@@ -49,14 +47,14 @@ services:
         echo '🌱 Executando seed (se necessário)...' &&
         npx prisma db seed || echo 'Seed não executado (pode ser normal)' &&
         echo '🚀 Iniciando servidor...' &&
-        node dist/main.js
+        node dist/src/main.js
       "
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health || exit 1"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
     networks:
       - erp-network
 
@@ -65,13 +63,13 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
     container_name: erp-frontend
     restart: unless-stopped
     depends_on:
       - backend
     ports:
-      - "${FRONTEND_PORT:-5173}:80"
+      - "${FRONTEND_PORT:-5174}:80"
     networks:
       - erp-network
 

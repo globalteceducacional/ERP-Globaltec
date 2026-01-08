@@ -15,12 +15,8 @@ export class StockService {
     private readonly notificationsService: NotificationsService,
   ) {}
 
-  async listItems(filter: { status?: EstoqueStatus; search?: string; projetoId?: number; etapaId?: number }) {
+  async listItems(filter: { search?: string }) {
     const where: any = {};
-
-    if (filter.status) {
-      where.status = filter.status;
-    }
 
     if (filter.search) {
       where.item = { 
@@ -29,44 +25,12 @@ export class StockService {
       };
     }
 
-    // Se projetoId for fornecido, incluir itens do projeto OU itens sem projeto (adicionados diretamente)
-    if (filter.projetoId) {
-      where.AND = [
-        {
-          OR: [
-            { projetoId: filter.projetoId },
-            { projetoId: null },
-          ],
-        },
-      ];
-    }
-
-    if (filter.etapaId) {
-      // Se etapaId for fornecido, só mostrar itens sem etapa ou da etapa especificada
-      if (where.AND) {
-        where.AND.push({
-          OR: [
-            { etapaId: filter.etapaId },
-            { etapaId: null },
-          ],
-        });
-      } else {
-        where.AND = [
-          {
-            OR: [
-              { etapaId: filter.etapaId },
-              { etapaId: null },
-            ],
-          },
-        ];
-      }
-    }
-
     const items = await this.prisma.estoque.findMany({
       where,
       include: { 
         projeto: true, 
         etapa: true,
+        categoria: true,
       } as any,
       orderBy: { item: 'asc' },
     });
@@ -97,17 +61,11 @@ export class StockService {
   }
 
   async createItem(data: CreateStockItemDto) {
-    if (data.projetoId) {
-      await this.ensureProjectExists(data.projetoId);
-    }
-    if (data.etapaId) {
-      await this.ensureTaskExists(data.etapaId);
-    }
-
     const createData: any = {
       item: data.item,
       quantidade: data.quantidade,
       valorUnitario: data.valorUnitario,
+      status: EstoqueStatus.DISPONIVEL, // Status padrão
     };
 
     // Adicionar campos opcionais apenas se existirem
@@ -120,16 +78,11 @@ export class StockService {
     if (data.cotacoes) {
       createData.cotacoesJson = data.cotacoes as any;
     }
-    if (data.status) {
-      createData.status = data.status;
-    }
-    if (data.projetoId) {
-      createData.projetoId = data.projetoId;
-    }
-    if (data.etapaId) {
-      createData.etapaId = data.etapaId;
+    if (data.categoriaId) {
+      createData.categoriaId = data.categoriaId;
     }
 
+    // Criar o item (alocações são feitas separadamente através do modal de alocações)
     return this.prisma.estoque.create({
       data: createData,
     });
@@ -147,6 +100,18 @@ export class StockService {
       updateData.descricao = data.descricao;
     }
     if (data.quantidade !== undefined) {
+      // Validar que a nova quantidade não seja menor que a quantidade já alocada
+      const alocacoesExistentes = await (this.prisma as any).estoqueAlocacao.findMany({
+        where: { estoqueId: id },
+      });
+      const quantidadeAlocada = alocacoesExistentes.reduce((sum: number, aloc: any) => sum + aloc.quantidade, 0);
+      
+      if (data.quantidade < quantidadeAlocada) {
+        throw new BadRequestException(
+          `A quantidade não pode ser menor que a quantidade já alocada (${quantidadeAlocada})`
+        );
+      }
+      
       updateData.quantidade = data.quantidade;
     }
     if (data.valorUnitario !== undefined) {
@@ -154,9 +119,6 @@ export class StockService {
     }
     if (data.imagemUrl !== undefined) {
       updateData.imagemUrl = data.imagemUrl;
-    }
-    if (data.status !== undefined) {
-      updateData.status = data.status;
     }
     if (data.cotacoes !== undefined) {
       // Converter cotacoes para cotacoesJson (formato do Prisma)
@@ -167,21 +129,8 @@ export class StockService {
         updateData.cotacoesJson = null;
       }
     }
-    if (data.projetoId !== undefined) {
-      if (data.projetoId) {
-        await this.ensureProjectExists(data.projetoId);
-        updateData.projetoId = data.projetoId;
-      } else {
-        updateData.projetoId = null;
-      }
-    }
-    if (data.etapaId !== undefined) {
-      if (data.etapaId) {
-        await this.ensureTaskExists(data.etapaId);
-        updateData.etapaId = data.etapaId;
-      } else {
-        updateData.etapaId = null;
-      }
+    if (data.categoriaId !== undefined) {
+      updateData.categoriaId = data.categoriaId || null;
     }
 
     return this.prisma.estoque.update({ where: { id }, data: updateData });
@@ -363,6 +312,11 @@ export class StockService {
     // Incluir statusEntrega se fornecido e status for COMPRADO_ACAMINHO
     if (data.statusEntrega !== undefined) {
       updateData.statusEntrega = data.statusEntrega;
+    }
+    
+    // Previsão de entrega (quando status for COMPRADO_ACAMINHO)
+    if (data.previsaoEntrega !== undefined) {
+      updateData.previsaoEntrega = data.previsaoEntrega ? new Date(data.previsaoEntrega) : null;
     }
     
     // Campos de entrega
@@ -590,6 +544,13 @@ export class StockService {
     }
   }
 
+  private async ensureUserExists(id: number) {
+    const user = await this.prisma.usuario.findUnique({ where: { id } });
+    if (!user) {
+      throw new BadRequestException('Usuário informado não existe');
+    }
+  }
+
   private async ensureItemExists(id: number) {
     const item = await this.prisma.estoque.findUnique({ where: { id } });
     if (!item) {
@@ -690,8 +651,13 @@ export class StockService {
     return compraReprovada;
   }
 
-  async createAlocacao(data: { estoqueId: number; projetoId?: number; etapaId?: number; quantidade: number }) {
+  async createAlocacao(data: { estoqueId: number; projetoId?: number; etapaId?: number; usuarioId?: number; quantidade: number }) {
     const item = await this.ensureItemExists(data.estoqueId);
+    
+    // Validar que pelo menos um (projeto/etapa ou usuário) seja fornecido
+    if (!data.projetoId && !data.usuarioId) {
+      throw new BadRequestException('É necessário informar um projeto ou um usuário para alocar o item');
+    }
     
     // Verificar quantidade disponível
     const alocacoesExistentes = await (this.prisma as any).estoqueAlocacao.findMany({
@@ -712,13 +678,17 @@ export class StockService {
     if (data.etapaId) {
       await this.ensureTaskExists(data.etapaId);
     }
+    if (data.usuarioId) {
+      await this.ensureUserExists(data.usuarioId);
+    }
 
-    // Verificar se já existe alocação para este estoque+projeto+etapa
+    // Verificar se já existe alocação para este estoque+projeto+etapa+usuario
     const alocacaoExistente = await (this.prisma as any).estoqueAlocacao.findFirst({
       where: {
         estoqueId: data.estoqueId,
         projetoId: data.projetoId || null,
         etapaId: data.etapaId || null,
+        usuarioId: data.usuarioId || null,
       },
     });
 
@@ -737,6 +707,17 @@ export class StockService {
           estoque: true,
           projeto: true,
           etapa: true,
+          usuario: {
+            select: {
+              id: true,
+              nome: true,
+              cargo: {
+                select: {
+                  nome: true,
+                },
+              },
+            },
+          },
         },
       });
     }
@@ -746,12 +727,24 @@ export class StockService {
         estoqueId: data.estoqueId,
         projetoId: data.projetoId || null,
         etapaId: data.etapaId || null,
+        usuarioId: data.usuarioId || null,
         quantidade: data.quantidade,
       },
       include: {
         estoque: true,
         projeto: true,
         etapa: true,
+        usuario: {
+          select: {
+            id: true,
+            nome: true,
+            cargo: {
+              select: {
+                nome: true,
+              },
+            },
+          },
+        },
       },
     });
   }
@@ -789,6 +782,17 @@ export class StockService {
         estoque: true,
         projeto: true,
         etapa: true,
+        usuario: {
+          select: {
+            id: true,
+            nome: true,
+            cargo: {
+              select: {
+                nome: true,
+              },
+            },
+          },
+        },
       },
     });
   }
@@ -798,11 +802,12 @@ export class StockService {
     return { deleted: true };
   }
 
-  async listAlocacoes(estoqueId?: number, projetoId?: number, etapaId?: number) {
+  async listAlocacoes(estoqueId?: number, projetoId?: number, etapaId?: number, usuarioId?: number) {
     const where: any = {};
     if (estoqueId) where.estoqueId = estoqueId;
     if (projetoId) where.projetoId = projetoId;
     if (etapaId) where.etapaId = etapaId;
+    if (usuarioId) where.usuarioId = usuarioId;
 
     return (this.prisma as any).estoqueAlocacao.findMany({
       where,
@@ -810,6 +815,17 @@ export class StockService {
         estoque: true,
         projeto: true,
         etapa: true,
+        usuario: {
+          select: {
+            id: true,
+            nome: true,
+            cargo: {
+              select: {
+                nome: true,
+              },
+            },
+          },
+        },
       },
       orderBy: { dataAlocacao: 'desc' },
     });

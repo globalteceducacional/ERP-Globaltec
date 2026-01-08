@@ -1,132 +1,75 @@
 import { useEffect, useState, FormEvent, useMemo } from 'react';
 import { api } from '../services/api';
 import { jsPDF } from 'jspdf';
+import * as XLSX from 'xlsx-js-style';
 import { toast, formatApiError } from '../utils/toast';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
 
-interface Cotacao {
-  valorUnitario: number;
-  frete: number;
-  impostos: number;
-  desconto?: number;
-  link?: string;
-  fornecedorId?: number;
-  formaPagamento?: string;
-}
+// Tipos importados
+import type { 
+  Cotacao, 
+  StockItem, 
+  Purchase, 
+  Projeto, 
+  Supplier, 
+  Category, 
+  SimpleUser,
+  CreateItemForm,
+  CreatePurchaseForm,
+  StockTab,
+  PurchaseSubTab,
+  SortDirection,
+} from '../types/stock';
 
-interface StockItem {
-  id: number;
-  item: string;
-  quantidade: number;
-  valorUnitario: number;
-  status: string;
-  descricao?: string | null;
-  imagemUrl?: string | null;
-  cotacoesJson?: Cotacao[] | null;
-  projetoId?: number | null;
-  etapaId?: number | null;
-  quantidadeAlocada?: number;
-  quantidadeDisponivel?: number;
-}
+// Constantes importadas
+import { 
+  STATUS_ENTREGA_OPTIONS as statusEntregaOptions,
+  FORMAS_PAGAMENTO as formasPagamento,
+  INITIAL_COTACAO,
+} from '../constants/stock';
 
-interface Purchase {
-  id: number;
-  item: string;
-  quantidade: number;
-  valorUnitario: number;
-  status: string;
-  projetoId: number;
-  descricao?: string | null;
-  imagemUrl?: string | null;
-  nfUrl?: string | null;
-  comprovantePagamentoUrl?: string | null;
-  cotacoesJson?: Cotacao[] | null;
-  dataCompra?: string | null;
-  formaPagamento?: string | null;
-  statusEntrega?: string | null;
-  dataEntrega?: string | null;
-  enderecoEntrega?: string | null;
-  recebidoPor?: string | null;
-  observacao?: string | null;
-  solicitadoPorId?: number | null;
-  solicitadoPor?: { id: number; nome: string } | null;
-}
+// Componentes importados
+import { 
+  SupplierModal, 
+  CategoryModal,
+  PurchaseFilters,
+} from '../components/stock';
 
-// Opções de status de entrega
-const statusEntregaOptions = [
-  { value: 'NAO_ENTREGUE', label: 'Não Entregue' },
-  { value: 'PARCIAL', label: 'Parcial' },
-  { value: 'ENTREGUE', label: 'Entregue' },
-  { value: 'CANCELADO', label: 'Cancelado' },
-];
+// Helpers importados
+import {
+  updateCotacao as updateCotacaoHelper,
+  addCotacao as addCotacaoHelper,
+  removeCotacao as removeCotacaoHelper,
+  compressImage,
+  getSupplierName as getSupplierNameHelper,
+  getCategoryName as getCategoryNameHelper,
+} from '../utils/stockHelpers';
 
-// Opções de forma de pagamento
-const formasPagamento = [
-  'Cartão de Crédito',
-  'Cartão de Débito',
-  'Pix',
-  'Boleto',
-  'Transferência Bancária',
-  'Dinheiro',
-  'Bônus',
-  'Outro',
-];
-
-interface Projeto {
-  id: number;
-  nome: string;
-}
-
-interface Supplier {
-  id: number;
-  razaoSocial: string;
-  nomeFantasia: string;
-  cnpj: string;
-  ativo: boolean;
-}
-
-interface Category {
-  id: number;
-  nome: string;
-  descricao?: string | null;
-  ativo: boolean;
-}
-
-interface CreateItemForm {
-  item: string;
-  codigo?: string;
-  categoria?: string;
-  descricao: string;
-  quantidade: number;
-  valorUnitario: number;
-  unidadeMedida?: string;
-  estoqueMinimo?: number;
-  localizacao?: string;
-  imagemUrl: string;
-  projetoId?: number;
-  etapaId?: number;
-  status?: string;
-  nfUrl?: string;
-  comprovantePagamentoUrl?: string;
-  cotacoes?: Cotacao[];
-  selectedCotacaoIndex?: number;
-}
-
-interface CreatePurchaseForm extends Omit<CreateItemForm, 'valorUnitario'> {
-  projetoId: number;
-  cotacoes: Cotacao[];
-  selectedCotacaoIndex: number;
-  dataCompra?: string;
-  categoriaId?: number;
-  observacao?: string;
-}
+// Hooks importados
+import { useStockData } from '../hooks/useStockData';
+import { usePurchaseFilters } from '../hooks/usePurchaseFilters';
 
 export default function Stock() {
-  const [items, setItems] = useState<StockItem[]>([]);
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [projects, setProjects] = useState<Projeto[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
+  // Hook para gerenciar dados do estoque
+  const {
+    items,
+    purchases,
+    projects,
+    suppliers,
+    categories,
+    users,
+    loading: dataLoading,
+    error: dataError,
+    load: loadData,
+    loadUsers: loadUsersData,
+    setItems,
+    setPurchases,
+    setSuppliers,
+    setCategories,
+    loadEtapas: loadEtapasFromHook,
+    loadAlocacoes,
+  } = useStockData();
+
   const [etapas, setEtapas] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [showItemModal, setShowItemModal] = useState(false);
@@ -146,6 +89,7 @@ export default function Stock() {
   const [purchaseToUpdateStatus, setPurchaseToUpdateStatus] = useState<Purchase | null>(null);
   const [newStatus, setNewStatus] = useState<string>('');
   const [newStatusEntrega, setNewStatusEntrega] = useState<string>('');
+  const [newPrevisaoEntrega, setNewPrevisaoEntrega] = useState<string>('');
   const [newDataEntrega, setNewDataEntrega] = useState<string>('');
   const [newEnderecoEntrega, setNewEnderecoEntrega] = useState<string>('');
   const [newRecebidoPor, setNewRecebidoPor] = useState<string>('');
@@ -154,7 +98,53 @@ export default function Stock() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedPurchases, setSelectedPurchases] = useState<number[]>([]);
   const [showReportModal, setShowReportModal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'estoque' | 'compras' | 'solicitacoes'>('estoque');
+  const [activeTab, setActiveTab] = useState<StockTab>('estoque');
+  
+  // Hook para filtros de compras
+  const purchaseFiltersHook = usePurchaseFilters(
+    purchases,
+    activeTab,
+    selectedProjectFilter,
+    searchTerm
+  );
+
+  // Extrair valores do hook para compatibilidade com código existente
+  const {
+    subTab: purchaseSubTab,
+    setSubTab: setPurchaseSubTab,
+    filters: purchaseFiltersState,
+    setFilters: setPurchaseFilters,
+    showFilters: showPurchaseFilters,
+    setShowFilters: setShowPurchaseFilters,
+    clearFilters: clearPurchaseFilters,
+    hasActiveFilters,
+    sortColumn,
+    sortDirection,
+    handleSort,
+    filteredPurchases,
+    sortedPurchases,
+    purchaseCounts,
+  } = purchaseFiltersHook;
+
+  // Aliases para compatibilidade
+  const purchaseSearchTerm = purchaseFiltersState.searchTerm;
+  const purchaseCategoryFilter = purchaseFiltersState.categoryFilter;
+  const purchaseDateCompraInicio = purchaseFiltersState.dateCompraInicio;
+  const purchaseDateCompraFim = purchaseFiltersState.dateCompraFim;
+  const purchaseDateEntregaInicio = purchaseFiltersState.dateEntregaInicio;
+  const purchaseDateEntregaFim = purchaseFiltersState.dateEntregaFim;
+  const purchaseDateSolicitacaoInicio = purchaseFiltersState.dateSolicitacaoInicio;
+  const purchaseDateSolicitacaoFim = purchaseFiltersState.dateSolicitacaoFim;
+  
+  // Funções setter para compatibilidade
+  const setPurchaseSearchTerm = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, searchTerm: value });
+  const setPurchaseCategoryFilter = (value: number | 'all') => setPurchaseFilters({ ...purchaseFiltersState, categoryFilter: value });
+  const setPurchaseDateCompraInicio = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, dateCompraInicio: value });
+  const setPurchaseDateCompraFim = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, dateCompraFim: value });
+  const setPurchaseDateEntregaInicio = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, dateEntregaInicio: value });
+  const setPurchaseDateEntregaFim = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, dateEntregaFim: value });
+  const setPurchaseDateSolicitacaoInicio = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, dateSolicitacaoInicio: value });
+  const setPurchaseDateSolicitacaoFim = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, dateSolicitacaoFim: value });
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [purchaseToReject, setPurchaseToReject] = useState<Purchase | null>(null);
   const [rejectReason, setRejectReason] = useState('');
@@ -165,30 +155,25 @@ export default function Stock() {
   const [approveCotacoes, setApproveCotacoes] = useState<Cotacao[]>([{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }]);
   const [selectedCotacaoIndex, setSelectedCotacaoIndex] = useState<number>(0);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
-  const [supplierForm, setSupplierForm] = useState({
-    razaoSocial: '',
-    nomeFantasia: '',
-    cnpj: '',
-    endereco: '',
-    contato: '',
-    ativo: true,
+  const [showAlocacaoModal, setShowAlocacaoModal] = useState(false);
+  const [itemParaAlocar, setItemParaAlocar] = useState<StockItem | null>(null);
+  const [alocacoes, setAlocacoes] = useState<any[]>([]);
+  const [alocacaoForm, setAlocacaoForm] = useState({
+    projetoId: undefined as number | undefined,
+    etapaId: undefined as number | undefined,
+    usuarioId: undefined as number | undefined,
+    quantidade: 1,
   });
-  const [creatingSupplier, setCreatingSupplier] = useState(false);
-  const [supplierModalError, setSupplierModalError] = useState<string | null>(null);
   const [currentCotacaoIndex, setCurrentCotacaoIndex] = useState<number | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [categoryForm, setCategoryForm] = useState({ nome: '', descricao: '' });
-  const [creatingCategory, setCreatingCategory] = useState(false);
-  const [categoryModalError, setCategoryModalError] = useState<string | null>(null);
   const [itemForm, setItemForm] = useState<CreateItemForm>({
     item: '',
     codigo: '',
-    categoria: '',
+    categoriaId: undefined,
     descricao: '',
     quantidade: 1,
     valorUnitario: 0,
     unidadeMedida: 'UN',
-    estoqueMinimo: 0,
     localizacao: '',
     imagemUrl: '',
   });
@@ -238,195 +223,67 @@ export default function Stock() {
   const itemValidation = useFormValidation<CreateItemForm>(itemValidationRules);
   const purchaseValidation = useFormValidation<CreatePurchaseForm>(purchaseValidationRules);
 
-  async function load() {
-    try {
-      const [{ data: itemsData }, { data: purchasesData }, { data: purchasesAllData }, { data: projectsData }, { data: suppliersData }, { data: categoriesData }] = await Promise.all([
-        api.get<StockItem[]>('/stock/items'),
-        api.get<Purchase[]>('/stock/purchases?excludeSolicitado=true'),
-        api.get<Purchase[]>('/stock/purchases'),
-        api.get<Projeto[]>('/projects'),
-        api.get<Supplier[]>('/suppliers'),
-        api.get<Category[]>('/categories'),
-      ]);
-      setItems(itemsData);
-      setPurchases(purchasesAllData); // Todas as compras para a aba Solicitações
-      setProjects(projectsData);
-      setSuppliers(suppliersData);
-      setCategories(categoriesData);
-    } catch (err: any) {
-      setError(err.response?.data?.message ?? 'Erro ao carregar estoque');
-    }
+  // Funções auxiliares usando helpers
+  const getSupplierName = (fornecedorId?: number) => getSupplierNameHelper(fornecedorId, suppliers);
+  const getCategoryName = (categoriaId?: number) => getCategoryNameHelper(categoriaId, categories);
+
+  // Função para carregar etapas (wrapper do hook)
+  async function loadEtapas(projetoId: number) {
+    const etapasData = await loadEtapasFromHook(projetoId);
+    setEtapas(etapasData);
+    return etapasData;
   }
 
-  function getSupplierName(fornecedorId?: number): string {
-    if (!fornecedorId) return '-';
-    const supplier = suppliers.find((s) => s.id === fornecedorId);
-    return supplier ? supplier.nomeFantasia : '-';
-  }
-
-  function getCategoryName(categoriaId?: number): string {
-    if (!categoriaId) return '-';
-    const category = categories.find((c) => c.id === categoriaId);
-    return category ? category.nome : '-';
-  }
-
+  // Função para abrir modal de categoria
   function openCategoryModal() {
-    setCategoryForm({ nome: '', descricao: '' });
-    setCategoryModalError(null);
     setShowCategoryModal(true);
   }
 
-  async function handleCreateCategory(e: FormEvent) {
-    e.preventDefault();
-    setCategoryModalError(null);
-
-    if (!categoryForm.nome.trim()) {
-      setCategoryModalError('Nome da categoria é obrigatório');
-      return;
-    }
-
-    setCreatingCategory(true);
-
-    try {
-      const payload: any = {
-        nome: categoryForm.nome.trim(),
-        ativo: true,
-      };
-
-      if (categoryForm.descricao && categoryForm.descricao.trim()) {
-        payload.descricao = categoryForm.descricao.trim();
-      }
-
-      const { data: newCategory } = await api.post<Category>('/categories', payload);
-      
-      // Atualizar lista de categorias
-      setCategories([...categories, newCategory]);
-      
-      // Selecionar a categoria recém-criada no formulário de compra
-      setPurchaseForm({ ...purchaseForm, categoriaId: newCategory.id });
-
-      toast.success('Categoria criada com sucesso!');
-      setShowCategoryModal(false);
-    } catch (err: any) {
-      const errorMessage = formatApiError(err);
-      setCategoryModalError(errorMessage);
-      toast.error(errorMessage);
-    } finally {
-      setCreatingCategory(false);
-    }
+  // Callback quando categoria é criada
+  function handleCategoryCreated(newCategory: Category) {
+    // Atualizar lista de categorias
+    setCategories([...categories, newCategory]);
+    // Selecionar a categoria recém-criada no formulário de compra
+    setPurchaseForm({ ...purchaseForm, categoriaId: newCategory.id });
   }
 
-  // Função para formatar CNPJ
-  function formatCNPJ(cnpj: string): string {
-    const cleaned = cnpj.replace(/\D/g, '');
-    if (cleaned.length <= 14) {
-      return cleaned
-        .replace(/(\d{2})(\d)/, '$1.$2')
-        .replace(/(\d{3})(\d)/, '$1.$2')
-        .replace(/(\d{3})(\d)/, '$1/$2')
-        .replace(/(\d{4})(\d)/, '$1-$2');
-    }
-    return cleaned;
-  }
-
-  // Função para validar CNPJ básico
-  function validateCNPJ(cnpj: string): boolean {
-    const cleaned = cnpj.replace(/\D/g, '');
-    return cleaned.length === 14;
-  }
-
+  // Função para abrir modal de fornecedor
   function openSupplierModal(cotacaoIndex: number) {
     setCurrentCotacaoIndex(cotacaoIndex);
-    setSupplierForm({
-      razaoSocial: '',
-      nomeFantasia: '',
-      cnpj: '',
-      endereco: '',
-      contato: '',
-      ativo: true,
-    });
-    setSupplierModalError(null);
     setShowSupplierModal(true);
   }
 
-  async function handleCreateSupplier(e: FormEvent) {
-    e.preventDefault();
-    setSupplierModalError(null);
-
-    // Validações básicas
-    if (!supplierForm.razaoSocial.trim()) {
-      setSupplierModalError('Razão Social é obrigatória');
-      return;
-    }
-    if (!supplierForm.nomeFantasia.trim()) {
-      setSupplierModalError('Nome Fantasia é obrigatório');
-      return;
-    }
-    if (!validateCNPJ(supplierForm.cnpj)) {
-      setSupplierModalError('CNPJ inválido. Deve conter 14 dígitos.');
-      return;
-    }
-
-    setCreatingSupplier(true);
-
-    try {
-      const cleanedCNPJ = supplierForm.cnpj.replace(/\D/g, '');
-      const payload: any = {
-        razaoSocial: supplierForm.razaoSocial.trim(),
-        nomeFantasia: supplierForm.nomeFantasia.trim(),
-        cnpj: cleanedCNPJ,
-        ativo: supplierForm.ativo,
-      };
-
-      if (supplierForm.endereco && supplierForm.endereco.trim()) {
-        payload.endereco = supplierForm.endereco.trim();
+  // Callback quando fornecedor é criado
+  function handleSupplierCreated(newSupplier: Supplier) {
+    // Atualizar lista de fornecedores
+    setSuppliers([...suppliers, newSupplier]);
+    
+    // Selecionar o fornecedor recém-criado na cotação atual
+    if (currentCotacaoIndex !== null) {
+      // Verificar se está no modal de aprovação ou no formulário de compra
+      if (showViewRequestModal && approveCotacoes.length > currentCotacaoIndex) {
+        const newCotacoes = [...approveCotacoes];
+        newCotacoes[currentCotacaoIndex].fornecedorId = newSupplier.id;
+        setApproveCotacoes(newCotacoes);
+      } else if (purchaseForm.cotacoes.length > currentCotacaoIndex) {
+        updateCotacao(purchaseForm, setPurchaseForm, currentCotacaoIndex, 'fornecedorId', newSupplier.id);
       }
-      if (supplierForm.contato && supplierForm.contato.trim()) {
-        payload.contato = supplierForm.contato.trim();
-      }
-
-      const { data: newSupplier } = await api.post<Supplier>('/suppliers', payload);
-      
-      // Atualizar lista de fornecedores
-      setSuppliers([...suppliers, newSupplier]);
-      
-      // Selecionar o fornecedor recém-criado na cotação atual
-      if (currentCotacaoIndex !== null) {
-        // Verificar se está no modal de aprovação ou no formulário de compra
-        if (showViewRequestModal && approveCotacoes.length > currentCotacaoIndex) {
-          const newCotacoes = [...approveCotacoes];
-          newCotacoes[currentCotacaoIndex].fornecedorId = newSupplier.id;
-          setApproveCotacoes(newCotacoes);
-        } else if (purchaseForm.cotacoes.length > currentCotacaoIndex) {
-          updateCotacao(purchaseForm, setPurchaseForm, currentCotacaoIndex, 'fornecedorId', newSupplier.id);
-        }
-      }
-
-      toast.success('Fornecedor criado com sucesso!');
-      setShowSupplierModal(false);
-      setCurrentCotacaoIndex(null);
-    } catch (err: any) {
-      const errorMessage = formatApiError(err);
-      setSupplierModalError(errorMessage);
-      toast.error(errorMessage);
-    } finally {
-      setCreatingSupplier(false);
     }
+    setCurrentCotacaoIndex(null);
   }
 
+  // Resetar sub-aba quando mudar de aba
   useEffect(() => {
-    load();
-  }, []);
+    if (activeTab !== 'compras') {
+      setPurchaseSubTab('pendente');
+    }
+  }, [activeTab, setPurchaseSubTab]);
+
+  // Função load para compatibilidade (usa o hook)
+  const load = loadData;
 
   // Filtrar items baseado nos filtros
   const filteredItems = items.filter((item) => {
-    // Filtro por projeto
-    if (selectedProjectFilter !== 'all') {
-      if (item.projetoId !== selectedProjectFilter) {
-        return false;
-      }
-    }
-    
     // Filtro por busca
     if (searchTerm.trim()) {
       const searchLower = searchTerm.toLowerCase();
@@ -440,42 +297,81 @@ export default function Stock() {
     return true;
   });
 
-  // Filtrar purchases baseado nos filtros
-  const filteredPurchases = purchases.filter((purchase) => {
-    // Excluir REPROVADO de todas as abas (só aparece no projeto)
-    if (purchase.status === 'REPROVADO') {
-      return false;
+  // A ordenação do hook não inclui a lógica especial de 'cotacoes', então vamos usar sortedPurchases do hook
+  // mas aplicar ordenação adicional se necessário para 'cotacoes'
+  const finalSortedPurchases = useMemo(() => {
+    if (sortColumn === 'cotacoes') {
+      return [...filteredPurchases].sort((a, b) => {
+        const cotacoesA = a.cotacoesJson && Array.isArray(a.cotacoesJson) ? a.cotacoesJson : [];
+        const cotacoesB = b.cotacoesJson && Array.isArray(b.cotacoesJson) ? b.cotacoesJson : [];
+        const totalA = cotacoesA.reduce((sum: number, cot: any) => {
+          const total = (cot.valorUnitario || 0) + (cot.frete || 0) + (cot.impostos || 0) - (cot.desconto || 0);
+          return sum + (total * (a.quantidade || 1));
+        }, 0);
+        const totalB = cotacoesB.reduce((sum: number, cot: any) => {
+          const total = (cot.valorUnitario || 0) + (cot.frete || 0) + (cot.impostos || 0) - (cot.desconto || 0);
+          return sum + (total * (b.quantidade || 1));
+        }, 0);
+        if (totalA < totalB) return sortDirection === 'asc' ? -1 : 1;
+        if (totalA > totalB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
     }
-    
-    // Excluir SOLICITADO da aba Compras
-    if (activeTab === 'compras' && purchase.status === 'SOLICITADO') {
-      return false;
-    }
-    
-    // Mostrar apenas SOLICITADO na aba Solicitações
-    if (activeTab === 'solicitacoes' && purchase.status !== 'SOLICITADO') {
-      return false;
-    }
-    
-    // Filtro por projeto
-    if (selectedProjectFilter !== 'all') {
-      if (purchase.projetoId !== selectedProjectFilter) {
-        return false;
-      }
-    }
-    
-    // Filtro por busca
-    if (searchTerm.trim()) {
-      const searchLower = searchTerm.toLowerCase();
-      const itemName = purchase.item?.toLowerCase() || '';
-      const itemDesc = purchase.descricao?.toLowerCase() || '';
-      if (!itemName.includes(searchLower) && !itemDesc.includes(searchLower)) {
-        return false;
-      }
-    }
-    
-    return true;
-  });
+    return sortedPurchases;
+  }, [filteredPurchases, sortedPurchases, sortColumn, sortDirection]);
+
+  // Função auxiliar para renderizar header ordenável
+  const renderSortableHeader = (column: string, label: string) => {
+    const isSorted = sortColumn === column;
+    return (
+      <th 
+        className="px-4 py-3 text-left cursor-pointer hover:bg-white/10 transition-colors select-none"
+        onClick={() => handleSort(column)}
+      >
+        <div className="flex items-center gap-1.5">
+          <span>{label}</span>
+          <div className="flex flex-col items-center justify-center">
+            {isSorted ? (
+              sortDirection === 'asc' ? (
+                <svg 
+                  className="w-3 h-3 text-primary"
+                  fill="currentColor" 
+                  viewBox="0 0 20 20"
+                >
+                  <path d="M5 12l5-5 5 5H5z" />
+                </svg>
+              ) : (
+                <svg 
+                  className="w-3 h-3 text-primary"
+                  fill="currentColor" 
+                  viewBox="0 0 20 20"
+                >
+                  <path d="M5 8l5 5 5-5H5z" />
+                </svg>
+              )
+            ) : (
+              <div className="flex flex-col -space-y-0.5">
+                <svg 
+                  className="w-2.5 h-2.5 text-white/30"
+                  fill="currentColor" 
+                  viewBox="0 0 20 20"
+                >
+                  <path d="M5 12l5-5 5 5H5z" />
+                </svg>
+                <svg 
+                  className="w-2.5 h-2.5 text-white/30"
+                  fill="currentColor" 
+                  viewBox="0 0 20 20"
+                >
+                  <path d="M5 8l5 5 5-5H5z" />
+                </svg>
+              </div>
+            )}
+          </div>
+        </div>
+      </th>
+    );
+  };
 
   function getStatusLabel(status: string): string {
     const labels: Record<string, string> = {
@@ -534,35 +430,10 @@ export default function Stock() {
     return (cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)) * quantidade;
   }
 
-  function addCotacao<T extends { cotacoes: Cotacao[] }>(form: T, setForm: (f: T) => void) {
-    setForm({
-      ...form,
-      cotacoes: [...form.cotacoes, { valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
-    });
-  }
-
-  function removeCotacao<T extends { cotacoes: Cotacao[]; selectedCotacaoIndex?: number }>(form: T, setForm: (f: T) => void, index: number) {
-    if (form.cotacoes.length > 1) {
-      const newCotacoes = form.cotacoes.filter((_, i) => i !== index);
-      setForm({
-        ...form,
-        cotacoes: newCotacoes,
-        selectedCotacaoIndex: form.selectedCotacaoIndex && form.selectedCotacaoIndex >= newCotacoes.length ? 0 : form.selectedCotacaoIndex,
-      });
-    }
-  }
-
-  function updateCotacao<T extends { cotacoes: Cotacao[] }>(
-    form: T,
-    setForm: (f: T) => void,
-    index: number,
-    field: keyof Cotacao,
-    value: string | number,
-  ) {
-    const newCotacoes = [...form.cotacoes];
-    newCotacoes[index] = { ...newCotacoes[index], [field]: value };
-    setForm({ ...form, cotacoes: newCotacoes });
-  }
+  // Usar helpers importados
+  const updateCotacao = updateCotacaoHelper;
+  const addCotacao = addCotacaoHelper;
+  const removeCotacao = removeCotacaoHelper;
 
   function togglePurchaseSelection(purchaseId: number) {
     setSelectedPurchases((prev) =>
@@ -573,10 +444,10 @@ export default function Stock() {
   }
 
   function toggleAllPurchases() {
-    if (selectedPurchases.length === filteredPurchases.length) {
+    if (selectedPurchases.length === finalSortedPurchases.length && finalSortedPurchases.length > 0) {
       setSelectedPurchases([]);
     } else {
-      setSelectedPurchases(filteredPurchases.map((p) => p.id));
+      setSelectedPurchases(finalSortedPurchases.map((p) => p.id));
     }
   }
 
@@ -596,6 +467,200 @@ export default function Stock() {
       totalItens,
       purchases: selected,
     };
+  }
+
+  function exportToExcel() {
+    try {
+      const reportData = calculateReportTotals();
+      
+      // Criar workbook
+      const wb = XLSX.utils.book_new();
+      
+      // Preparar dados da tabela principal
+      const headers = [
+        'Projeto', 'Item', 'Categoria', 'Quantidade', 'Valor Unitário', 'Valor Total', 'Status', 
+        'Solicitado Por', 'Cargo', 'Data Compra', 'Forma Pagamento', 'Previsão Entrega', 
+        'Data Entrega', 'Status Entrega', 'Recebido Por', 'Fornecedor', 'Descrição', 'Observações'
+      ];
+      
+      const tableData: any[][] = [headers];
+      
+      // Agrupar por projeto
+      const projetoGroups: Record<number, Purchase[]> = {};
+      reportData.purchases.forEach((purchase) => {
+        const projetoId = purchase.projetoId || 0;
+        if (!projetoGroups[projetoId]) {
+          projetoGroups[projetoId] = [];
+        }
+        projetoGroups[projetoId].push(purchase);
+      });
+      
+      // Preencher dados
+      Object.entries(projetoGroups).forEach(([projetoId, projetoPurchases]) => {
+        const projeto = projects.find((p) => p.id === Number(projetoId));
+        
+        projetoPurchases.forEach((purchase) => {
+          const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
+          const cotacaoSelecionada = cotacoes.length > 0 ? cotacoes[0] : null;
+          const valorTotal = purchase.valorUnitario * (purchase.quantidade || 0);
+          
+          tableData.push([
+            projeto ? projeto.nome : 'Sem Projeto',
+            purchase.item,
+            (purchase as any).categoriaId ? getCategoryName((purchase as any).categoriaId) : '-',
+            purchase.quantidade || 0,
+            purchase.valorUnitario, // Valor numérico para formatação
+            valorTotal, // Valor numérico para formatação
+            getStatusLabel(purchase.status),
+            purchase.solicitadoPor?.nome || '-',
+            purchase.solicitadoPor?.cargo?.nome || '-',
+            purchase.dataCompra ? new Date(purchase.dataCompra) : null,
+            purchase.formaPagamento || '-',
+            purchase.status === 'COMPRADO_ACAMINHO' && purchase.previsaoEntrega 
+              ? new Date(purchase.previsaoEntrega) 
+              : null,
+            purchase.dataEntrega ? new Date(purchase.dataEntrega) : null,
+            purchase.statusEntrega ? getStatusLabel(purchase.statusEntrega) : '-',
+            purchase.recebidoPor || '-',
+            cotacaoSelecionada?.fornecedorId ? getSupplierName(cotacaoSelecionada.fornecedorId) : '-',
+            purchase.descricao || '-',
+            purchase.observacao || '-',
+          ]);
+        });
+      });
+      
+      // Criar worksheet
+      const ws = XLSX.utils.aoa_to_sheet(tableData);
+      
+      // Definir range da tabela
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      
+      // Estilo do cabeçalho (azul escuro com texto branco)
+      const headerStyle: any = {
+        fill: {
+          fgColor: { rgb: '1E3A8A' } // Azul escuro
+        },
+        font: {
+          color: { rgb: 'FFFFFF' }, // Branco
+          bold: true,
+          sz: 11
+        },
+        alignment: {
+          horizontal: 'center',
+          vertical: 'center',
+          wrapText: true
+        },
+        border: {
+          top: { style: 'thin', color: { rgb: '000000' } },
+          bottom: { style: 'thin', color: { rgb: '000000' } },
+          left: { style: 'thin', color: { rgb: '000000' } },
+          right: { style: 'thin', color: { rgb: '000000' } }
+        }
+      };
+      
+      // Aplicar estilo ao cabeçalho
+      for (let col = range.s.c; col <= range.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+        if (!ws[cellAddress]) {
+          ws[cellAddress] = { t: 's', v: '' };
+        }
+        ws[cellAddress].s = headerStyle;
+      }
+      
+      // Estilo das linhas de dados (alternando cores)
+      for (let row = 1; row <= range.e.r; row++) {
+        const isEven = row % 2 === 0;
+        const rowStyle: any = {
+          fill: {
+            fgColor: { rgb: isEven ? 'E8F4F8' : 'FFFFFF' } // Azul claro alternado com branco
+          },
+          font: {
+            color: { rgb: '000000' },
+            sz: 10
+          },
+          alignment: {
+            vertical: 'center',
+            wrapText: true
+          },
+          border: {
+            top: { style: 'thin', color: { rgb: 'D0D0D0' } },
+            bottom: { style: 'thin', color: { rgb: 'D0D0D0' } },
+            left: { style: 'thin', color: { rgb: 'D0D0D0' } },
+            right: { style: 'thin', color: { rgb: 'D0D0D0' } }
+          }
+        };
+        
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+          if (!ws[cellAddress]) continue;
+          
+          // Formatação especial para colunas numéricas
+          if (col === 3) { // Quantidade
+            ws[cellAddress].s = {
+              ...rowStyle,
+              numFmt: '#,##0'
+            };
+          } else if (col === 4 || col === 5) { // Valor Unitário e Valor Total
+            ws[cellAddress].s = {
+              ...rowStyle,
+              numFmt: '"R$" #,##0.00'
+            };
+          } else if (col === 9 || col === 11 || col === 12) { // Datas
+            if (ws[cellAddress].v && ws[cellAddress].v instanceof Date) {
+              ws[cellAddress].s = {
+                ...rowStyle,
+                numFmt: 'dd/mm/yyyy'
+              };
+            } else {
+              ws[cellAddress].s = rowStyle;
+            }
+          } else {
+            ws[cellAddress].s = rowStyle;
+          }
+        }
+      }
+      
+      // Ajustar largura das colunas
+      ws['!cols'] = [
+        { wch: 20 }, // Projeto
+        { wch: 30 }, // Item
+        { wch: 20 }, // Categoria
+        { wch: 12 }, // Quantidade
+        { wch: 15 }, // Valor Unitário
+        { wch: 15 }, // Valor Total
+        { wch: 18 }, // Status
+        { wch: 20 }, // Solicitado Por
+        { wch: 15 }, // Cargo
+        { wch: 12 }, // Data Compra
+        { wch: 15 }, // Forma Pagamento
+        { wch: 15 }, // Previsão Entrega
+        { wch: 12 }, // Data Entrega
+        { wch: 15 }, // Status Entrega
+        { wch: 18 }, // Recebido Por
+        { wch: 25 }, // Fornecedor
+        { wch: 40 }, // Descrição
+        { wch: 40 }, // Observações
+      ];
+      
+      // Adicionar filtros automáticos na primeira linha
+      const filterRange = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: range.e.r, c: range.e.c } });
+      ws['!autofilter'] = { ref: filterRange };
+      
+      // Congelar primeira linha (cabeçalho) - será aplicado pelo Excel ao abrir
+      ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft' };
+      
+      // Adicionar ao workbook
+      XLSX.utils.book_append_sheet(wb, ws, 'Compras');
+      
+      // Gerar arquivo
+      const fileName = `relatorio-compras-${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      
+      toast.success('Relatório Excel gerado com sucesso!');
+    } catch (error: any) {
+      console.error('Erro ao gerar Excel:', error);
+      toast.error('Erro ao gerar relatório Excel: ' + (error.message || 'Erro desconhecido'));
+    }
   }
 
 
@@ -874,16 +939,8 @@ export default function Stock() {
         }
       }
       
-      if (itemForm.projetoId && itemForm.projetoId > 0) {
-        payload.projetoId = Number(itemForm.projetoId);
-      }
-      
-      if (itemForm.etapaId && itemForm.etapaId > 0) {
-        payload.etapaId = Number(itemForm.etapaId);
-      }
-      
-      if (itemForm.status) {
-        payload.status = itemForm.status;
+      if (itemForm.categoriaId !== undefined) {
+        payload.categoriaId = itemForm.categoriaId ? Number(itemForm.categoriaId) : null;
       }
       
       await api.patch(`/stock/items/${editingItem.id}`, payload);
@@ -893,12 +950,11 @@ export default function Stock() {
       setItemForm({
         item: '',
         codigo: '',
-        categoria: '',
+        categoriaId: undefined,
         descricao: '',
         quantidade: 1,
         valorUnitario: 0,
         unidadeMedida: 'UN',
-        estoqueMinimo: 0,
         localizacao: '',
         imagemUrl: '',
       });
@@ -938,16 +994,8 @@ export default function Stock() {
         }
       }
       
-      if (itemForm.projetoId && itemForm.projetoId > 0) {
-        payload.projetoId = Number(itemForm.projetoId);
-      }
-      
-      if (itemForm.etapaId && itemForm.etapaId > 0) {
-        payload.etapaId = Number(itemForm.etapaId);
-      }
-      
-      if (itemForm.status) {
-        payload.status = itemForm.status;
+      if (itemForm.categoriaId) {
+        payload.categoriaId = Number(itemForm.categoriaId);
       }
 
       await api.post('/stock/items', payload);
@@ -956,18 +1004,111 @@ export default function Stock() {
       setItemForm({
         item: '',
         codigo: '',
-        categoria: '',
+        categoriaId: undefined,
         descricao: '',
         quantidade: 1,
         valorUnitario: 0,
         unidadeMedida: 'UN',
-        estoqueMinimo: 0,
         localizacao: '',
         imagemUrl: '',
       });
       load();
       itemValidation.reset();
       toast.success('Item de estoque criado com sucesso!');
+    } catch (err: any) {
+      const errorMessage = formatApiError(err);
+      setError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // Funções de Alocação
+  async function openAlocacaoModal(item: StockItem) {
+    setItemParaAlocar(item);
+    setAlocacaoForm({
+      projetoId: undefined,
+      etapaId: undefined,
+      usuarioId: undefined,
+      quantidade: 1,
+    });
+    try {
+      const response = await api.get(`/stock/alocacoes?estoqueId=${item.id}`);
+      setAlocacoes(response.data || []);
+    } catch (err: any) {
+      console.error('Erro ao carregar alocações:', err);
+      setAlocacoes([]);
+    }
+    setShowAlocacaoModal(true);
+  }
+
+  async function handleCreateAlocacao() {
+    if (!itemParaAlocar) return;
+    
+    // Verificar se há itens disponíveis
+    const quantidadeDisponivel = (itemParaAlocar.quantidade || 0) - alocacoes.reduce((sum, a) => sum + (a.quantidade || 0), 0);
+    if (quantidadeDisponivel <= 0) {
+      setError('Não há mais itens no estoque para alocar');
+      return;
+    }
+    
+    if (alocacaoForm.quantidade > quantidadeDisponivel) {
+      setError(`Quantidade solicitada (${alocacaoForm.quantidade}) excede a quantidade disponível (${quantidadeDisponivel})`);
+      return;
+    }
+    
+    setSubmitting(true);
+    setError(null);
+    
+    try {
+      await api.post('/stock/alocacoes', {
+        estoqueId: itemParaAlocar.id,
+        projetoId: alocacaoForm.projetoId,
+        etapaId: alocacaoForm.etapaId,
+        usuarioId: alocacaoForm.usuarioId,
+        quantidade: alocacaoForm.quantidade,
+      });
+      
+      toast.success('Alocação criada com sucesso!');
+      await openAlocacaoModal(itemParaAlocar); // Recarregar alocações
+      setAlocacaoForm({
+        projetoId: undefined,
+        etapaId: undefined,
+        usuarioId: undefined,
+        quantidade: 1,
+      });
+      load(); // Recarregar lista de itens
+    } catch (err: any) {
+      let errorMessage = formatApiError(err);
+      
+      // Tratar erros específicos de quantidade
+      if (errorMessage.includes('excede a quantidade disponível') || 
+          errorMessage.includes('não há mais itens') ||
+          errorMessage.includes('quantidade disponível')) {
+        errorMessage = 'Não há mais itens no estoque para alocar';
+      }
+      
+      setError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDeleteAlocacao(alocacaoId: number) {
+    if (!confirm('Tem certeza que deseja remover esta alocação?')) return;
+    
+    setSubmitting(true);
+    setError(null);
+    
+    try {
+      await api.delete(`/stock/alocacoes/${alocacaoId}`);
+      toast.success('Alocação removida com sucesso!');
+      if (itemParaAlocar) {
+        await openAlocacaoModal(itemParaAlocar); // Recarregar alocações
+      }
+      load(); // Recarregar lista de itens
     } catch (err: any) {
       const errorMessage = formatApiError(err);
       setError(errorMessage);
@@ -1230,6 +1371,7 @@ export default function Stock() {
       const payload: { 
         status: string; 
         statusEntrega?: string;
+        previsaoEntrega?: string;
         dataEntrega?: string;
         enderecoEntrega?: string;
         recebidoPor?: string;
@@ -1238,9 +1380,10 @@ export default function Stock() {
         status: newStatus,
       };
       
-      // Incluir apenas statusEntrega se o status for COMPRADO_ACAMINHO
+      // Incluir statusEntrega e previsaoEntrega se o status for COMPRADO_ACAMINHO
       if (newStatus === 'COMPRADO_ACAMINHO') {
         if (newStatusEntrega) payload.statusEntrega = newStatusEntrega;
+        if (newPrevisaoEntrega) payload.previsaoEntrega = newPrevisaoEntrega;
       }
       
       // Incluir campos de entrega se o status for ENTREGUE (sem statusEntrega)
@@ -1258,6 +1401,7 @@ export default function Stock() {
       setPurchaseToUpdateStatus(null);
       setNewStatus('');
       setNewStatusEntrega('');
+      setNewPrevisaoEntrega('');
       setNewDataEntrega('');
       setNewEnderecoEntrega('');
       setNewRecebidoPor('');
@@ -1566,7 +1710,6 @@ export default function Stock() {
                 <th className="px-4 py-3 text-left">Quantidade Total</th>
                 <th className="px-4 py-3 text-left">Alocada</th>
                 <th className="px-4 py-3 text-left">Disponível</th>
-                <th className="px-4 py-3 text-left">Status</th>
                 <th className="px-4 py-3 text-left">Ações</th>
               </tr>
             </thead>
@@ -1626,9 +1769,15 @@ export default function Stock() {
                           {quantidadeDisponivel}
                         </span>
                       </td>
-                      <td className="px-4 py-3">{item.status || 'DISPONIVEL'}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => openAlocacaoModal(item)}
+                          className="px-3 py-1.5 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white"
+                          title="Gerenciar alocações"
+                        >
+                          Alocar
+                        </button>
                         <button
                           onClick={async () => {
                             setEditingItem(item);
@@ -1652,17 +1801,13 @@ export default function Stock() {
                             setItemForm({
                               item: item.item || '',
                               codigo: (item as any).codigo || '',
-                              categoria: (item as any).categoria || '',
+                              categoriaId: (item as any).categoriaId || undefined,
                               descricao: item.descricao || '',
                               quantidade: item.quantidade || 1,
                               valorUnitario: item.valorUnitario || 0,
                               unidadeMedida: (item as any).unidadeMedida || 'UN',
-                              estoqueMinimo: (item as any).estoqueMinimo || 0,
                               localizacao: (item as any).localizacao || '',
                               imagemUrl: item.imagemUrl || '',
-                              projetoId: item.projetoId || undefined,
-                              etapaId: item.etapaId || undefined,
-                              status: item.status || 'DISPONIVEL',
                             });
                             setShowEditModal(true);
                           }}
@@ -1713,6 +1858,79 @@ export default function Stock() {
           </button>
             </div>
         </div>
+        
+        {/* Sub-abas de Compras */}
+        <div className="flex gap-2 mb-4 border-b border-white/10">
+          <button
+            onClick={() => setPurchaseSubTab('pendente')}
+            className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${
+              purchaseSubTab === 'pendente'
+                ? 'text-primary border-primary'
+                : 'text-white/70 border-transparent hover:text-white hover:border-white/30'
+            }`}
+          >
+            Pendente
+            {purchaseCounts.pendente > 0 && (
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                purchaseSubTab === 'pendente'
+                  ? 'bg-primary/20 text-primary'
+                  : 'bg-white/10 text-white/70'
+              }`}>
+                {purchaseCounts.pendente}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setPurchaseSubTab('a-caminho')}
+            className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${
+              purchaseSubTab === 'a-caminho'
+                ? 'text-primary border-primary'
+                : 'text-white/70 border-transparent hover:text-white hover:border-white/30'
+            }`}
+          >
+            A Caminho
+            {purchaseCounts['a-caminho'] > 0 && (
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                purchaseSubTab === 'a-caminho'
+                  ? 'bg-primary/20 text-primary'
+                  : 'bg-white/10 text-white/70'
+              }`}>
+                {purchaseCounts['a-caminho']}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setPurchaseSubTab('entregue')}
+            className={`px-4 py-2 text-sm font-semibold transition-colors border-b-2 ${
+              purchaseSubTab === 'entregue'
+                ? 'text-primary border-primary'
+                : 'text-white/70 border-transparent hover:text-white hover:border-white/30'
+            }`}
+          >
+            Entregue
+            {purchaseCounts.entregue > 0 && (
+              <span className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
+                purchaseSubTab === 'entregue'
+                  ? 'bg-primary/20 text-primary'
+                  : 'bg-white/10 text-white/70'
+              }`}>
+                {purchaseCounts.entregue}
+              </span>
+            )}
+          </button>
+        </div>
+        
+        {/* Filtros de Compras */}
+        <PurchaseFilters
+          filters={purchaseFiltersState}
+          setFilters={setPurchaseFilters}
+          showFilters={showPurchaseFilters}
+          setShowFilters={setShowPurchaseFilters}
+          clearFilters={clearPurchaseFilters}
+          hasActiveFilters={hasActiveFilters}
+          categories={categories}
+        />
+        
         <div className="overflow-x-auto rounded-xl border border-white/10">
           <table className="min-w-full text-sm">
             <thead className="bg-white/5 text-white/70">
@@ -1720,30 +1938,30 @@ export default function Stock() {
                 <th className="px-4 py-3 text-left">
                   <input
                     type="checkbox"
-                    checked={filteredPurchases.length > 0 && selectedPurchases.length === filteredPurchases.length}
+                    checked={finalSortedPurchases.length > 0 && selectedPurchases.length === finalSortedPurchases.length}
                     onChange={toggleAllPurchases}
                     className="w-4 h-4 rounded border-white/30 bg-white/10 text-primary focus:ring-primary"
                   />
                 </th>
-                <th className="px-4 py-3 text-left">Item</th>
-                <th className="px-4 py-3 text-left">Qtd</th>
-                <th className="px-4 py-3 text-left">Cotações</th>
-                <th className="px-4 py-3 text-left">Categoria</th>
-                <th className="px-4 py-3 text-left">Solicitado Por</th>
-                <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-4 py-3 text-left">Entrega</th>
+                {renderSortableHeader('item', 'Item')}
+                {renderSortableHeader('quantidade', 'Qtd')}
+                {renderSortableHeader('cotacoes', 'Cotações')}
+                {renderSortableHeader('categoria', 'Categoria')}
+                {renderSortableHeader('solicitadoPor', 'Solicitado Por')}
+                {renderSortableHeader('status', 'Status')}
+                {renderSortableHeader('dataEntrega', 'Entrega')}
                 <th className="px-4 py-3 text-left">Ações</th>
               </tr>
             </thead>
             <tbody>
-              {filteredPurchases.length === 0 ? (
+              {finalSortedPurchases.length === 0 ? (
                 <tr>
                   <td colSpan={9} className="px-4 py-8 text-center text-white/50">
                     {purchases.length === 0 ? 'Nenhuma compra cadastrada' : 'Nenhuma compra encontrada com os filtros aplicados'}
                   </td>
                 </tr>
               ) : (
-                filteredPurchases.map((purchase) => {
+                finalSortedPurchases.map((purchase) => {
                   const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
                   const isSelected = selectedPurchases.includes(purchase.id);
                   return (
@@ -1827,9 +2045,9 @@ export default function Stock() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1">
-                        <span className={`px-2 py-1 rounded text-xs ${getStatusColor(purchase.status)}`}>
-                          {getStatusLabel(purchase.status)}
-                        </span>
+                      <span className={`px-2 py-1 rounded text-xs ${getStatusColor(purchase.status)}`}>
+                        {getStatusLabel(purchase.status)}
+                      </span>
                         {purchase.status === 'COMPRADO_ACAMINHO' && purchase.statusEntrega && (
                           <span className={`px-2 py-1 rounded text-xs ${getStatusEntregaColor(purchase.statusEntrega)}`}>
                             {getStatusEntregaLabel(purchase.statusEntrega)}
@@ -1839,6 +2057,11 @@ export default function Stock() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-col gap-1 text-xs">
+                        {purchase.status === 'COMPRADO_ACAMINHO' && purchase.previsaoEntrega && (
+                          <span className="text-blue-300">
+                            📅 Previsão: {new Date(purchase.previsaoEntrega).toLocaleDateString('pt-BR')}
+                          </span>
+                        )}
                         {purchase.status === 'ENTREGUE' ? (
                           <>
                             {purchase.dataEntrega && (
@@ -1895,6 +2118,7 @@ export default function Stock() {
                             // Inicializar campos baseado no status atual
                             if (purchase.status === 'COMPRADO_ACAMINHO') {
                               setNewStatusEntrega(purchase.statusEntrega || 'NAO_ENTREGUE');
+                              setNewPrevisaoEntrega(purchase.previsaoEntrega ? new Date(purchase.previsaoEntrega).toISOString().split('T')[0] : '');
                               setNewDataEntrega('');
                               setNewEnderecoEntrega('');
                               setNewRecebidoPor('');
@@ -2128,13 +2352,24 @@ export default function Stock() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                   <label className="block text-sm font-medium text-white/90 mb-2">Categoria</label>
-                <input
-                    type="text"
-                    value={itemForm.categoria || ''}
-                    onChange={(e) => setItemForm({ ...itemForm, categoria: e.target.value })}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                    placeholder="Ex: Parafusos, Ferramentas"
-                />
+                <select
+                    value={itemForm.categoriaId || ''}
+                    onChange={(e) => setItemForm({ ...itemForm, categoriaId: e.target.value ? Number(e.target.value) : undefined })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 1rem center',
+                      paddingRight: '2.5rem'
+                    }}
+                >
+                  <option value="" className="bg-neutral text-white">Selecione uma categoria (opcional)</option>
+                  {categories.filter(c => c.ativo).map((cat) => (
+                    <option key={cat.id} value={cat.id} className="bg-neutral text-white">
+                      {cat.nome}
+                    </option>
+                  ))}
+                </select>
               </div>
 
                 <div>
@@ -2199,17 +2434,6 @@ export default function Stock() {
                           />
                         </div>
 
-                        <div>
-                  <label className="block text-sm font-medium text-white/90 mb-2">Estoque Mínimo</label>
-                          <input
-                            type="number"
-                            min="0"
-                    value={itemForm.estoqueMinimo || 0}
-                    onChange={(e) => setItemForm({ ...itemForm, estoqueMinimo: Number(e.target.value) })}
-                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                    placeholder="0"
-                          />
-                        </div>
               </div>
 
                         <div>
@@ -2251,6 +2475,203 @@ export default function Stock() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Gerenciar Alocações */}
+      {showAlocacaoModal && itemParaAlocar && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-neutral border border-white/20 rounded-lg sm:rounded-xl shadow-2xl max-w-2xl w-full my-auto max-h-[95vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between z-10">
+              <h2 className="text-lg sm:text-xl font-bold text-white">Gerenciar Alocações - {itemParaAlocar.item}</h2>
+              <button
+                onClick={() => {
+                  setShowAlocacaoModal(false);
+                  setItemParaAlocar(null);
+                  setAlocacoes([]);
+                  setError(null);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-lg sm:text-xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 sm:p-6">
+              <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-md">
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-white/70">Total:</span>
+                    <span className="ml-2 font-semibold text-white">{itemParaAlocar.quantidade || 0}</span>
+                  </div>
+                  <div>
+                    <span className="text-white/70">Alocada:</span>
+                    <span className="ml-2 font-semibold text-yellow-400">
+                      {alocacoes.reduce((sum, a) => sum + (a.quantidade || 0), 0)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-white/70">Disponível:</span>
+                    <span className="ml-2 font-semibold text-green-400">
+                      {(itemParaAlocar.quantidade || 0) - alocacoes.reduce((sum, a) => sum + (a.quantidade || 0), 0)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <h3 className="text-base font-semibold text-white mb-3">Nova Alocação</h3>
+              <div className="space-y-3 mb-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-white/90 mb-1">Projeto</label>
+                    <select
+                      value={alocacaoForm.projetoId || ''}
+                      onChange={async (e) => {
+                        const projetoId = e.target.value ? Number(e.target.value) : undefined;
+                        setAlocacaoForm({ ...alocacaoForm, projetoId, etapaId: undefined, usuarioId: undefined });
+                        if (projetoId) {
+                          try {
+                            const response = await api.get(`/projects/${projetoId}`);
+                            setEtapas(response.data.etapas || []);
+                          } catch (err) {
+                            setEtapas([]);
+                          }
+                        } else {
+                          setEtapas([]);
+                        }
+                      }}
+                      className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right 0.75rem center',
+                        paddingRight: '2rem'
+                      }}
+                    >
+                      <option value="" className="bg-neutral text-white">Selecione (opcional)</option>
+                      {projects.map((proj) => (
+                        <option key={proj.id} value={proj.id} className="bg-neutral text-white">
+                          {proj.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-white/90 mb-1">Etapa</label>
+                    <select
+                      value={alocacaoForm.etapaId || ''}
+                      onChange={(e) => setAlocacaoForm({ ...alocacaoForm, etapaId: e.target.value ? Number(e.target.value) : undefined, usuarioId: undefined })}
+                      className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right 0.75rem center',
+                        paddingRight: '2rem'
+                      }}
+                      disabled={!alocacaoForm.projetoId}
+                    >
+                      <option value="" className="bg-neutral text-white">Selecione (opcional)</option>
+                      {etapas.filter(e => e.projetoId === alocacaoForm.projetoId).map((etapa) => (
+                        <option key={etapa.id} value={etapa.id} className="bg-neutral text-white">
+                          {etapa.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-white/90 mb-1">Usuário</label>
+                    <select
+                      value={alocacaoForm.usuarioId || ''}
+                      onChange={(e) => setAlocacaoForm({ ...alocacaoForm, usuarioId: e.target.value ? Number(e.target.value) : undefined, projetoId: undefined, etapaId: undefined })}
+                      className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right 0.75rem center',
+                        paddingRight: '2rem'
+                      }}
+                    >
+                      <option value="" className="bg-neutral text-white">Selecione (opcional)</option>
+                      {users.map((user) => (
+                        <option key={user.id} value={user.id} className="bg-neutral text-white">
+                          {user.nome}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-white/90 mb-1">Quantidade *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max={(itemParaAlocar.quantidade || 0) - alocacoes.reduce((sum, a) => sum + (a.quantidade || 0), 0)}
+                      value={alocacaoForm.quantidade}
+                      onChange={(e) => setAlocacaoForm({ ...alocacaoForm, quantidade: Number(e.target.value) || 1 })}
+                      className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    />
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={handleCreateAlocacao}
+                disabled={
+                  submitting || 
+                  alocacaoForm.quantidade < 1 || 
+                  (!alocacaoForm.projetoId && !alocacaoForm.usuarioId) ||
+                  ((itemParaAlocar?.quantidade || 0) - alocacoes.reduce((sum, a) => sum + (a.quantidade || 0), 0)) <= 0
+                }
+                className="w-full sm:w-auto px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm mb-4"
+              >
+                {submitting ? 'Criando...' : 'Criar Alocação'}
+              </button>
+
+              {error && (
+                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-3 py-2 rounded-md mb-3 text-xs">
+                  {error}
+                </div>
+              )}
+
+              <h3 className="text-base font-semibold text-white mb-3 mt-6">Alocações Existentes</h3>
+              {alocacoes.length === 0 ? (
+                <p className="text-white/50 text-sm">Nenhuma alocação cadastrada</p>
+              ) : (
+                <div className="space-y-2">
+                  {alocacoes.map((alocacao) => (
+                    <div key={alocacao.id} className="bg-white/5 p-3 rounded-md border border-white/10 flex items-center justify-between">
+                      <div className="flex-1">
+                        <div className="text-sm text-white">
+                          <span className="font-semibold">Quantidade: {alocacao.quantidade}</span>
+                        </div>
+                        <div className="text-xs text-white/70 mt-1">
+                          {alocacao.projeto && `Projeto: ${alocacao.projeto.nome}`}
+                          {alocacao.projeto && alocacao.etapa && ' • '}
+                          {alocacao.etapa && `Etapa: ${alocacao.etapa.nome}`}
+                          {alocacao.usuario && (
+                            <>
+                              {alocacao.projeto || alocacao.etapa ? ' • ' : ''}
+                              Usuário: {alocacao.usuario.nome}
+                            </>
+                          )}
+                          {!alocacao.projeto && !alocacao.etapa && !alocacao.usuario && 'Sem projeto/etapa/usuário'}
+                        </div>
+                        <div className="text-xs text-white/50 mt-1">
+                          {new Date(alocacao.dataAlocacao).toLocaleDateString('pt-BR')}
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteAlocacao(alocacao.id)}
+                        disabled={submitting}
+                        className="px-3 py-1.5 text-xs rounded-md bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -2319,13 +2740,24 @@ export default function Stock() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-white/90 mb-2">Categoria</label>
-                  <input
-                    type="text"
-                    value={itemForm.categoria || ''}
-                    onChange={(e) => setItemForm({ ...itemForm, categoria: e.target.value })}
-                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                    placeholder="Ex: Parafusos, Ferramentas"
-                  />
+                  <select
+                    value={itemForm.categoriaId || ''}
+                    onChange={(e) => setItemForm({ ...itemForm, categoriaId: e.target.value ? Number(e.target.value) : undefined })}
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 1rem center',
+                      paddingRight: '2.5rem'
+                    }}
+                  >
+                    <option value="" className="bg-neutral text-white">Selecione uma categoria (opcional)</option>
+                    {categories.filter(c => c.ativo).map((cat) => (
+                      <option key={cat.id} value={cat.id} className="bg-neutral text-white">
+                        {cat.nome}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -2402,17 +2834,6 @@ export default function Stock() {
                   )}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-white/90 mb-2">Estoque Mínimo</label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={itemForm.estoqueMinimo || 0}
-                    onChange={(e) => setItemForm({ ...itemForm, estoqueMinimo: Number(e.target.value) })}
-                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                    placeholder="0"
-                  />
-                </div>
               </div>
 
               <div>
@@ -2433,88 +2854,6 @@ export default function Stock() {
                   </div>
                 )}
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Status</label>
-                <select
-                  value={itemForm.status || 'DISPONIVEL'}
-                  onChange={(e) => setItemForm({ ...itemForm, status: e.target.value })}
-                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 1rem center',
-                    paddingRight: '2.5rem'
-                  }}
-                >
-                  <option value="DISPONIVEL" className="bg-neutral text-white">Disponível</option>
-                  <option value="ALOCADO" className="bg-neutral text-white">Alocado</option>
-                  <option value="RESERVADO" className="bg-neutral text-white">Reservado</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Projeto</label>
-                <select
-                  value={itemForm.projetoId || ''}
-                  onChange={async (e) => {
-                    const projetoId = e.target.value ? Number(e.target.value) : undefined;
-                    setItemForm({ ...itemForm, projetoId, etapaId: undefined });
-                    
-                    // Carregar etapas do projeto selecionado
-                    if (projetoId) {
-                      try {
-                        // Buscar etapas através do endpoint do projeto que já retorna as etapas
-                        const projetoResponse = await api.get(`/projects/${projetoId}`);
-                        setEtapas(projetoResponse.data?.etapas || []);
-                      } catch (err) {
-                        console.error('Erro ao carregar etapas:', err);
-                        setEtapas([]);
-                      }
-                    } else {
-                      setEtapas([]);
-                    }
-                  }}
-                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 1rem center',
-                    paddingRight: '2.5rem'
-                  }}
-                >
-                  <option value="" className="bg-neutral text-white">Sem projeto (opcional)</option>
-                  {projects.map((projeto) => (
-                    <option key={projeto.id} value={projeto.id} className="bg-neutral text-white">
-                      {projeto.nome}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {itemForm.projetoId && (
-                <div>
-                  <label className="block text-sm font-medium text-white/90 mb-2">Etapa</label>
-                  <select
-                    value={itemForm.etapaId || ''}
-                    onChange={(e) => setItemForm({ ...itemForm, etapaId: e.target.value ? Number(e.target.value) : undefined })}
-                    className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
-                    style={{
-                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
-                      backgroundRepeat: 'no-repeat',
-                      backgroundPosition: 'right 1rem center',
-                      paddingRight: '2.5rem'
-                    }}
-                  >
-                    <option value="" className="bg-neutral text-white">Selecione uma etapa...</option>
-                    {etapas.map((etapa) => (
-                      <option key={etapa.id} value={etapa.id} className="bg-neutral text-white">
-                        {etapa.nome}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
 
               {error && (
                 <div className="bg-danger/20 border border-danger/50 text-danger px-4 py-3 rounded-md text-sm">
@@ -2537,7 +2876,6 @@ export default function Stock() {
                       quantidade: 1,
                       valorUnitario: 0,
                       unidadeMedida: 'UN',
-                      estoqueMinimo: 0,
                       localizacao: '',
                       imagemUrl: '',
                     });
@@ -2611,21 +2949,21 @@ export default function Stock() {
 
       {/* Modal Nova Compra */}
       {showPurchaseModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-neutral border-b border-white/20 px-8 py-6 flex items-center justify-between">
-              <h2 className="text-2xl font-bold">Nova Compra</h2>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-neutral border border-white/20 rounded-lg sm:rounded-xl shadow-2xl max-w-4xl w-full my-auto max-h-[95vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between z-10">
+              <h2 className="text-lg sm:text-xl font-bold">Nova Compra</h2>
               <button
                 onClick={() => {
                   setShowPurchaseModal(false);
                   setError(null);
                 }}
-                className="text-white/50 hover:text-white transition-colors text-2xl"
+                className="text-white/50 hover:text-white transition-colors text-xl sm:text-2xl"
               >
                 ✕
               </button>
             </div>
-            <form onSubmit={handleCreatePurchase} className="p-8 space-y-4">
+            <form onSubmit={handleCreatePurchase} className="p-4 sm:p-6 space-y-3 sm:space-y-4">
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Projeto</label>
                 <select
@@ -3096,10 +3434,10 @@ export default function Stock() {
 
       {/* Modal Editar Compra */}
       {showEditPurchaseModal && editingPurchase && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-neutral border-b border-white/20 px-8 py-6 flex items-center justify-between">
-              <h2 className="text-2xl font-bold">Editar Compra</h2>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-neutral border border-white/20 rounded-lg sm:rounded-xl shadow-2xl max-w-4xl w-full my-auto max-h-[95vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between z-10">
+              <h2 className="text-lg sm:text-xl font-bold">Editar Compra</h2>
               <button
                 onClick={() => {
                   setShowEditPurchaseModal(false);
@@ -3125,7 +3463,7 @@ export default function Stock() {
                 ✕
               </button>
             </div>
-            <form onSubmit={handleUpdatePurchase} className="p-8 space-y-4">
+            <form onSubmit={handleUpdatePurchase} className="p-4 sm:p-6 space-y-3 sm:space-y-4">
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Nome do Item *</label>
                 <input
@@ -3611,27 +3949,27 @@ export default function Stock() {
 
       {/* Modal Confirmar Exclusão de Compra */}
       {showDeletePurchaseModal && purchaseToDelete && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
-            <div className="px-8 py-6 border-b border-white/20">
-              <h2 className="text-2xl font-bold text-white">Confirmar Exclusão</h2>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-neutral border border-white/20 rounded-lg sm:rounded-xl shadow-2xl max-w-md w-full my-auto">
+            <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-white/20">
+              <h2 className="text-lg sm:text-xl font-bold text-white">Confirmar Exclusão</h2>
     </div>
-            <div className="p-8">
-              <p className="text-white/90 mb-2">
+            <div className="p-4 sm:p-6">
+              <p className="text-white/90 mb-2 text-sm sm:text-base">
                 Tem certeza que deseja remover a compra:
               </p>
-              <p className="text-xl font-semibold text-white mb-6">
+              <p className="text-lg sm:text-xl font-semibold text-white mb-4 break-words">
                 "{purchaseToDelete.item}"
               </p>
-              <p className="text-sm text-white/70 mb-6">
+              <p className="text-xs sm:text-sm text-white/70 mb-4">
                 Esta ação não pode ser desfeita.
               </p>
               {error && (
-                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md mb-4 text-sm">
+                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-3 sm:px-4 py-2 sm:py-3 rounded-md mb-3 text-xs sm:text-sm">
                   {error}
                 </div>
               )}
-              <div className="flex justify-end space-x-4">
+              <div className="flex flex-col sm:flex-row justify-end gap-2 sm:gap-4 sm:space-x-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -3639,7 +3977,7 @@ export default function Stock() {
                     setPurchaseToDelete(null);
                     setError(null);
                   }}
-                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors text-sm sm:text-base"
                   disabled={deletingPurchase}
                 >
                   Cancelar
@@ -3647,7 +3985,7 @@ export default function Stock() {
                 <button
                   type="button"
                   onClick={handleDeletePurchase}
-                  className="px-6 py-2.5 rounded-md bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full sm:w-auto px-4 sm:px-6 py-2 sm:py-2.5 rounded-md bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
                   disabled={deletingPurchase}
                 >
                   {deletingPurchase ? 'Removendo...' : 'Confirmar Remoção'}
@@ -3660,24 +3998,41 @@ export default function Stock() {
 
       {/* Modal Alterar Status */}
       {showStatusModal && purchaseToUpdateStatus && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
-            <div className="px-8 py-6 border-b border-white/20">
-              <h2 className="text-2xl font-bold text-white">Alterar Status</h2>
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-2 overflow-y-auto">
+          <div className="bg-neutral border border-white/20 rounded-lg shadow-2xl max-w-sm sm:max-w-md w-full my-auto max-h-[98vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-3 sm:px-4 py-2.5 flex items-center justify-between z-10">
+              <h2 className="text-base sm:text-lg font-bold text-white">Alterar Status</h2>
+              <button
+                onClick={() => {
+                  setShowStatusModal(false);
+                  setPurchaseToUpdateStatus(null);
+                  setNewStatus('');
+                  setNewStatusEntrega('');
+                  setNewDataEntrega('');
+                  setNewEnderecoEntrega('');
+                  setNewRecebidoPor('');
+                  setNewObservacao('');
+                  setError(null);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-lg sm:text-xl"
+              >
+                ✕
+              </button>
             </div>
-            <div className="p-8">
-              <p className="text-white/90 mb-4">
-                Item: <span className="font-semibold">{purchaseToUpdateStatus.item}</span>
+            <div className="p-3 sm:p-4">
+              <p className="text-white/90 mb-2.5 text-xs sm:text-sm">
+                Item: <span className="font-semibold break-words">{purchaseToUpdateStatus.item}</span>
               </p>
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-white/90 mb-2">Novo Status *</label>
+              <div className="mb-3">
+                <label className="block text-xs font-medium text-white/90 mb-1">Novo Status *</label>
                 <select
                   value={newStatus}
                   onChange={(e) => {
                     setNewStatus(e.target.value);
-                    // Se mudar para COMPRADO_ACAMINHO, inicializar apenas statusEntrega e limpar outros campos
+                    // Se mudar para COMPRADO_ACAMINHO, inicializar statusEntrega e previsaoEntrega e limpar outros campos
                     if (e.target.value === 'COMPRADO_ACAMINHO') {
                       setNewStatusEntrega(purchaseToUpdateStatus?.statusEntrega || 'NAO_ENTREGUE');
+                      setNewPrevisaoEntrega(purchaseToUpdateStatus?.previsaoEntrega ? new Date(purchaseToUpdateStatus.previsaoEntrega).toISOString().split('T')[0] : '');
                       setNewDataEntrega('');
                       setNewEnderecoEntrega('');
                       setNewRecebidoPor('');
@@ -3685,6 +4040,7 @@ export default function Stock() {
                     // Se mudar para ENTREGUE, inicializar campos de entrega (sem statusEntrega)
                     else if (e.target.value === 'ENTREGUE') {
                       setNewStatusEntrega('');
+                      setNewPrevisaoEntrega('');
                       setNewDataEntrega(purchaseToUpdateStatus?.dataEntrega ? new Date(purchaseToUpdateStatus.dataEntrega).toISOString().split('T')[0] : '');
                       setNewEnderecoEntrega(purchaseToUpdateStatus?.enderecoEntrega || '');
                       setNewRecebidoPor(purchaseToUpdateStatus?.recebidoPor || '');
@@ -3692,17 +4048,18 @@ export default function Stock() {
                     // Se mudar para outro status, limpar todos os campos
                     else {
                       setNewStatusEntrega('');
+                      setNewPrevisaoEntrega('');
                       setNewDataEntrega('');
                       setNewEnderecoEntrega('');
                       setNewRecebidoPor('');
                     }
                   }}
-                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
                   style={{
                     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
                     backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 1rem center',
-                    paddingRight: '2.5rem'
+                    backgroundPosition: 'right 0.75rem center',
+                    paddingRight: '2rem'
                   }}
                 >
                   <option value="PENDENTE" className="bg-neutral text-white">Pendente</option>
@@ -3713,20 +4070,20 @@ export default function Stock() {
 
               {/* Status de Entrega - aparece quando status é COMPRADO_ACAMINHO (apenas o status, sem outros campos) */}
               {newStatus === 'COMPRADO_ACAMINHO' && (
-                <div className="space-y-4 mb-6 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-                  <h4 className="text-sm font-semibold text-blue-300 mb-3">Status de Entrega</h4>
+                <div className="space-y-2.5 mb-3 p-2.5 sm:p-3 bg-blue-500/10 border border-blue-500/30 rounded-md">
+                  <h4 className="text-xs font-semibold text-blue-300 mb-1.5">Status de Entrega</h4>
                   
                   <div>
-                    <label className="block text-sm font-medium text-white/90 mb-2">Status de Entrega</label>
+                    <label className="block text-xs font-medium text-white/90 mb-1">Status de Entrega</label>
                     <select
                       value={newStatusEntrega}
                       onChange={(e) => setNewStatusEntrega(e.target.value)}
-                      className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                      className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
                       style={{
                         backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
                         backgroundRepeat: 'no-repeat',
-                        backgroundPosition: 'right 1rem center',
-                        paddingRight: '2.5rem'
+                        backgroundPosition: 'right 0.75rem center',
+                        paddingRight: '2rem'
                       }}
                     >
                       {statusEntregaOptions.filter(option => option.value !== 'ENTREGUE').map((option) => (
@@ -3736,44 +4093,54 @@ export default function Stock() {
                       ))}
                     </select>
                   </div>
+                  
+                  <div>
+                    <label className="block text-xs font-medium text-white/90 mb-1">Previsão de Entrega</label>
+                    <input
+                      type="date"
+                      value={newPrevisaoEntrega}
+                      onChange={(e) => setNewPrevisaoEntrega(e.target.value)}
+                      className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    />
+                  </div>
                 </div>
               )}
 
               {/* Campos de Entrega completos - aparecem apenas quando status é ENTREGUE */}
               {newStatus === 'ENTREGUE' && (
-                <div className="space-y-4 mb-6 p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
-                  <h4 className="text-sm font-semibold text-green-300 mb-3">Informações de Entrega</h4>
+                <div className="space-y-2.5 mb-3 p-2.5 sm:p-3 bg-green-500/10 border border-green-500/30 rounded-md">
+                  <h4 className="text-xs font-semibold text-green-300 mb-1.5">Informações de Entrega</h4>
                   
                   <div>
-                    <label className="block text-sm font-medium text-white/90 mb-2">Data da Entrega</label>
+                    <label className="block text-xs font-medium text-white/90 mb-1">Data da Entrega</label>
                     <input
                       type="date"
                       value={newDataEntrega}
                       onChange={(e) => setNewDataEntrega(e.target.value)}
-                      className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                      className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-white/90 mb-2">Endereço de Entrega</label>
+                    <label className="block text-xs font-medium text-white/90 mb-1">Endereço de Entrega</label>
                     <input
                       type="text"
                       value={newEnderecoEntrega}
                       onChange={(e) => setNewEnderecoEntrega(e.target.value)}
-                      className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                      className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                       placeholder="Endereço onde foi entregue"
                       maxLength={500}
                     />
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-white/90 mb-2">Recebido por</label>
+                    <label className="block text-xs font-medium text-white/90 mb-1">Recebido por</label>
                     <input
                       type="text"
                       value={newRecebidoPor}
                       onChange={(e) => setNewRecebidoPor(e.target.value)}
-                      className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                      placeholder="Nome de quem recebeu o material (ex: Kauê, Welton...)"
+                      className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                      placeholder="Nome de quem recebeu"
                       maxLength={100}
                     />
                   </div>
@@ -3781,24 +4148,24 @@ export default function Stock() {
               )}
 
               {/* Campo de Observação - aparece sempre */}
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-white/90 mb-2">Observação</label>
+              <div className="mb-3">
+                <label className="block text-xs font-medium text-white/90 mb-1">Observação</label>
                 <textarea
                   value={newObservacao}
                   onChange={(e) => setNewObservacao(e.target.value)}
-                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary resize-none"
-                  placeholder="Observações gerais sobre esta compra..."
-                  rows={3}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary resize-none"
+                  placeholder="Observações gerais..."
+                  rows={2}
                   maxLength={1000}
                 />
               </div>
 
               {error && (
-                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md mb-4 text-sm">
+                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-3 py-2 rounded-md mb-2.5 text-xs">
                   {error}
                 </div>
               )}
-              <div className="flex justify-end space-x-4">
+              <div className="flex flex-col sm:flex-row justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => {
@@ -3806,13 +4173,14 @@ export default function Stock() {
                     setPurchaseToUpdateStatus(null);
                     setNewStatus('');
                     setNewStatusEntrega('');
+                    setNewPrevisaoEntrega('');
                     setNewDataEntrega('');
                     setNewEnderecoEntrega('');
                     setNewRecebidoPor('');
                     setNewObservacao('');
                     setError(null);
                   }}
-                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  className="w-full sm:w-auto px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors text-sm"
                   disabled={submitting}
                 >
                   Cancelar
@@ -3820,7 +4188,7 @@ export default function Stock() {
                 <button
                   type="button"
                   onClick={handleUpdatePurchaseStatus}
-                  className="px-6 py-2.5 rounded-md bg-green-600 hover:bg-green-700 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full sm:w-auto px-4 py-2 rounded-md bg-green-600 hover:bg-green-700 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
                   disabled={submitting || !newStatus}
                 >
                   {submitting ? 'Atualizando...' : 'Confirmar'}
@@ -3863,7 +4231,7 @@ export default function Stock() {
                     {/* Resumo Geral */}
                     <div className="bg-white/5 rounded-lg p-6 border border-white/10">
                       <h3 className="text-xl font-semibold text-white mb-4">Resumo Geral</h3>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                         <div className="bg-white/5 rounded-lg p-4">
                           <div className="text-sm text-white/70 mb-1">Total de Itens</div>
                           <div className="text-2xl font-bold text-white">{reportData.totalItens}</div>
@@ -3882,6 +4250,97 @@ export default function Stock() {
                           </div>
                         </div>
                       </div>
+                      
+                      {/* Estatísticas por Status */}
+                      <div className="mt-4">
+                        <h4 className="text-sm font-semibold text-white/90 mb-2">Distribuição por Status</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          {['PENDENTE', 'COMPRADO_ACAMINHO', 'ENTREGUE', 'SOLICITADO'].map((status) => {
+                            const count = reportData.purchases.filter(p => p.status === status).length;
+                            if (count === 0) return null;
+                            return (
+                              <div key={status} className="bg-white/5 rounded p-2">
+                                <div className="text-xs text-white/70">{getStatusLabel(status)}</div>
+                                <div className="text-lg font-bold text-white">{count}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      
+                      {/* Estatísticas por Categoria */}
+                      {reportData.purchases.some(p => (p as any).categoriaId) && (
+                        <div className="mt-4">
+                          <h4 className="text-sm font-semibold text-white/90 mb-2">Distribuição por Categoria</h4>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            {Array.from(new Set(reportData.purchases
+                              .filter(p => (p as any).categoriaId)
+                              .map(p => (p as any).categoriaId)))
+                              .map((catId) => {
+                                const count = reportData.purchases.filter(p => (p as any).categoriaId === catId).length;
+                                const catTotal = reportData.purchases
+                                  .filter(p => (p as any).categoriaId === catId)
+                                  .reduce((sum, p) => sum + (p.valorUnitario * (p.quantidade || 0)), 0);
+                                return (
+                                  <div key={catId} className="bg-white/5 rounded p-2">
+                                    <div className="text-xs text-white/70">{getCategoryName(catId)}</div>
+                                    <div className="text-sm font-bold text-white">{count} item(s)</div>
+                                    <div className="text-xs text-primary">
+                                      {catTotal.toLocaleString('pt-BR', {
+                                        style: 'currency',
+                                        currency: 'BRL',
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Estatísticas por Fornecedor */}
+                      {reportData.purchases.some(p => {
+                        const cotacoes = p.cotacoesJson && Array.isArray(p.cotacoesJson) ? p.cotacoesJson : [];
+                        return cotacoes.some((c: any) => c.fornecedorId);
+                      }) && (
+                        <div className="mt-4">
+                          <h4 className="text-sm font-semibold text-white/90 mb-2">Fornecedores Utilizados</h4>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            {Array.from(new Set(
+                              reportData.purchases
+                                .flatMap(p => {
+                                  const cotacoes = p.cotacoesJson && Array.isArray(p.cotacoesJson) ? p.cotacoesJson : [];
+                                  return cotacoes
+                                    .map((c: any) => c.fornecedorId)
+                                    .filter((id: any) => id);
+                                })
+                            )).map((fornecedorId) => {
+                              const count = reportData.purchases.filter(p => {
+                                const cotacoes = p.cotacoesJson && Array.isArray(p.cotacoesJson) ? p.cotacoesJson : [];
+                                return cotacoes.some((c: any) => c.fornecedorId === fornecedorId);
+                              }).length;
+                              const fornecedorTotal = reportData.purchases
+                                .filter(p => {
+                                  const cotacoes = p.cotacoesJson && Array.isArray(p.cotacoesJson) ? p.cotacoesJson : [];
+                                  return cotacoes.some((c: any) => c.fornecedorId === fornecedorId);
+                                })
+                                .reduce((sum, p) => sum + (p.valorUnitario * (p.quantidade || 0)), 0);
+                              return (
+                                <div key={fornecedorId} className="bg-white/5 rounded p-2">
+                                  <div className="text-xs text-white/70">{getSupplierName(fornecedorId)}</div>
+                                  <div className="text-sm font-bold text-white">{count} item(s)</div>
+                                  <div className="text-xs text-primary">
+                                    {fornecedorTotal.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Detalhamento por Projeto */}
@@ -3921,35 +4380,115 @@ export default function Stock() {
                               <div className="space-y-2">
                                 {projetoPurchases.map((purchase) => {
                                   const valorTotal = purchase.valorUnitario * (purchase.quantidade || 0);
+                                  const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
+                                  const cotacaoSelecionada = cotacoes.length > 0 ? cotacoes[0] : null;
+                                  
                                   return (
                                     <div
                                       key={purchase.id}
                                       className="bg-white/5 rounded-lg p-4 border border-white/5"
                                     >
-                                      <div className="flex items-center justify-between">
+                                      <div className="flex items-start justify-between">
                                         <div className="flex-1">
-                                          <div className="font-medium text-white">{purchase.item}</div>
+                                          <div className="flex items-center gap-2 mb-2">
+                                            <div className="font-medium text-white">{purchase.item}</div>
+                                            {(purchase as any).categoriaId && (
+                                              <span className="px-2 py-0.5 rounded text-xs bg-blue-500/20 text-blue-400">
+                                                {getCategoryName((purchase as any).categoriaId)}
+                                              </span>
+                                            )}
+                                            <span className={`px-2 py-0.5 rounded text-xs ${getStatusColor(purchase.status)}`}>
+                                              {getStatusLabel(purchase.status)}
+                                            </span>
+                                          </div>
+                                          
                                           {purchase.descricao && (
-                                            <div className="text-sm text-white/60 mt-1">
-                                              Motivo: {purchase.descricao}
+                                            <div className="text-sm text-white/60 mb-2">
+                                              <span className="font-medium">Motivo:</span> {purchase.descricao}
                                             </div>
                                           )}
-                                          <div className="flex items-center gap-4 mt-2 text-sm text-white/70">
-                                            <span>
-                                              Quantidade: <span className="font-semibold text-white">{purchase.quantidade}</span>
-                                            </span>
-                                            <span>
-                                              Valor Unitário:{' '}
-                                              <span className="font-semibold text-white">
+                                          
+                                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm text-white/70">
+                                            <div>
+                                              <span className="font-medium">Quantidade:</span>{' '}
+                                              <span className="text-white">{purchase.quantidade}</span>
+                                            </div>
+                                            <div>
+                                              <span className="font-medium">Valor Unitário:</span>{' '}
+                                              <span className="text-white">
                                                 {purchase.valorUnitario.toLocaleString('pt-BR', {
                                                   style: 'currency',
                                                   currency: 'BRL',
                                                 })}
                                               </span>
-                                            </span>
-                                            <span className={`px-2 py-1 rounded text-xs ${getStatusColor(purchase.status)}`}>
-                                              {getStatusLabel(purchase.status)}
-                                            </span>
+                                            </div>
+                                            
+                                            {purchase.solicitadoPor && (
+                                              <div>
+                                                <span className="font-medium">Solicitado por:</span>{' '}
+                                                <span className="text-white">
+                                                  {purchase.solicitadoPor.nome}
+                                                  {purchase.solicitadoPor.cargo && ` (${purchase.solicitadoPor.cargo.nome})`}
+                                                </span>
+                                              </div>
+                                            )}
+                                            
+                                            {purchase.dataCompra && (
+                                              <div>
+                                                <span className="font-medium">Data Compra:</span>{' '}
+                                                <span className="text-white">
+                                                  {new Date(purchase.dataCompra).toLocaleDateString('pt-BR')}
+                                                </span>
+                                              </div>
+                                            )}
+                                            
+                                            {purchase.formaPagamento && (
+                                              <div>
+                                                <span className="font-medium">Forma Pagamento:</span>{' '}
+                                                <span className="text-white">{purchase.formaPagamento}</span>
+                                              </div>
+                                            )}
+                                            
+                                            {purchase.status === 'COMPRADO_ACAMINHO' && purchase.previsaoEntrega && (
+                                              <div>
+                                                <span className="font-medium">Previsão Entrega:</span>{' '}
+                                                <span className="text-white">
+                                                  {new Date(purchase.previsaoEntrega).toLocaleDateString('pt-BR')}
+                                                </span>
+                                              </div>
+                                            )}
+                                            
+                                            {purchase.dataEntrega && (
+                                              <div>
+                                                <span className="font-medium">Data Entrega:</span>{' '}
+                                                <span className="text-white">
+                                                  {new Date(purchase.dataEntrega).toLocaleDateString('pt-BR')}
+                                                </span>
+                                              </div>
+                                            )}
+                                            
+                                            {purchase.statusEntrega && (
+                                              <div>
+                                                <span className="font-medium">Status Entrega:</span>{' '}
+                                                <span className="text-white">{getStatusLabel(purchase.statusEntrega)}</span>
+                                              </div>
+                                            )}
+                                            
+                                            {cotacaoSelecionada?.fornecedorId && (
+                                              <div>
+                                                <span className="font-medium">Fornecedor:</span>{' '}
+                                                <span className="text-white">
+                                                  {getSupplierName(cotacaoSelecionada.fornecedorId)}
+                                                </span>
+                                              </div>
+                                            )}
+                                            
+                                            {purchase.recebidoPor && (
+                                              <div>
+                                                <span className="font-medium">Recebido por:</span>{' '}
+                                                <span className="text-white">{purchase.recebidoPor}</span>
+                                              </div>
+                                            )}
                                           </div>
                                         </div>
                                         <div className="text-right ml-4">
@@ -3986,6 +4525,16 @@ export default function Stock() {
                       </button>
                       <button
                         type="button"
+                        onClick={exportToExcel}
+                        className="px-6 py-2.5 rounded-md bg-green-600 hover:bg-green-700 text-white font-semibold transition-colors flex items-center gap-2"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        Exportar Excel
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => {
                           const reportData = calculateReportTotals();
                           const doc = new jsPDF();
@@ -4007,22 +4556,33 @@ export default function Stock() {
                           // Título
                           doc.setFontSize(20);
                           doc.setTextColor(0, 0, 0);
+                          doc.setFont('helvetica', 'bold');
                           doc.text('RELATÓRIO DE COMPRAS', pageWidth / 2, yPosition, { align: 'center' });
-                          yPosition += 10;
+                          yPosition += 8;
                           
-                          // Data
+                          // Data e informações
                           doc.setFontSize(10);
+                          doc.setFont('helvetica', 'normal');
                           doc.setTextColor(100, 100, 100);
-                          doc.text(`Data: ${new Date().toLocaleString('pt-BR')}`, pageWidth / 2, yPosition, { align: 'center' });
-                          yPosition += 15;
+                          doc.text(`Data de Geração: ${new Date().toLocaleString('pt-BR')}`, pageWidth / 2, yPosition, { align: 'center' });
+                          yPosition += 5;
+                          doc.text(`Total de Itens Selecionados: ${reportData.totalItens}`, pageWidth / 2, yPosition, { align: 'center' });
+                          yPosition += 12;
+                          
+                          // Linha separadora
+                          doc.setDrawColor(200, 200, 200);
+                          doc.line(margin, yPosition, pageWidth - margin, yPosition);
+                          yPosition += 10;
                           
                           // Resumo Geral
                           doc.setFontSize(16);
                           doc.setTextColor(0, 0, 0);
+                          doc.setFont('helvetica', 'bold');
                           doc.text('RESUMO GERAL', margin, yPosition);
                           yPosition += 10;
                           
                           doc.setFontSize(11);
+                          doc.setFont('helvetica', 'normal');
                           doc.setTextColor(0, 0, 0);
                           doc.text(`Total de Itens: ${reportData.totalItens}`, margin, yPosition);
                           yPosition += 7;
@@ -4030,6 +4590,7 @@ export default function Stock() {
                           yPosition += 7;
                           doc.setFontSize(12);
                           doc.setTextColor(0, 100, 0);
+                          doc.setFont('helvetica', 'bold');
                           doc.text(
                             `Valor Total: ${reportData.totalValor.toLocaleString('pt-BR', {
                               style: 'currency',
@@ -4038,7 +4599,116 @@ export default function Stock() {
                             margin,
                             yPosition
                           );
-                          yPosition += 15;
+                          yPosition += 12;
+                          
+                          // Distribuição por Status
+                          doc.setFontSize(10);
+                          doc.setFont('helvetica', 'bold');
+                          doc.setTextColor(0, 0, 0);
+                          doc.text('Distribuição por Status:', margin, yPosition);
+                          yPosition += 7;
+                          doc.setFont('helvetica', 'normal');
+                          doc.setFontSize(9);
+                          doc.setTextColor(60, 60, 60);
+                          
+                          const statusCounts: Record<string, number> = {};
+                          reportData.purchases.forEach((p) => {
+                            statusCounts[p.status] = (statusCounts[p.status] || 0) + 1;
+                          });
+                          
+                          Object.entries(statusCounts).forEach(([status, count]) => {
+                            checkPageBreak(6);
+                            doc.text(`   ${getStatusLabel(status)}: ${count} item(s)`, margin + 5, yPosition);
+                            yPosition += 5;
+                          });
+                          
+                          // Distribuição por Categoria (se houver)
+                          const purchasesComCategoria = reportData.purchases.filter(p => (p as any).categoriaId);
+                          if (purchasesComCategoria.length > 0) {
+                            yPosition += 5;
+                            checkPageBreak(15);
+                            doc.setFontSize(10);
+                            doc.setFont('helvetica', 'bold');
+                            doc.setTextColor(0, 0, 0);
+                            doc.text('Distribuição por Categoria:', margin, yPosition);
+                            yPosition += 7;
+                            doc.setFont('helvetica', 'normal');
+                            doc.setFontSize(9);
+                            doc.setTextColor(60, 60, 60);
+                            
+                            const categoriaCounts: Record<number, { count: number; total: number }> = {};
+                            purchasesComCategoria.forEach((p) => {
+                              const catId = (p as any).categoriaId;
+                              if (!categoriaCounts[catId]) {
+                                categoriaCounts[catId] = { count: 0, total: 0 };
+                              }
+                              categoriaCounts[catId].count++;
+                              categoriaCounts[catId].total += p.valorUnitario * (p.quantidade || 0);
+                            });
+                            
+                            Object.entries(categoriaCounts).forEach(([catId, data]) => {
+                              checkPageBreak(6);
+                              const catName = getCategoryName(Number(catId));
+                              doc.text(
+                                `   ${catName}: ${data.count} item(s) - ${data.total.toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                })}`,
+                                margin + 5,
+                                yPosition
+                              );
+                              yPosition += 5;
+                            });
+                          }
+                          
+                          // Resumo de Fornecedores (se houver)
+                          const purchasesComFornecedor = reportData.purchases.filter(p => {
+                            const cotacoes = p.cotacoesJson && Array.isArray(p.cotacoesJson) ? p.cotacoesJson : [];
+                            return cotacoes.some((c: any) => c.fornecedorId);
+                          });
+                          
+                          if (purchasesComFornecedor.length > 0) {
+                            yPosition += 5;
+                            checkPageBreak(15);
+                            doc.setFontSize(10);
+                            doc.setFont('helvetica', 'bold');
+                            doc.setTextColor(0, 0, 0);
+                            doc.text('Fornecedores Utilizados:', margin, yPosition);
+                            yPosition += 7;
+                            doc.setFont('helvetica', 'normal');
+                            doc.setFontSize(9);
+                            doc.setTextColor(60, 60, 60);
+                            
+                            const fornecedorCounts: Record<number, { count: number; total: number }> = {};
+                            purchasesComFornecedor.forEach((p) => {
+                              const cotacoes = p.cotacoesJson && Array.isArray(p.cotacoesJson) ? p.cotacoesJson : [];
+                              cotacoes.forEach((cot: any) => {
+                                if (cot.fornecedorId) {
+                                  if (!fornecedorCounts[cot.fornecedorId]) {
+                                    fornecedorCounts[cot.fornecedorId] = { count: 0, total: 0 };
+                                  }
+                                  fornecedorCounts[cot.fornecedorId].count++;
+                                  fornecedorCounts[cot.fornecedorId].total += p.valorUnitario * (p.quantidade || 0);
+                                }
+                              });
+                            });
+                            
+                            Object.entries(fornecedorCounts).forEach(([fornecedorId, data]) => {
+                              checkPageBreak(6);
+                              const fornecedorName = getSupplierName(Number(fornecedorId));
+                              doc.text(
+                                `   ${fornecedorName}: ${data.count} item(s) - ${data.total.toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                })}`,
+                                margin + 5,
+                                yPosition
+                              );
+                              yPosition += 5;
+                            });
+                          }
+                          
+                          yPosition += 10;
                           
                           // Agrupar por projeto
                           const projetoGroups: Record<number, Purchase[]> = {};
@@ -4088,18 +4758,33 @@ export default function Stock() {
                             
                             // Lista de compras do projeto
                             projetoPurchases.forEach((purchase, idx) => {
-                              checkPageBreak(35);
+                              checkPageBreak(50);
                               
                               const valorTotal = purchase.valorUnitario * (purchase.quantidade || 0);
                               const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
+                              const cotacaoSelecionada = cotacoes.length > 0 ? cotacoes[0] : null;
                               
                               doc.setFontSize(11);
                               doc.setTextColor(0, 0, 0);
+                              doc.setFont('helvetica', 'bold');
                               doc.text(`${idx + 1}. ${purchase.item}`, margin + 5, yPosition);
                               yPosition += 6;
                               
+                              // Categoria
+                              if ((purchase as any).categoriaId) {
+                                doc.setFontSize(9);
+                                doc.setTextColor(0, 100, 200);
+                                doc.setFont('helvetica', 'normal');
+                                const catId = (purchase as any).categoriaId;
+                                doc.text(`   Categoria: ${getCategoryName(catId)}`, margin + 5, yPosition);
+                                yPosition += 5;
+                              }
+                              
                               doc.setFontSize(9);
                               doc.setTextColor(80, 80, 80);
+                              doc.setFont('helvetica', 'normal');
+                              
+                              // Descrição
                               if (purchase.descricao) {
                                 const descLines = doc.splitTextToSize(
                                   `   Motivo da Solicitação: ${purchase.descricao}`,
@@ -4112,44 +4797,10 @@ export default function Stock() {
                                 });
                               }
                               
-                              // Cotações
-                              if (cotacoes.length > 0) {
-                                checkPageBreak(8);
-                                doc.setFontSize(9);
-                                doc.setTextColor(60, 60, 60);
-                                doc.text('   Cotações:', margin + 5, yPosition);
-                                yPosition += 6;
-                                
-                                cotacoes.forEach((cotacao, cotIdx) => {
-                                  checkPageBreak(6);
-                                  const cotacaoTotal = cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0);
-                                  const cotacaoTotalComQuantidade = cotacaoTotal * (purchase.quantidade || 0);
-                                  const cotacaoText = `     Cotação ${cotIdx + 1}: Valor Unitário: ${cotacao.valorUnitario.toLocaleString('pt-BR', {
-                                    style: 'currency',
-                                    currency: 'BRL',
-                                  })} | Frete: ${cotacao.frete.toLocaleString('pt-BR', {
-                                    style: 'currency',
-                                    currency: 'BRL',
-                                  })} | Impostos: ${cotacao.impostos.toLocaleString('pt-BR', {
-                                    style: 'currency',
-                                    currency: 'BRL',
-                                  })} | Total por unidade: ${cotacaoTotal.toLocaleString('pt-BR', {
-                                    style: 'currency',
-                                    currency: 'BRL',
-                                  })}`;
-                                  
-                                  const cotacaoLines = doc.splitTextToSize(cotacaoText, pageWidth - margin * 2 - 15);
-                                  cotacaoLines.forEach((line: string) => {
-                                    checkPageBreak(5);
-                                    doc.text(line, margin + 5, yPosition);
-                                    yPosition += 5;
-                                  });
-                                });
-                              }
-                              
-                              const details = [
+                              // Informações básicas
+                              const basicInfo = [
                                 `   Quantidade: ${purchase.quantidade}`,
-                                `   Valor Unitário (selecionado): ${purchase.valorUnitario.toLocaleString('pt-BR', {
+                                `   Valor Unitário: ${purchase.valorUnitario.toLocaleString('pt-BR', {
                                   style: 'currency',
                                   currency: 'BRL',
                                 })}`,
@@ -4160,13 +4811,181 @@ export default function Stock() {
                                 `   Status: ${getStatusLabel(purchase.status)}`,
                               ];
                               
-                              details.forEach((detail) => {
+                              basicInfo.forEach((info) => {
                                 checkPageBreak(5);
-                                doc.text(detail, margin + 5, yPosition);
+                                doc.text(info, margin + 5, yPosition);
                                 yPosition += 5;
                               });
                               
-                              yPosition += 3;
+                              // Solicitado por
+                              if (purchase.solicitadoPor) {
+                                checkPageBreak(5);
+                                const solicitadoText = `   Solicitado por: ${purchase.solicitadoPor.nome}${purchase.solicitadoPor.cargo ? ` (${purchase.solicitadoPor.cargo.nome})` : ''}`;
+                                doc.text(solicitadoText, margin + 5, yPosition);
+                                yPosition += 5;
+                              }
+                              
+                              // Data de compra
+                              if (purchase.dataCompra) {
+                                checkPageBreak(5);
+                                doc.text(
+                                  `   Data de Compra: ${new Date(purchase.dataCompra).toLocaleDateString('pt-BR')}`,
+                                  margin + 5,
+                                  yPosition
+                                );
+                                yPosition += 5;
+                              }
+                              
+                              // Forma de pagamento
+                              if (purchase.formaPagamento) {
+                                checkPageBreak(5);
+                                doc.text(`   Forma de Pagamento: ${purchase.formaPagamento}`, margin + 5, yPosition);
+                                yPosition += 5;
+                              }
+                              
+                              // Previsão de entrega
+                              if (purchase.status === 'COMPRADO_ACAMINHO' && purchase.previsaoEntrega) {
+                                checkPageBreak(5);
+                                doc.setTextColor(0, 150, 0);
+                                doc.text(
+                                  `   Previsão de Entrega: ${new Date(purchase.previsaoEntrega).toLocaleDateString('pt-BR')}`,
+                                  margin + 5,
+                                  yPosition
+                                );
+                                doc.setTextColor(80, 80, 80);
+                                yPosition += 5;
+                              }
+                              
+                              // Data de entrega
+                              if (purchase.dataEntrega) {
+                                checkPageBreak(5);
+                                doc.text(
+                                  `   Data de Entrega: ${new Date(purchase.dataEntrega).toLocaleDateString('pt-BR')}`,
+                                  margin + 5,
+                                  yPosition
+                                );
+                                yPosition += 5;
+                              }
+                              
+                              // Status de entrega
+                              if (purchase.statusEntrega) {
+                                checkPageBreak(5);
+                                doc.text(`   Status de Entrega: ${getStatusLabel(purchase.statusEntrega)}`, margin + 5, yPosition);
+                                yPosition += 5;
+                              }
+                              
+                              // Recebido por
+                              if (purchase.recebidoPor) {
+                                checkPageBreak(5);
+                                doc.text(`   Recebido por: ${purchase.recebidoPor}`, margin + 5, yPosition);
+                                yPosition += 5;
+                              }
+                              
+                              // Endereço de entrega
+                              if (purchase.enderecoEntrega) {
+                                checkPageBreak(5);
+                                const enderecoLines = doc.splitTextToSize(
+                                  `   Endereço de Entrega: ${purchase.enderecoEntrega}`,
+                                  pageWidth - margin * 2 - 10
+                                );
+                                enderecoLines.forEach((line: string) => {
+                                  checkPageBreak(5);
+                                  doc.text(line, margin + 5, yPosition);
+                                  yPosition += 5;
+                                });
+                              }
+                              
+                              // Fornecedor selecionado
+                              if (cotacaoSelecionada?.fornecedorId) {
+                                checkPageBreak(5);
+                                doc.text(
+                                  `   Fornecedor: ${getSupplierName(cotacaoSelecionada.fornecedorId)}`,
+                                  margin + 5,
+                                  yPosition
+                                );
+                                yPosition += 5;
+                              }
+                              
+                              // Cotações
+                              if (cotacoes.length > 0) {
+                                checkPageBreak(8);
+                                doc.setFontSize(9);
+                                doc.setTextColor(60, 60, 60);
+                                doc.setFont('helvetica', 'bold');
+                                doc.text('   Cotações:', margin + 5, yPosition);
+                                yPosition += 6;
+                                doc.setFont('helvetica', 'normal');
+                                
+                                cotacoes.forEach((cotacao, cotIdx) => {
+                                  checkPageBreak(8);
+                                  const cotacaoTotal = cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0);
+                                  const cotacaoTotalComQuantidade = cotacaoTotal * (purchase.quantidade || 0);
+                                  
+                                  let cotacaoText = `     Cotação ${cotIdx + 1}:`;
+                                  if (cotacao.fornecedorId) {
+                                    cotacaoText += ` Fornecedor: ${getSupplierName(cotacao.fornecedorId)}`;
+                                  }
+                                  cotacaoText += ` Valor Unitário: ${cotacao.valorUnitario.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })}`;
+                                  if (cotacao.frete > 0) {
+                                    cotacaoText += ` | Frete: ${cotacao.frete.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })}`;
+                                  }
+                                  if (cotacao.impostos > 0) {
+                                    cotacaoText += ` | Impostos: ${cotacao.impostos.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })}`;
+                                  }
+                                  if (cotacao.desconto && cotacao.desconto > 0) {
+                                    cotacaoText += ` | Desconto: ${cotacao.desconto.toLocaleString('pt-BR', {
+                                      style: 'currency',
+                                      currency: 'BRL',
+                                    })}`;
+                                  }
+                                  cotacaoText += ` | Total/unidade: ${cotacaoTotal.toLocaleString('pt-BR', {
+                                    style: 'currency',
+                                    currency: 'BRL',
+                                  })}`;
+                                  if (cotacao.formaPagamento) {
+                                    cotacaoText += ` | Pagamento: ${cotacao.formaPagamento}`;
+                                  }
+                                  
+                                  const cotacaoLines = doc.splitTextToSize(cotacaoText, pageWidth - margin * 2 - 15);
+                                  cotacaoLines.forEach((line: string) => {
+                                    checkPageBreak(5);
+                                    doc.text(line, margin + 5, yPosition);
+                                    yPosition += 5;
+                                  });
+                                });
+                              }
+                              
+                              // Observações
+                              if (purchase.observacao) {
+                                checkPageBreak(6);
+                                doc.setFontSize(9);
+                                doc.setTextColor(100, 100, 100);
+                                const obsLines = doc.splitTextToSize(
+                                  `   Observações: ${purchase.observacao}`,
+                                  pageWidth - margin * 2 - 10
+                                );
+                                obsLines.forEach((line: string) => {
+                                  checkPageBreak(5);
+                                  doc.text(line, margin + 5, yPosition);
+                                  yPosition += 5;
+                                });
+                              }
+                              
+                              yPosition += 5;
+                              
+                              // Linha separadora
+                              doc.setDrawColor(220, 220, 220);
+                              doc.line(margin + 5, yPosition, pageWidth - margin - 5, yPosition);
+                              yPosition += 5;
                             });
                             
                             yPosition += 5;
@@ -4306,6 +5125,37 @@ export default function Stock() {
                   </div>
                 )}
               </div>
+
+              {/* Informações de Entrega - Exibir quando status for COMPRADO_ACAMINHO */}
+              {purchaseToView.status === 'COMPRADO_ACAMINHO' && (
+                <div className="bg-blue-500/10 p-4 rounded-md border border-blue-500/30">
+                  <h3 className="text-lg font-semibold text-blue-300 mb-3">Status de Entrega</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    {purchaseToView.statusEntrega && (
+                      <div>
+                        <label className="block text-sm font-medium text-white/70 mb-1">Status de Entrega</label>
+                        <span className={`px-2 py-1 rounded text-xs ${getStatusEntregaColor(purchaseToView.statusEntrega)}`}>
+                          {getStatusEntregaLabel(purchaseToView.statusEntrega)}
+                        </span>
+                      </div>
+                    )}
+                    {(purchaseToView as any).previsaoEntrega && (
+                      <div>
+                        <label className="block text-sm font-medium text-white/70 mb-1">Previsão de Entrega</label>
+                        <p className="text-white/90">
+                          {new Date((purchaseToView as any).previsaoEntrega).toLocaleDateString('pt-BR')}
+                        </p>
+                      </div>
+                    )}
+                    {(purchaseToView as any).observacao && (
+                      <div className="col-span-2">
+                        <label className="block text-sm font-medium text-white/70 mb-1">Observação</label>
+                        <p className="text-white/90 whitespace-pre-wrap">{(purchaseToView as any).observacao}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Informações de Entrega - Exibir quando status for ENTREGUE */}
               {purchaseToView.status === 'ENTREGUE' && (
@@ -4524,7 +5374,7 @@ export default function Stock() {
                               >
                                 <span>+</span> Adicionar Fornecedor
                               </button>
-                            </div>
+                        </div>
                             <select
                               value={cotacao.fornecedorId || ''}
                               onChange={(e) => {
@@ -4795,193 +5645,21 @@ export default function Stock() {
       )}
 
       {/* Modal Criar Fornecedor */}
-      {showSupplierModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-neutral border-b border-white/20 px-8 py-6 flex items-center justify-between">
-              <h2 className="text-2xl font-bold">Novo Fornecedor</h2>
-              <button
-                onClick={() => {
-                  setShowSupplierModal(false);
-                  setSupplierModalError(null);
-                  setCurrentCotacaoIndex(null);
-                }}
-                className="text-white/50 hover:text-white transition-colors text-2xl"
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleCreateSupplier} className="p-8 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">
-                  Razão Social *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={supplierForm.razaoSocial}
-                  onChange={(e) => setSupplierForm({ ...supplierForm, razaoSocial: e.target.value })}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                  placeholder="Digite a razão social"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">
-                  Nome Fantasia *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={supplierForm.nomeFantasia}
-                  onChange={(e) => setSupplierForm({ ...supplierForm, nomeFantasia: e.target.value })}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                  placeholder="Digite o nome fantasia"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">CNPJ *</label>
-                <input
-                  type="text"
-                  required
-                  value={supplierForm.cnpj}
-                  onChange={(e) => {
-                    const formatted = formatCNPJ(e.target.value);
-                    setSupplierForm({ ...supplierForm, cnpj: formatted });
-                  }}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                  placeholder="00.000.000/0000-00"
-                  maxLength={18}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Endereço</label>
-                <input
-                  type="text"
-                  value={supplierForm.endereco}
-                  onChange={(e) => setSupplierForm({ ...supplierForm, endereco: e.target.value })}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                  placeholder="Digite o endereço"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Contato</label>
-                <input
-                  type="text"
-                  value={supplierForm.contato}
-                  onChange={(e) => setSupplierForm({ ...supplierForm, contato: e.target.value })}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                  placeholder="Telefone, email ou outro contato"
-                />
-              </div>
-
-              {supplierModalError && (
-                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md text-sm">
-                  {supplierModalError}
-                </div>
-              )}
-
-              <div className="flex justify-end space-x-4 pt-4 border-t border-white/20">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowSupplierModal(false);
-                    setSupplierModalError(null);
-                    setCurrentCotacaoIndex(null);
-                  }}
-                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
-                  disabled={creatingSupplier}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={creatingSupplier}
-                  className="px-6 py-2.5 rounded-md bg-primary hover:bg-primary/80 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {creatingSupplier ? 'Criando...' : 'Criar Fornecedor'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <SupplierModal
+        isOpen={showSupplierModal}
+        onClose={() => {
+          setShowSupplierModal(false);
+          setCurrentCotacaoIndex(null);
+        }}
+        onSupplierCreated={handleSupplierCreated}
+      />
 
       {/* Modal Criar Categoria */}
-      {showCategoryModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-neutral border-b border-white/20 px-8 py-6 flex items-center justify-between">
-              <h2 className="text-2xl font-bold">Nova Categoria</h2>
-              <button
-                onClick={() => {
-                  setShowCategoryModal(false);
-                  setCategoryModalError(null);
-                }}
-                className="text-white/50 hover:text-white transition-colors text-2xl"
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleCreateCategory} className="p-8 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">
-                  Nome da Categoria *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={categoryForm.nome}
-                  onChange={(e) => setCategoryForm({ ...categoryForm, nome: e.target.value })}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                  placeholder="Ex: Impressão 3D, Eletrônica, TI..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Descrição</label>
-                <textarea
-                  value={categoryForm.descricao}
-                  onChange={(e) => setCategoryForm({ ...categoryForm, descricao: e.target.value })}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary resize-none"
-                  placeholder="Descrição opcional da categoria"
-                  rows={3}
-                />
-              </div>
-
-              {categoryModalError && (
-                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md text-sm">
-                  {categoryModalError}
-                </div>
-              )}
-
-              <div className="flex justify-end space-x-4 pt-4 border-t border-white/20">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowCategoryModal(false);
-                    setCategoryModalError(null);
-                  }}
-                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
-                  disabled={creatingCategory}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={creatingCategory}
-                  className="px-6 py-2.5 rounded-md bg-primary hover:bg-primary/80 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {creatingCategory ? 'Criando...' : 'Criar Categoria'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <CategoryModal
+        isOpen={showCategoryModal}
+        onClose={() => setShowCategoryModal(false)}
+        onCategoryCreated={handleCategoryCreated}
+      />
     </div>
   );
 }

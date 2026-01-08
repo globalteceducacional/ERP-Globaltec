@@ -16,6 +16,10 @@ export class UpdatePurchaseStatusDto {
 
   @IsOptional()
   @IsString()
+  previsaoEntrega?: string; // Previsão de entrega no formato ISO string (quando status for COMPRADO_ACAMINHO)
+
+  @IsOptional()
+  @IsString()
   dataEntrega?: string; // Data da entrega no formato ISO string
 
   @IsOptional()

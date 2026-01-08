@@ -15,6 +15,11 @@ export class CreateAlocacaoDto {
   @IsPositive()
   etapaId?: number;
 
+  @IsOptional()
+  @IsInt()
+  @IsPositive()
+  usuarioId?: number;
+
   @IsInt()
   @IsPositive()
   quantidade: number;
