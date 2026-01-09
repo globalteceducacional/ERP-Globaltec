@@ -19,9 +19,9 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 export class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}
 
-  @Get()
-  findAll() {
-    return this.suppliersService.findAll();
+  @Get('cnpj/:cnpj')
+  async fetchCNPJData(@Param('cnpj') cnpj: string) {
+    return this.suppliersService.fetchCNPJData(cnpj);
   }
 
   @Get('all')
@@ -29,9 +29,9 @@ export class SuppliersController {
     return this.suppliersService.findAllIncludingInactive();
   }
 
-  @Get('cnpj/:cnpj')
-  async fetchCNPJData(@Param('cnpj') cnpj: string) {
-    return this.suppliersService.fetchCNPJData(cnpj);
+  @Get()
+  findAll() {
+    return this.suppliersService.findAll();
   }
 
   @Get(':id')

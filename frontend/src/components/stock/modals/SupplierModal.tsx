@@ -48,7 +48,9 @@ export function SupplierModal({ isOpen, onClose, onSupplierCreated }: SupplierMo
     setError(null);
 
     try {
-      const { data } = await api.get(`/suppliers/cnpj/${cleaned}`);
+      const url = `/suppliers/cnpj/${cleaned}`;
+      console.log('Buscando CNPJ na URL:', url);
+      const { data } = await api.get(url);
 
       setForm({
         ...form,
@@ -61,7 +63,22 @@ export function SupplierModal({ isOpen, onClose, onSupplierCreated }: SupplierMo
       toast.success('Dados do CNPJ carregados com sucesso!');
     } catch (err: any) {
       console.error('Erro ao buscar CNPJ:', err);
-      const errorMessage = formatApiError(err);
+      console.error('URL tentada:', err.config?.url);
+      console.error('Status:', err.response?.status);
+      console.error('Resposta:', err.response?.data);
+      
+      let errorMessage = 'Erro ao buscar dados do CNPJ';
+      
+      if (err.response?.status === 404) {
+        errorMessage = 'Rota não encontrada. Verifique se o backend está rodando e se a rota está configurada corretamente.';
+      } else if (err.response?.status === 401) {
+        errorMessage = 'Não autorizado. Faça login novamente.';
+      } else if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      
       setError(errorMessage);
       toast.error(errorMessage);
     } finally {

@@ -110,7 +110,7 @@ export class SuppliersService {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos de timeout
 
-      const response = await fetch(`https://www.receitaws.com.br/v1/${cleaned}`, {
+      const response = await fetch(`https://www.receitaws.com.br/v1/cnpj/${cleaned}`, {
         signal: controller.signal,
       });
 
@@ -128,21 +128,21 @@ export class SuppliersService {
       }
 
       // Formatar endereço
-      const enderecoParts = [];
+      const enderecoParts: string[] = [];
       if (data.logradouro) {
-        enderecoParts.push(data.logradouro);
+        enderecoParts.push(String(data.logradouro));
         if (data.numero) {
           enderecoParts.push(`Nº ${data.numero}`);
         }
       }
       if (data.bairro) {
-        enderecoParts.push(data.bairro);
+        enderecoParts.push(String(data.bairro));
       }
       if (data.municipio) {
-        enderecoParts.push(data.municipio);
+        enderecoParts.push(String(data.municipio));
       }
       if (data.uf) {
-        enderecoParts.push(data.uf);
+        enderecoParts.push(String(data.uf));
       }
       if (data.cep) {
         enderecoParts.push(`CEP: ${data.cep}`);
