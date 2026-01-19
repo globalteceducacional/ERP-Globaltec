@@ -391,17 +391,17 @@ export default function Stock() {
   function getStatusColor(status: string): string {
     switch (status) {
       case 'SOLICITADO':
-        return 'bg-yellow-500/20 text-yellow-300';
+        return 'bg-amber-500/20 text-amber-300 border border-amber-500/40';
       case 'REPROVADO':
-        return 'bg-red-500/20 text-red-300';
+        return 'bg-red-500/20 text-red-300 border border-red-500/40';
       case 'PENDENTE':
-        return 'bg-yellow-500/20 text-yellow-300';
+        return 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40';
       case 'COMPRADO_ACAMINHO':
-        return 'bg-blue-500/20 text-blue-300';
+        return 'bg-blue-500/20 text-blue-300 border border-blue-500/40';
       case 'ENTREGUE':
-        return 'bg-green-500/20 text-green-300';
+        return 'bg-green-500/20 text-green-300 border border-green-500/40';
       default:
-        return 'bg-gray-500/20 text-gray-300';
+        return 'bg-gray-500/20 text-gray-300 border border-gray-500/40';
     }
   }
 
@@ -418,15 +418,15 @@ export default function Stock() {
   function getStatusEntregaColor(status: string): string {
     switch (status) {
       case 'NAO_ENTREGUE':
-        return 'bg-yellow-500/20 text-yellow-300';
+        return 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40';
       case 'PARCIAL':
-        return 'bg-orange-500/20 text-orange-300';
+        return 'bg-orange-500/20 text-orange-300 border border-orange-500/40';
       case 'ENTREGUE':
-        return 'bg-green-500/20 text-green-300';
+        return 'bg-green-500/20 text-green-300 border border-green-500/40';
       case 'CANCELADO':
-        return 'bg-red-500/20 text-red-300';
+        return 'bg-red-500/20 text-red-300 border border-red-500/40';
       default:
-        return 'bg-gray-500/20 text-gray-300';
+        return 'bg-gray-500/20 text-gray-300 border border-gray-500/40';
     }
   }
 

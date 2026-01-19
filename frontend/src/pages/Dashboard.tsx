@@ -226,17 +226,17 @@ export default function Dashboard() {
   function getEtapaStatusColor(status: string) {
     switch (status) {
       case 'PENDENTE':
-        return 'bg-yellow-500/20 text-yellow-300';
+        return 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40';
       case 'EM_ANDAMENTO':
-        return 'bg-blue-500/20 text-blue-300';
+        return 'bg-blue-500/20 text-blue-300 border border-blue-500/40';
       case 'EM_ANALISE':
-        return 'bg-purple-500/20 text-purple-300';
+        return 'bg-purple-500/20 text-purple-300 border border-purple-500/40';
       case 'APROVADA':
-        return 'bg-green-500/20 text-green-300';
+        return 'bg-green-500/20 text-green-300 border border-green-500/40';
       case 'REPROVADA':
-        return 'bg-red-500/20 text-red-300';
+        return 'bg-red-500/20 text-red-300 border border-red-500/40';
       default:
-        return 'bg-white/10 text-white/70';
+        return 'bg-white/10 text-white/70 border border-white/20';
     }
   }
 
@@ -316,17 +316,38 @@ export default function Dashboard() {
 
       {/* Cards de Métricas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="rounded-xl border border-white/10 bg-neutral/80 p-6">
-          <h3 className="text-sm text-white/60">Projetos Ativos</h3>
-          <p className="text-3xl font-bold">{ativos}</p>
+        <div className="rounded-xl border border-blue-500/30 bg-gradient-to-br from-blue-500/10 to-blue-600/5 p-6 hover:border-blue-500/50 transition-all">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm text-blue-300/80 font-medium">Projetos Ativos</h3>
+            <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center">
+              <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+          <p className="text-4xl font-bold text-blue-100">{ativos}</p>
         </div>
-        <div className="rounded-xl border border-white/10 bg-neutral/80 p-6">
-          <h3 className="text-sm text-white/60">Projetos Finalizados</h3>
-          <p className="text-3xl font-bold">{finalizados}</p>
+        <div className="rounded-xl border border-green-500/30 bg-gradient-to-br from-green-500/10 to-green-600/5 p-6 hover:border-green-500/50 transition-all">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm text-green-300/80 font-medium">Projetos Finalizados</h3>
+            <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center">
+              <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+          <p className="text-4xl font-bold text-green-100">{finalizados}</p>
         </div>
-        <div className="rounded-xl border border-white/10 bg-neutral/80 p-6">
-          <h3 className="text-sm text-white/60">Valor Total (R$)</h3>
-          <p className="text-3xl font-bold">
+        <div className="rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-6 hover:border-amber-500/50 transition-all">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm text-amber-300/80 font-medium">Valor Total</h3>
+            <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
+              <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-amber-100">
             {projects.reduce((acc, project) => acc + (project.valorTotal ?? 0), 0).toLocaleString('pt-BR', {
               style: 'currency',
               currency: 'BRL',
@@ -348,7 +369,7 @@ export default function Dashboard() {
             return (
               <div
                 key={project.id}
-                className="bg-neutral/80 border border-white/10 rounded-xl overflow-hidden hover:border-primary/50 transition-all duration-200"
+                className="bg-gradient-to-br from-neutral/90 to-neutral/70 border border-white/10 rounded-xl overflow-hidden hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300"
               >
                 {/* Cabeçalho do Card - Oculto quando expandido */}
                 {!isExpanded && (
@@ -390,9 +411,15 @@ export default function Dashboard() {
                     </div>
 
                     {project.progress !== undefined && (
-                      <div className="w-full bg-white/10 rounded-full h-2 mb-3">
+                      <div className="w-full bg-white/10 rounded-full h-2.5 mb-3 overflow-hidden">
                         <div
-                          className="bg-primary h-2 rounded-full transition-all"
+                          className={`h-2.5 rounded-full transition-all duration-500 ${
+                            project.progress >= 100 
+                              ? 'bg-gradient-to-r from-green-500 to-emerald-400' 
+                              : project.progress >= 50 
+                                ? 'bg-gradient-to-r from-blue-500 to-cyan-400'
+                                : 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                          }`}
                           style={{ width: `${project.progress}%` }}
                         />
               </div>
@@ -480,19 +507,20 @@ export default function Dashboard() {
                           </svg>
                           Equipe
                         </h5>
-                        <div className="space-y-2">
+                        <div className="flex flex-wrap gap-2">
                           {project.supervisor && (
-                            <div className="flex items-center gap-2 text-sm">
+                            <div className="flex items-center gap-2 text-sm bg-primary/10 border border-primary/30 rounded-full px-3 py-1">
                               <div className="w-2 h-2 rounded-full bg-primary"></div>
-                              <span className="text-white/80">
-                                <strong>Supervisor:</strong> {project.supervisor.nome}
+                              <span className="text-primary/90 font-medium">
+                                {project.supervisor.nome}
                               </span>
+                              <span className="text-xs text-primary/60">(Supervisor)</span>
                             </div>
                           )}
                           {responsaveis.map((resp, idx) => (
-                            <div key={idx} className="flex items-center gap-2 text-sm">
+                            <div key={idx} className="flex items-center gap-2 text-sm bg-blue-500/10 border border-blue-500/30 rounded-full px-3 py-1">
                               <div className="w-2 h-2 rounded-full bg-blue-400"></div>
-                              <span className="text-white/80">
+                              <span className="text-blue-300">
                                 {resp.usuario.nome}
                               </span>
                             </div>
@@ -513,17 +541,26 @@ export default function Dashboard() {
                         Tarefas ({etapas.length})
                       </h5>
                       {etapas.length > 0 ? (
-                        <div className="space-y-2 max-h-64 overflow-y-auto">
-                          {etapas.map((etapa) => (
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                          {etapas.map((etapa) => {
+                            // Cor de destaque lateral baseada no status
+                            const borderLeftColor = 
+                              etapa.status === 'APROVADA' ? 'border-l-green-500' :
+                              etapa.status === 'EM_ANDAMENTO' ? 'border-l-blue-500' :
+                              etapa.status === 'EM_ANALISE' ? 'border-l-purple-500' :
+                              etapa.status === 'REPROVADA' ? 'border-l-red-500' :
+                              'border-l-yellow-500';
+                            
+                            return (
                             <div
                               key={etapa.id}
-                              className="bg-white/5 border border-white/10 rounded-lg p-3 hover:bg-white/10 transition-colors"
+                                className={`bg-white/5 border border-white/10 border-l-4 ${borderLeftColor} rounded-lg p-3 hover:bg-white/10 transition-all duration-200`}
                             >
                               <div className="flex items-start justify-between gap-2 mb-2">
                                 <h6 className="font-medium text-sm text-white/90 flex-1">
                                   {etapa.nome}
                                 </h6>
-                                <span className={`px-2 py-0.5 rounded text-xs ${getEtapaStatusColor(etapa.status)}`}>
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${getEtapaStatusColor(etapa.status)}`}>
                                   {getEtapaStatusLabel(etapa.status)}
                                 </span>
                               </div>
@@ -536,7 +573,7 @@ export default function Dashboard() {
 
                               <div className="flex items-center gap-3 text-xs text-white/50">
                                 {etapa.executor && (
-                                  <span className="flex items-center gap-1">
+                                  <span className="flex items-center gap-1 bg-white/5 px-2 py-0.5 rounded">
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                                     </svg>
@@ -544,7 +581,7 @@ export default function Dashboard() {
                                   </span>
                                 )}
                                 {etapa.integrantes && etapa.integrantes.length > 0 && (
-                                  <span className="flex items-center gap-1">
+                                  <span className="flex items-center gap-1 bg-white/5 px-2 py-0.5 rounded">
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                                     </svg>
@@ -553,7 +590,8 @@ export default function Dashboard() {
                                 )}
                               </div>
             </div>
-          ))}
+                            );
+          })}
                         </div>
                       ) : (
                         <p className="text-xs text-white/50">Nenhuma tarefa cadastrada</p>
@@ -562,22 +600,20 @@ export default function Dashboard() {
 
                     {/* Informações Adicionais */}
                     <div className="pt-3 border-t border-white/10">
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div>
-                          <span className="text-white/60">Valor Total:</span>
-                          <p className="text-white/90 font-semibold">
+                      <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
+                          <span className="text-amber-300/80 block mb-0.5">Valor Total</span>
+                          <p className="text-amber-100 font-bold text-base">
                             {project.valorTotal.toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
                             })}
                           </p>
                         </div>
-                        {project._count && (
-                          <div>
-                            <span className="text-white/60">Etapas:</span>
-                            <p className="text-white/90 font-semibold">{project._count.etapas || etapas.length}</p>
-                          </div>
-                        )}
+                        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-2">
+                          <span className="text-blue-300/80 block mb-0.5">Total de Etapas</span>
+                          <p className="text-blue-100 font-bold text-base">{project._count?.etapas || etapas.length}</p>
+                        </div>
                       </div>
                     </div>
                   </div>

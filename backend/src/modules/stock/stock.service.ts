@@ -252,14 +252,6 @@ export class StockService {
     // Salvar imagemUrl se existir e não for vazia
     if (data.imagemUrl !== undefined && data.imagemUrl !== null && typeof data.imagemUrl === 'string' && data.imagemUrl.trim().length > 0) {
       createData.imagemUrl = data.imagemUrl;
-      console.log('[createPurchase] imagemUrl salva:', data.imagemUrl.substring(0, 50) + '...', `(${data.imagemUrl.length} chars)`);
-    } else {
-      console.log('[createPurchase] imagemUrl não incluída:', { 
-        undefined: data.imagemUrl === undefined, 
-        null: data.imagemUrl === null, 
-        type: typeof data.imagemUrl,
-        length: typeof data.imagemUrl === 'string' ? data.imagemUrl.length : 'N/A'
-      });
     }
     if (data.nfUrl !== undefined && data.nfUrl !== null && data.nfUrl.trim().length > 0) {
       createData.nfUrl = data.nfUrl;
@@ -280,22 +272,9 @@ export class StockService {
       createData.observacao = data.observacao.trim();
     }
 
-    console.log('[createPurchase] createData antes de salvar:', {
-      ...createData,
-      imagemUrl: createData.imagemUrl ? `${createData.imagemUrl.substring(0, 50)}... (${createData.imagemUrl.length} chars)` : 'não incluído'
-    });
-
-    const created = await this.prisma.compra.create({
+    return this.prisma.compra.create({
       data: createData,
     });
-
-    console.log('[createPurchase] Compra criada:', {
-      id: created.id,
-      item: created.item,
-      imagemUrl: created.imagemUrl ? `${created.imagemUrl.substring(0, 50)}... (${created.imagemUrl.length} chars)` : 'null'
-    });
-
-    return created;
   }
 
   async updatePurchaseStatus(id: number, data: UpdatePurchaseStatusDto) {
@@ -459,15 +438,6 @@ export class StockService {
     imagemUrl?: string | null;
     cotacoesJson?: any;
   }) {
-    console.log('[appendToStock] Iniciando transferência para estoque:', {
-      item: compra.item,
-      projetoId: compra.projetoId,
-      etapaId: compra.etapaId,
-      imagemUrl: compra.imagemUrl ? `${compra.imagemUrl.substring(0, 50)}... (${compra.imagemUrl.length} chars)` : 'null/undefined',
-      imagemUrlType: typeof compra.imagemUrl,
-      imagemUrlLength: compra.imagemUrl ? compra.imagemUrl.length : 0
-    });
-
     const existing = await this.prisma.estoque.findFirst({
       where: { 
         item: compra.item, 
@@ -480,37 +450,21 @@ export class StockService {
       const imagemUrlFinal = compra.imagemUrl && compra.imagemUrl.trim().length > 0 
         ? compra.imagemUrl 
         : existing.imagemUrl;
-      
-      console.log('[appendToStock] Item existente encontrado. Atualizando:', {
-        existingId: existing.id,
-        imagemUrlExistente: existing.imagemUrl ? `${existing.imagemUrl.substring(0, 50)}... (${existing.imagemUrl.length} chars)` : 'null',
-        imagemUrlCompra: compra.imagemUrl ? `${compra.imagemUrl.substring(0, 50)}... (${compra.imagemUrl.length} chars)` : 'null',
-        imagemUrlFinal: imagemUrlFinal ? `${imagemUrlFinal.substring(0, 50)}... (${imagemUrlFinal.length} chars)` : 'null'
-      });
 
       await this.prisma.estoque.update({
         where: { id: existing.id },
         data: {
           quantidade: existing.quantidade + compra.quantidade,
           valorUnitario: compra.valorUnitario ?? existing.valorUnitario,
-          // Priorizar imagem da compra se existir, senão manter a existente
           imagemUrl: imagemUrlFinal,
-          // Priorizar descrição da compra se existir, senão manter a existente
           descricao: compra.descricao && compra.descricao.trim().length > 0 
             ? compra.descricao 
             : existing.descricao,
-          // Priorizar cotações da compra se existir, senão manter as existentes
           cotacoesJson: compra.cotacoesJson || existing.cotacoesJson,
         },
       });
-
-      console.log('[appendToStock] Item atualizado com sucesso');
     } else {
       const imagemUrlFinal = compra.imagemUrl && compra.imagemUrl.trim().length > 0 ? compra.imagemUrl : null;
-      
-      console.log('[appendToStock] Criando novo item no estoque:', {
-        imagemUrlFinal: imagemUrlFinal ? `${imagemUrlFinal.substring(0, 50)}... (${imagemUrlFinal.length} chars)` : 'null'
-      });
 
       await this.prisma.estoque.create({
         data: {
@@ -525,8 +479,6 @@ export class StockService {
           etapaId: compra.etapaId || null,
         },
       });
-
-      console.log('[appendToStock] Novo item criado com sucesso');
     }
   }
 
@@ -690,8 +642,6 @@ export class StockService {
     motivoRejeicao: string,
   ): Promise<number | null> {
     try {
-      console.log(`[criarRequerimentoRecusaCompra] Iniciando criação para destinatarioId=${destinatarioId}`);
-      
       // Buscar um usuário DIRETOR, GM, COTADOR ou PAGADOR para ser o remetente
       // Priorizar um usuário diferente do destinatário
       const cargosSistema = await this.prisma.cargo.findMany({
@@ -709,7 +659,7 @@ export class StockService {
           where: {
             cargoId: cargo.id,
             ativo: true,
-            id: { not: destinatarioId }, // Diferente do destinatário
+            id: { not: destinatarioId },
           },
         });
         if (usuarioSistema) {
@@ -718,7 +668,7 @@ export class StockService {
         }
       }
 
-      // Se não encontrou usuário diferente, usar o primeiro disponível (mesmo que seja o mesmo)
+      // Se não encontrou usuário diferente, usar o primeiro disponível
       if (!remetenteSistemaId) {
         for (const cargo of cargosSistema) {
           const usuarioSistema = await this.prisma.usuario.findFirst({
@@ -746,27 +696,22 @@ export class StockService {
       }
 
       if (!remetenteSistemaId) {
-        console.warn('[criarRequerimentoRecusaCompra] Não foi possível encontrar um remetente');
         return null;
       }
-
-      console.log(`[criarRequerimentoRecusaCompra] remetenteSistemaId=${remetenteSistemaId}, destinatarioId=${destinatarioId}`);
 
       // Criar o requerimento
       const requerimento = await this.prisma.requerimento.create({
         data: {
-          usuarioId: remetenteSistemaId, // Remetente: sistema
-          destinatarioId: destinatarioId, // Destinatário: solicitante da compra
+          usuarioId: remetenteSistemaId,
+          destinatarioId: destinatarioId,
           tipo: RequerimentoTipo.INFORMACAO,
           texto: `Sua solicitação de compra "${itemNome}" foi REPROVADA.\n\nMotivo: ${motivoRejeicao}`,
           etapaId: null,
         },
       });
 
-      console.log(`[criarRequerimentoRecusaCompra] Requerimento criado com sucesso: ID=${requerimento.id}, remetente=${remetenteSistemaId}, destinatario=${destinatarioId}`);
       return requerimento.id;
-    } catch (error) {
-      console.error('[criarRequerimentoRecusaCompra] Erro ao criar requerimento:', error);
+    } catch {
       return null;
     }
   }
@@ -780,8 +725,6 @@ export class StockService {
     itemNome: string,
   ): Promise<number | null> {
     try {
-      console.log(`[criarRequerimentoAprovacaoCompra] Iniciando criação para destinatarioId=${destinatarioId}`);
-      
       // Buscar um usuário DIRETOR, GM, COTADOR ou PAGADOR para ser o remetente
       // Priorizar um usuário diferente do destinatário
       const cargosSistema = await this.prisma.cargo.findMany({
@@ -799,7 +742,7 @@ export class StockService {
           where: {
             cargoId: cargo.id,
             ativo: true,
-            id: { not: destinatarioId }, // Diferente do destinatário
+            id: { not: destinatarioId },
           },
         });
         if (usuarioSistema) {
@@ -808,7 +751,7 @@ export class StockService {
         }
       }
 
-      // Se não encontrou usuário diferente, usar o primeiro disponível (mesmo que seja o mesmo)
+      // Se não encontrou usuário diferente, usar o primeiro disponível
       if (!remetenteSistemaId) {
         for (const cargo of cargosSistema) {
           const usuarioSistema = await this.prisma.usuario.findFirst({
@@ -836,27 +779,22 @@ export class StockService {
       }
 
       if (!remetenteSistemaId) {
-        console.warn('[criarRequerimentoAprovacaoCompra] Não foi possível encontrar um remetente');
         return null;
       }
-
-      console.log(`[criarRequerimentoAprovacaoCompra] remetenteSistemaId=${remetenteSistemaId}, destinatarioId=${destinatarioId}`);
 
       // Criar o requerimento
       const requerimento = await this.prisma.requerimento.create({
         data: {
-          usuarioId: remetenteSistemaId, // Remetente: sistema
-          destinatarioId: destinatarioId, // Destinatário: solicitante da compra
+          usuarioId: remetenteSistemaId,
+          destinatarioId: destinatarioId,
           tipo: RequerimentoTipo.INFORMACAO,
           texto: `Sua solicitação de compra "${itemNome}" foi APROVADA e está aguardando pagamento.`,
           etapaId: null,
         },
       });
 
-      console.log(`[criarRequerimentoAprovacaoCompra] Requerimento criado com sucesso: ID=${requerimento.id}, remetente=${remetenteSistemaId}, destinatario=${destinatarioId}`);
       return requerimento.id;
-    } catch (error) {
-      console.error('[criarRequerimentoAprovacaoCompra] Erro ao criar requerimento:', error);
+    } catch {
       return null;
     }
   }

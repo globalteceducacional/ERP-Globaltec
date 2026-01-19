@@ -316,7 +316,11 @@ export default function Cargos() {
                 <td className="px-4 py-3 text-white/70">{cargo.descricao || '-'}</td>
                 <td className="px-4 py-3">{cargo._count?.usuarios || 0}</td>
                 <td className="px-4 py-3">
-                  <span className={cargo.ativo ? 'text-success' : 'text-warning'}>
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${
+                    cargo.ativo 
+                      ? 'bg-green-500/20 text-green-300 border border-green-500/40' 
+                      : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+                  }`}>
                     {cargo.ativo ? 'Ativo' : 'Inativo'}
                   </span>
                 </td>

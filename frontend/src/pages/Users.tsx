@@ -325,7 +325,11 @@ export default function Users() {
                   {userRow?.cargo?.nome || 'Sem cargo'}
                 </td>
                 <td className="px-4 py-3">
-                  <span className={userRow.ativo ? 'text-success' : 'text-warning'}>
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${
+                    userRow.ativo 
+                      ? 'bg-green-500/20 text-green-300 border border-green-500/40' 
+                      : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+                  }`}>
                     {userRow.ativo ? 'Ativo' : 'Pendente'}
                   </span>
                 </td>

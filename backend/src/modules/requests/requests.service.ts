@@ -130,22 +130,13 @@ export class RequestsService {
   }
 
   async listReceived(usuarioId: number) {
-    console.log(`[listReceived] Buscando requerimentos para destinatarioId=${usuarioId}`);
-    
-    const requerimentos = await this.prisma.requerimento.findMany({
+    return this.prisma.requerimento.findMany({
       where: { 
         destinatarioId: usuarioId,
       },
       orderBy: { dataCriacao: 'desc' },
       include: { usuario: true, etapa: true },
     });
-    
-    console.log(`[listReceived] Encontrados ${requerimentos.length} requerimentos para usuarioId=${usuarioId}`);
-    if (requerimentos.length > 0) {
-      console.log(`[listReceived] Primeiro requerimento: ID=${requerimentos[0].id}, texto="${requerimentos[0].texto?.substring(0, 50)}..."`);
-    }
-    
-    return requerimentos;
   }
 
   async findOne(id: number, usuarioId: number) {

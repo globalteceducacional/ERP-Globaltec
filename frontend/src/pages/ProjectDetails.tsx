@@ -5,6 +5,17 @@ import { useAuthStore } from '../store/auth';
 import { Cargo, ChecklistItemEntrega } from '../types';
 import { buttonStyles } from '../utils/buttonStyles';
 import { toast, formatApiError } from '../utils/toast';
+import {
+  getStatusColor,
+  getStatusLabel,
+  getEntregaStatusColor,
+  getEntregaStatusLabel,
+  getCheckboxStyle,
+  getChecklistItemStyle,
+  getChecklistTextStyle,
+  getChecklistItemStatusColor,
+  getChecklistItemStatusLabel,
+} from '../utils/statusStyles';
 
 interface Usuario {
   id: number;
@@ -689,70 +700,6 @@ export default function ProjectDetails() {
     }
   }
 
-  function getStatusColor(status: string) {
-    switch (status) {
-      case 'EM_ANDAMENTO':
-        return 'bg-blue-500/20 text-blue-300';
-      case 'FINALIZADO':
-        return 'bg-green-500/20 text-green-300';
-      case 'EM_ANALISE':
-        return 'bg-purple-500/20 text-purple-300';
-      case 'APROVADA':
-      case 'ENTREGUE':
-        return 'bg-green-500/20 text-green-300';
-      case 'PENDENTE':
-        return 'bg-yellow-500/20 text-yellow-300';
-      case 'COMPRADO_ACAMINHO':
-        return 'bg-blue-500/20 text-blue-300';
-      case 'REPROVADA':
-        return 'bg-red-500/20 text-red-300';
-      default:
-        return 'bg-gray-500/20 text-gray-300';
-    }
-  }
-
-  function getStatusLabel(status: string) {
-    const labels: Record<string, string> = {
-      EM_ANDAMENTO: 'Em Andamento',
-      FINALIZADO: 'Finalizado',
-      PENDENTE: 'Pendente',
-      EM_ANALISE: 'Em Análise',
-      APROVADA: 'Completo', // Quando todas as checkboxes estão marcadas
-      REPROVADA: 'Recusada',
-      SOLICITADO: 'Solicitado',
-      REPROVADO: 'Reprovado',
-      COMPRADO_ACAMINHO: 'Comprado/A Caminho',
-      ENTREGUE: 'Entregue',
-    };
-    return labels[status] || status;
-  }
-
-  function getEntregaStatusColor(status: string) {
-    switch (status) {
-      case 'EM_ANALISE':
-        return 'bg-purple-500/20 text-purple-300 border border-purple-500/40';
-      case 'APROVADA':
-        return 'bg-green-500/20 text-green-300 border border-green-500/40';
-      case 'RECUSADA':
-        return 'bg-red-500/20 text-red-300 border border-red-500/40';
-      default:
-        return 'bg-white/10 text-white/70 border border-white/20';
-    }
-  }
-
-  function getEntregaStatusLabel(status: string) {
-    switch (status) {
-      case 'EM_ANALISE':
-        return 'Em Análise';
-      case 'APROVADA':
-        return 'Aprovada';
-      case 'RECUSADA':
-        return 'Recusada';
-      default:
-        return status;
-    }
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -1198,36 +1145,34 @@ export default function ProjectDetails() {
                           return (
                             <div
                               key={`${etapa.id}-checklist-${index}`}
-                              className={`flex items-center gap-2 text-sm ${isExecutor ? 'hover:bg-white/5 p-1 rounded' : ''}`}
+                              className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
+                                isExecutor ? 'hover:bg-white/10 hover:scale-[1.01]' : ''
+                              } ${getChecklistItemStyle(item.concluido || false)}`}
                             >
-                              <input
-                                type="checkbox"
-                                checked={item.concluido || false}
-                                onChange={(e) => handleChecklistUpdate(etapa.id, index, e.target.checked)}
-                                disabled={updatingChecklist === etapa.id}
-                                className="w-4 h-4 rounded border-white/30 bg-white/10 text-primary focus:ring-primary cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                              />
-                              <span className={item.concluido ? 'text-white/50 line-through' : 'text-white/80'}>
+                              <div
+                                className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
+                                  updatingChecklist === etapa.id ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                                } ${getCheckboxStyle(item.concluido || false)}`}
+                                onClick={() => {
+                                  if (updatingChecklist !== etapa.id) {
+                                    handleChecklistUpdate(etapa.id, index, !item.concluido);
+                                  }
+                                }}
+                                title="Status do item"
+                              >
+                                {item.concluido && (
+                                  <svg className="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                  </svg>
+                                )}
+                              </div>
+                              <span className={`flex-1 text-sm ${getChecklistTextStyle(item.concluido || false)}`}>
                                 {item.texto}
                               </span>
                               <span
-                                className={`px-2 py-0.5 rounded text-[10px] border ml-1 ${
-                                  statusItem === 'EM_ANALISE'
-                                    ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
-                                    : statusItem === 'APROVADO'
-                                    ? 'bg-green-500/20 text-green-300 border-green-500/40'
-                                    : statusItem === 'REPROVADO'
-                                    ? 'bg-danger/20 text-danger border-danger/40'
-                                    : 'bg-white/10 text-white/70 border-white/20'
-                                }`}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${getChecklistItemStatusColor(statusItem)}`}
                               >
-                                {statusItem === 'PENDENTE'
-                                  ? 'Pendente'
-                                  : statusItem === 'EM_ANALISE'
-                                  ? 'Em análise'
-                                  : statusItem === 'APROVADO'
-                                  ? 'Aprovado'
-                                  : 'Reprovado'}
+                                {getChecklistItemStatusLabel(statusItem)}
                               </span>
                               {entregaItem && (
                                 <button
@@ -1735,23 +1680,23 @@ export default function ProjectDetails() {
                 <div>
                   <label className="block text-xs text-white/60 mb-1">Status</label>
                   <span
-                    className={`inline-block px-2 py-1 rounded text-xs ${
+                    className={`inline-block px-3 py-1.5 rounded-md text-xs font-semibold ${
                       selectedViewEntrega.entrega.status === 'EM_ANALISE'
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                        ? 'bg-violet-500/30 text-violet-200 border border-violet-400/50'
                         : selectedViewEntrega.entrega.status === 'APROVADO'
-                        ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                        ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/50'
                         : selectedViewEntrega.entrega.status === 'REPROVADO'
-                        ? 'bg-danger/20 text-danger border border-danger/40'
-                        : 'bg-white/10 text-white/70 border border-white/20'
+                        ? 'bg-rose-500/30 text-rose-200 border border-rose-400/50'
+                        : 'bg-amber-500/20 text-amber-200 border border-amber-400/40'
                     }`}
                   >
                     {selectedViewEntrega.entrega.status === 'PENDENTE'
-                      ? 'Pendente'
+                      ? '⏳ Pendente'
                       : selectedViewEntrega.entrega.status === 'EM_ANALISE'
-                      ? 'Em análise'
+                      ? '🔍 Em análise'
                       : selectedViewEntrega.entrega.status === 'APROVADO'
-                      ? 'Aprovado'
-                      : 'Reprovado'}
+                      ? '✓ Aprovado'
+                      : '✗ Reprovado'}
                   </span>
                 </div>
                 {selectedViewEntrega.entrega.avaliadoPor && (

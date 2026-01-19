@@ -245,8 +245,8 @@ export default function Projects() {
   const responsaveisSelectRef = useRef<HTMLSelectElement>(null);
 
   const statusLabels: Record<string, { label: string; className: string }> = {
-    EM_ANDAMENTO: { label: 'Em Andamento', className: 'bg-blue-500/20 text-blue-300' },
-    FINALIZADO: { label: 'Finalizado', className: 'bg-green-500/20 text-green-300' },
+    EM_ANDAMENTO: { label: 'Em Andamento', className: 'bg-blue-500/20 text-blue-300 border border-blue-500/40' },
+    FINALIZADO: { label: 'Finalizado', className: 'bg-green-500/20 text-green-300 border border-green-500/40' },
   };
 
   if (loading) {
@@ -321,13 +321,21 @@ export default function Projects() {
                       onClick={() => navigate(`/projects/${project.id}`)}
                     >
                       <div className="space-y-1">
-                        <div className="w-full bg-white/10 rounded-full h-2">
+                        <div className="w-full bg-white/10 rounded-full h-2.5 overflow-hidden">
                           <div
-                            className="bg-primary h-2 rounded-full"
+                            className={`h-2.5 rounded-full transition-all duration-300 ${
+                              progressValue >= 100 
+                                ? 'bg-gradient-to-r from-green-500 to-emerald-400' 
+                                : progressValue >= 50 
+                                  ? 'bg-gradient-to-r from-blue-500 to-cyan-400'
+                                  : 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                            }`}
                             style={{ width: `${progressValue}%` }}
                           />
                         </div>
-                        <span className="text-xs text-white/60">{progressValue}%</span>
+                        <span className={`text-xs font-medium ${
+                          progressValue >= 100 ? 'text-green-400' : progressValue >= 50 ? 'text-blue-400' : 'text-amber-400'
+                        }`}>{progressValue}%</span>
                       </div>
                     </td>
                     <td 

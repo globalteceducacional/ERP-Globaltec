@@ -5,6 +5,17 @@ import { useAuthStore } from '../store/auth';
 import { buttonStyles } from '../utils/buttonStyles';
 import { ChecklistItemEntrega } from '../types';
 import { toast, formatApiError } from '../utils/toast';
+import {
+  getStatusColor,
+  getStatusLabel,
+  getEntregaStatusColor,
+  getEntregaStatusLabel,
+  getCheckboxStyle,
+  getChecklistItemStyle,
+  getChecklistTextStyle,
+  getChecklistItemStatusColor,
+  getChecklistItemStatusLabel,
+} from '../utils/statusStyles';
 
 interface Projeto {
   id: number;
@@ -374,66 +385,6 @@ export default function MyTasks() {
   }
 
 
-  function getStatusColor(status: string) {
-    switch (status) {
-      case 'PENDENTE':
-        return 'bg-yellow-500/20 text-yellow-300 border-yellow-500/50';
-      case 'EM_ANDAMENTO':
-        return 'bg-blue-500/20 text-blue-300 border-blue-500/50';
-      case 'EM_ANALISE':
-        return 'bg-purple-500/20 text-purple-300 border-purple-500/50';
-      case 'APROVADA':
-        return 'bg-green-500/20 text-green-300 border-green-500/50';
-      case 'REPROVADA':
-        return 'bg-danger/20 text-danger border-danger/50';
-      default:
-        return 'bg-white/10 text-white/70 border-white/30';
-    }
-  }
-
-  function getStatusLabel(status: string) {
-    switch (status) {
-      case 'PENDENTE':
-        return 'Pendente';
-      case 'EM_ANDAMENTO':
-        return 'Em Andamento';
-      case 'EM_ANALISE':
-        return 'Em Análise';
-      case 'APROVADA':
-        return 'Completo'; // Quando todas as checkboxes estão marcadas
-      case 'REPROVADA':
-        return 'Recusada';
-      default:
-        return status;
-    }
-  }
-
-  function getEntregaStatusColor(status: string) {
-    switch (status) {
-      case 'EM_ANALISE':
-        return 'bg-purple-500/20 text-purple-300 border border-purple-500/40';
-      case 'APROVADA':
-        return 'bg-green-500/20 text-green-300 border border-green-500/40';
-      case 'RECUSADA':
-        return 'bg-danger/20 text-danger border border-danger/40';
-      default:
-        return 'bg-white/10 text-white/70 border border-white/20';
-    }
-  }
-
-  function getEntregaStatusLabel(status: string) {
-    switch (status) {
-      case 'EM_ANALISE':
-        return 'Em Análise';
-      case 'APROVADA':
-        return 'Completo'; // Quando todas as checkboxes estão marcadas
-      case 'RECUSADA':
-        return 'Recusada';
-      default:
-        return status;
-    }
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -517,25 +468,25 @@ export default function MyTasks() {
         <div className="bg-neutral/80 border border-white/10 rounded-xl p-6">
           <h2 className="text-xl font-semibold mb-4">Resumo</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="bg-white/5 rounded-lg p-4 border border-white/10">
-              <p className="text-white/60 text-sm mb-1">Total de Projetos</p>
-              <p className="text-2xl font-bold text-white">{projetosComEtapas.length}</p>
+            <div className="bg-gradient-to-br from-slate-600/30 to-slate-700/20 rounded-xl p-4 border border-slate-500/30 shadow-lg">
+              <p className="text-slate-300 text-sm mb-1 font-medium">Total de Projetos</p>
+              <p className="text-3xl font-bold text-white">{projetosComEtapas.length}</p>
             </div>
-            <div className="bg-yellow-500/10 rounded-lg p-4 border border-yellow-500/20">
-              <p className="text-yellow-300/80 text-sm mb-1">Etapas Pendentes</p>
-              <p className="text-2xl font-bold text-yellow-300">
+            <div className="bg-gradient-to-br from-amber-500/25 to-amber-600/15 rounded-xl p-4 border border-amber-400/40 shadow-lg">
+              <p className="text-amber-200 text-sm mb-1 font-medium">Etapas Pendentes</p>
+              <p className="text-3xl font-bold text-amber-300">
                 {etapasPendentes.filter(e => e.status === 'PENDENTE').length}
               </p>
             </div>
-            <div className="bg-blue-500/10 rounded-lg p-4 border border-blue-500/20">
-              <p className="text-blue-300/80 text-sm mb-1">Em Andamento</p>
-              <p className="text-2xl font-bold text-blue-300">
+            <div className="bg-gradient-to-br from-sky-500/25 to-sky-600/15 rounded-xl p-4 border border-sky-400/40 shadow-lg">
+              <p className="text-sky-200 text-sm mb-1 font-medium">Em Andamento</p>
+              <p className="text-3xl font-bold text-sky-300">
                 {etapasPendentes.filter(e => e.status === 'EM_ANDAMENTO').length}
               </p>
             </div>
-            <div className="bg-purple-500/10 rounded-lg p-4 border border-purple-500/20">
-              <p className="text-purple-300/80 text-sm mb-1">Em Análise</p>
-              <p className="text-2xl font-bold text-purple-300">
+            <div className="bg-gradient-to-br from-violet-500/25 to-violet-600/15 rounded-xl p-4 border border-violet-400/40 shadow-lg">
+              <p className="text-violet-200 text-sm mb-1 font-medium">Em Análise</p>
+              <p className="text-3xl font-bold text-violet-300">
                 {etapasPendentes.filter(e => e.status === 'EM_ANALISE').length}
               </p>
             </div>
@@ -595,18 +546,18 @@ export default function MyTasks() {
                             <span className="text-white/60">
                               {stats.total} etapa{stats.total !== 1 ? 's' : ''} pendente{stats.total !== 1 ? 's' : ''}
                             </span>
-                            {stats.pendentes > 0 && (
-                              <span className="px-2 py-0.5 rounded bg-yellow-500/20 text-yellow-300 border border-yellow-500/30">
+                                            {stats.pendentes > 0 && (
+                              <span className="px-2 py-0.5 rounded-md bg-amber-500/25 text-amber-200 border border-amber-400/40 font-medium">
                                 {stats.pendentes} pendente{stats.pendentes !== 1 ? 's' : ''}
                               </span>
                             )}
                             {stats.emAndamento > 0 && (
-                              <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                              <span className="px-2 py-0.5 rounded-md bg-sky-500/25 text-sky-200 border border-sky-400/40 font-medium">
                                 {stats.emAndamento} em andamento
                               </span>
                             )}
                             {stats.emAnalise > 0 && (
-                              <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                              <span className="px-2 py-0.5 rounded-md bg-violet-500/25 text-violet-200 border border-violet-400/40 font-medium">
                                 {stats.emAnalise} em análise
                               </span>
                             )}
@@ -680,7 +631,7 @@ export default function MyTasks() {
                       temItensMarcados;
 
                     return (
-                      <div key={etapa.id} className="bg-neutral/60 border border-white/10 rounded-lg p-4">
+                      <div key={etapa.id} className="bg-gradient-to-br from-neutral/80 to-neutral/60 border border-white/15 rounded-xl p-5 shadow-md hover:shadow-lg transition-shadow">
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="flex-1">
                             <h4 className="font-semibold text-white/90">{etapa.nome}</h4>
@@ -694,14 +645,6 @@ export default function MyTasks() {
                             </span>
                             {podeInteragir && etapa.status === 'EM_ANALISE' && (
                               <span className="text-xs text-white/60">Aguardando revisão</span>
-                            )}
-                            {podeInteragir && 
-                             ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) && 
-                             !temItensMarcados && 
-                             totalItens > 0 && (
-                              <span className="text-xs text-yellow-400">
-                                Marque itens do checklist na página de Projetos para enviar
-                              </span>
                             )}
                             {canEnviarEntrega && (
                               <button
@@ -797,51 +740,27 @@ export default function MyTasks() {
                               return (
                                 <div
                                   key={index}
-                                  className={`flex items-center gap-3 p-2 rounded-md transition-colors ${
-                                    podeInteragir ? 'hover:bg-white/5' : ''
-                                  }`}
+                                  className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
+                                    podeInteragir ? 'hover:bg-white/10 hover:scale-[1.01]' : ''
+                                  } ${getChecklistItemStyle(item.concluido)}`}
                                 >
                                   <div
-                                    className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
-                                      item.concluido
-                                        ? 'bg-primary border-primary'
-                                        : 'border-white/30 bg-white/10'
-                                    }`}
-                                    title="Marque os itens na página de Projetos"
+                                    className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${getCheckboxStyle(item.concluido)}`}
+                                    title="Status do item"
                                   >
                                     {item.concluido && (
-                                      <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                      <svg className="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
                                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                                       </svg>
                                     )}
                                   </div>
-                                  <span
-                                    className={`flex-1 text-sm ${
-                                      item.concluido
-                                        ? 'text-white/50 line-through'
-                                        : 'text-white/80'
-                                    }`}
-                                  >
+                                  <span className={`flex-1 text-sm ${getChecklistTextStyle(item.concluido)}`}>
                                     {item.texto}
                                   </span>
                                   <span
-                                    className={`px-2 py-0.5 rounded text-[10px] border ${
-                                      statusItem === 'EM_ANALISE'
-                                        ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
-                                        : statusItem === 'APROVADO'
-                                        ? 'bg-green-500/20 text-green-300 border-green-500/40'
-                                        : statusItem === 'REPROVADO'
-                                        ? 'bg-danger/20 text-danger border-danger/40'
-                                        : 'bg-white/10 text-white/70 border-white/20'
-                                    }`}
+                                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${getChecklistItemStatusColor(statusItem)}`}
                                   >
-                                    {statusItem === 'PENDENTE'
-                                      ? 'Pendente'
-                                      : statusItem === 'EM_ANALISE'
-                                      ? 'Em análise'
-                                      : statusItem === 'APROVADO'
-                                      ? 'Aprovado'
-                                      : 'Reprovado'}
+                                    {getChecklistItemStatusLabel(statusItem)}
                                   </span>
                                   {entregaItem && (
                                     <button
@@ -1267,23 +1186,23 @@ export default function MyTasks() {
                 <div>
                   <label className="block text-xs text-white/60 mb-1">Status</label>
                   <span
-                    className={`inline-block px-2 py-1 rounded text-xs ${
+                    className={`inline-block px-3 py-1.5 rounded-md text-xs font-semibold ${
                       selectedViewEntrega.entrega.status === 'EM_ANALISE'
-                        ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
+                        ? 'bg-violet-500/30 text-violet-200 border border-violet-400/50'
                         : selectedViewEntrega.entrega.status === 'APROVADO'
-                        ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                        ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/50'
                         : selectedViewEntrega.entrega.status === 'REPROVADO'
-                        ? 'bg-danger/20 text-danger border border-danger/40'
-                        : 'bg-white/10 text-white/70 border border-white/20'
+                        ? 'bg-rose-500/30 text-rose-200 border border-rose-400/50'
+                        : 'bg-amber-500/20 text-amber-200 border border-amber-400/40'
                     }`}
                   >
                     {selectedViewEntrega.entrega.status === 'PENDENTE'
-                      ? 'Pendente'
+                      ? '⏳ Pendente'
                       : selectedViewEntrega.entrega.status === 'EM_ANALISE'
-                      ? 'Em análise'
+                      ? '🔍 Em análise'
                       : selectedViewEntrega.entrega.status === 'APROVADO'
-                      ? 'Aprovado'
-                      : 'Reprovado'}
+                      ? '✓ Aprovado'
+                      : '✗ Reprovado'}
                   </span>
                 </div>
                 {selectedViewEntrega.entrega.avaliadoPor && (
