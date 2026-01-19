@@ -157,6 +157,9 @@ export default function ProjectDetails() {
   const [loadingEstoqueCompras, setLoadingEstoqueCompras] = useState<Record<number, boolean>>({});
   const [showCompraModal, setShowCompraModal] = useState(false);
   const [selectedEtapaForCompra, setSelectedEtapaForCompra] = useState<Etapa | null>(null);
+  const [showDeleteEtapaModal, setShowDeleteEtapaModal] = useState(false);
+  const [etapaToDelete, setEtapaToDelete] = useState<Etapa | null>(null);
+  const [deletingEtapa, setDeletingEtapa] = useState(false);
   const [compraForm, setCompraForm] = useState({
     item: '',
     descricao: '',
@@ -191,6 +194,16 @@ export default function ProjectDetails() {
       }
       const { data } = await api.get<ProjectDetails>(`/projects/${id}`);
       setProject(data);
+      // Log para debug: verificar status das etapas após atualização
+      if (data.etapas) {
+        data.etapas.forEach(etapa => {
+          const checklistItems = etapa.checklistJson && Array.isArray(etapa.checklistJson) ? etapa.checklistJson : [];
+          const todosMarcados = checklistItems.length > 0 && checklistItems.every(item => item.concluido === true);
+          if (todosMarcados && etapa.status !== 'APROVADA') {
+            console.warn(`[refreshProject] Etapa ${etapa.id} tem todas as checkboxes marcadas mas status é ${etapa.status}`);
+          }
+        });
+      }
     } catch (err: any) {
       const message = err.response?.data?.message ?? 'Erro ao carregar projeto';
       setError(message);
@@ -300,11 +313,19 @@ export default function ProjectDetails() {
     setError(null);
     setSubmitting(true);
 
+    // Validar executorId antes de enviar
+    const executorId = Number(etapaForm.executorId);
+    if (!executorId || executorId === 0 || isNaN(executorId)) {
+      setError('É necessário selecionar um responsável (executor) para a etapa');
+      setSubmitting(false);
+      return;
+    }
+
     try {
       const payload: any = {
         projetoId: Number(id),
         nome: etapaForm.nome.trim(),
-        executorId: Number(etapaForm.executorId),
+        executorId: executorId,
       };
 
       if (etapaForm.descricao && etapaForm.descricao.trim().length > 0) {
@@ -452,6 +473,30 @@ export default function ProjectDetails() {
     }
   }
 
+  async function handleDeleteEtapa(etapa: Etapa) {
+    setEtapaToDelete(etapa);
+    setShowDeleteEtapaModal(true);
+  }
+
+  async function confirmDeleteEtapa() {
+    if (!etapaToDelete) return;
+
+    try {
+      setDeletingEtapa(true);
+      await api.delete(`/tasks/${etapaToDelete.id}`);
+      toast.success('Etapa deletada com sucesso!');
+      await refreshProject();
+      setShowDeleteEtapaModal(false);
+      setEtapaToDelete(null);
+    } catch (err: any) {
+      const errorMessage = formatApiError(err);
+      setError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setDeletingEtapa(false);
+    }
+  }
+
   async function handleEditEtapa(etapa: Etapa) {
     setEditingEtapa(etapa);
     
@@ -518,14 +563,24 @@ export default function ProjectDetails() {
       concluido,
     };
 
+    // Verificar se todas as checkboxes estão marcadas
+    const todosMarcados = updatedChecklist.length > 0 && updatedChecklist.every(item => item.concluido === true);
+    console.log(`[handleChecklistUpdate] Etapa ${etapaId}, item ${checklistIndex}, concluido=${concluido}, todosMarcados=${todosMarcados}`);
+
     try {
       setUpdatingChecklist(etapaId);
-      await api.patch(`/tasks/${etapaId}/checklist`, {
+      const response = await api.patch(`/tasks/${etapaId}/checklist`, {
         checklist: updatedChecklist,
       });
       
+      console.log(`[handleChecklistUpdate] Resposta do backend:`, response.data);
+      
+      // Aguardar um pouco antes de atualizar para garantir que o backend processou
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       await refreshProject();
     } catch (err: any) {
+      console.error(`[handleChecklistUpdate] Erro:`, err);
       setError(err.response?.data?.message ?? 'Falha ao atualizar checklist');
     } finally {
       setUpdatingChecklist(null);
@@ -662,7 +717,7 @@ export default function ProjectDetails() {
       FINALIZADO: 'Finalizado',
       PENDENTE: 'Pendente',
       EM_ANALISE: 'Em Análise',
-      APROVADA: 'Aprovada',
+      APROVADA: 'Completo', // Quando todas as checkboxes estão marcadas
       REPROVADA: 'Recusada',
       SOLICITADO: 'Solicitado',
       REPROVADO: 'Reprovado',
@@ -909,7 +964,7 @@ export default function ProjectDetails() {
         </h3>
           {isDiretor && (
             <button
-              onClick={async () => {
+              onClick={async () => {   
                 setEditingEtapa(null);
                 setEtapaForm({
                   nome: '',
@@ -951,13 +1006,6 @@ export default function ProjectDetails() {
               const temItensMarcados = itensMarcados > 0;
               const totalItens = checklistItems.length;
               
-              // Na página de projetos, permitir marcar checkboxes livremente
-              // Mas só permitir enviar entrega se for executor e tiver itens marcados
-              const canEnviarEntrega = 
-                isExecutor && 
-                ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) &&
-                temItensMarcados;
-              
               // Permitir marcar checklist livremente (sem restrição de executor)
               const podeMarcarChecklist = true;
               const awaitingReview = latestEntrega?.status === 'EM_ANALISE';
@@ -979,9 +1027,17 @@ export default function ProjectDetails() {
                           {getStatusLabel(etapa.status)}
                         </span>
                         {isDiretor && (
-                          <button onClick={() => handleEditEtapa(etapa)} className={buttonStyles.edit}>
-                            Editar
-                          </button>
+                          <>
+                            <button onClick={() => handleEditEtapa(etapa)} className={buttonStyles.edit}>
+                              Editar
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteEtapa(etapa)} 
+                              className="px-3 py-1 rounded-md bg-danger/20 hover:bg-danger/30 text-danger text-xs border border-danger/30 transition-colors"
+                            >
+                              Deletar
+                            </button>
+                          </>
                         )}
                       </div>
                       {isExecutor && etapa.status === 'EM_ANALISE' && (
@@ -993,15 +1049,6 @@ export default function ProjectDetails() {
                        totalItens > 0 && (
                         <span>
                         </span>
-                      )}
-                      {canEnviarEntrega && (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEntregaModal(etapa)}
-                          className="px-3 py-1 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-xs border border-primary/30 transition-colors"
-                        >
-                          Enviar entrega ({itensMarcados}/{totalItens})
-                        </button>
                       )}
                     </div>
                   </div>
@@ -1056,7 +1103,7 @@ export default function ProjectDetails() {
                     )}
                   </div>
 
-                  {latestEntrega ? (
+                  {latestEntrega && (
                     <div className="mt-3 pt-3 border-t border-white/10">
                       <div className="flex items-start justify-between gap-3">
                         <div>
@@ -1125,12 +1172,6 @@ export default function ProjectDetails() {
                         </div>
                       )}
                     </div>
-                  ) : (
-                    isExecutor && (
-                      <div className="mt-3 pt-3 border-t border-dashed border-white/20 text-sm text-white/60">
-                        Você ainda não enviou uma entrega para esta etapa. Clique em "Enviar entrega" para encaminhar ao supervisor.
-                      </div>
-                    )
                   )}
 
                   {etapa.checklistJson && Array.isArray(etapa.checklistJson) && etapa.checklistJson.length > 0 && (
@@ -1813,8 +1854,11 @@ export default function ProjectDetails() {
                 <label className="block text-sm font-medium text-white/90 mb-2">Responsável *</label>
                 <select
                   required
-                  value={etapaForm.executorId}
-                  onChange={(e) => setEtapaForm({ ...etapaForm, executorId: Number(e.target.value) })}
+                  value={etapaForm.executorId || ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setEtapaForm({ ...etapaForm, executorId: value ? Number(value) : 0 });
+                  }}
                   className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
                   style={{
                     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
@@ -1823,7 +1867,7 @@ export default function ProjectDetails() {
                     paddingRight: '2.5rem'
                   }}
                 >
-                  <option value="0" className="bg-neutral text-white">Selecione um responsável...</option>
+                  <option value="" className="bg-neutral text-white">Selecione um responsável...</option>
                   {users
                     .filter((user) => {
                       if (!user) return false;
@@ -2578,6 +2622,41 @@ export default function ProjectDetails() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Deleção de Etapa */}
+      {showDeleteEtapaModal && etapaToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-neutral border border-white/20 rounded-lg p-6 max-w-md w-full mx-4">
+            <h2 className="text-xl font-semibold text-white mb-4">Confirmar Exclusão</h2>
+            <p className="text-white/80 mb-6">
+              Tem certeza que deseja deletar a etapa <strong>"{etapaToDelete.nome}"</strong>?
+              <br />
+              <span className="text-sm text-white/60">Esta ação não pode ser desfeita.</span>
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteEtapaModal(false);
+                  setEtapaToDelete(null);
+                }}
+                className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                disabled={deletingEtapa}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteEtapa}
+                disabled={deletingEtapa}
+                className="px-4 py-2 rounded-md bg-danger hover:bg-danger/80 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deletingEtapa ? 'Deletando...' : 'Deletar'}
+              </button>
+            </div>
           </div>
         </div>
       )}

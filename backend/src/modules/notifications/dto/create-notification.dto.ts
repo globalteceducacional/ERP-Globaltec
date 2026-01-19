@@ -16,4 +16,8 @@ export class CreateNotificationDto {
   @IsOptional()
   @IsEnum(NotificacaoTipo)
   tipo?: NotificacaoTipo;
+
+  @IsOptional()
+  @IsInt()
+  requerimentoId?: number; // Link para o requerimento com detalhes completos
 }

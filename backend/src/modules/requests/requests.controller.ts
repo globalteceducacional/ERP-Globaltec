@@ -1,7 +1,10 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Post,
@@ -34,6 +37,11 @@ export class RequestsController {
     return this.requestsService.listReceived(user.userId);
   }
 
+  @Get(':id')
+  findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: { userId: number }) {
+    return this.requestsService.findOne(id, user.userId);
+  }
+
   @Post(':id/respond')
   respond(
     @Param('id', ParseIntPipe) id: number,
@@ -41,5 +49,11 @@ export class RequestsController {
     @Body() body: RespondRequestDto,
   ) {
     return this.requestsService.respond(id, user.userId, body);
+  }
+
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: { userId: number }) {
+    return this.requestsService.remove(id, user.userId);
   }
 }

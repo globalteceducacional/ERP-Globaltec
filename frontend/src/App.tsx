@@ -5,8 +5,7 @@ import Projects from './pages/Projects';
 import ProjectDetails from './pages/ProjectDetails';
 import MyTasks from './pages/MyTasks';
 import Stock from './pages/Stock';
-import Occurrences from './pages/Occurrences';
-import Requests from './pages/Requests';
+import Communications from './pages/Communications';
 import Users from './pages/Users';
 import Cargos from './pages/Cargos';
 import Suppliers from './pages/Suppliers';
@@ -27,6 +26,7 @@ export default function App() {
   return (
     <>
       <Routes>
+        
         <Route path="/login" element={<Login />} />
 
         <Route element={<ProtectedRoute />}>
@@ -37,8 +37,9 @@ export default function App() {
             <Route path="/projects/:id" element={<ProjectDetails />} />
             <Route path="/tasks/my" element={<MyTasks />} />
             <Route path="/stock" element={<Stock />} />
-            <Route path="/occurrences" element={<Occurrences />} />
-            <Route path="/requests" element={<Requests />} />
+            <Route path="/communications" element={<Communications />} />
+            {/* Redirecionamento para compatibilidade com rota antiga */}
+            <Route path="/requests" element={<Navigate to="/communications" replace />} />
             <Route path="/users" element={<Users />} />
             <Route path="/cargos" element={<Cargos />} />
             <Route path="/suppliers" element={<Suppliers />} />

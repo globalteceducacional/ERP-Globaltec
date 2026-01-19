@@ -93,6 +93,16 @@ enum NotificacaoTipo {
   ERROR
 }
 
+enum RequerimentoTipo {
+  SOLICITACAO
+  APROVACAO
+  INFORMACAO
+  RECLAMACAO
+  SUGESTAO
+  COMPRA
+  OUTRO
+}
+
 model Usuario {
   id                   Int                   @id @default(autoincrement())
   nome                 String
@@ -339,31 +349,35 @@ model Ocorrencia {
 }
 
 model Requerimento {
-  id             Int       @id @default(autoincrement())
+  id             Int             @id @default(autoincrement())
   texto          String
+  tipo           RequerimentoTipo @default(OUTRO)
   anexo          String?
   anexoResposta  String?
   resposta       String?
-  status         String    @default("pendente")
-  dataCriacao    DateTime  @default(now())
+  status         String          @default("pendente")
+  dataCriacao    DateTime        @default(now())
   dataResposta   DateTime?
   usuarioId      Int
   destinatarioId Int?
   etapaId        Int?
-  usuario        Usuario   @relation("RequerimentosEnviados", fields: [usuarioId], references: [id])
-  destinatario   Usuario?  @relation("RequerimentosRecebidos", fields: [destinatarioId], references: [id])
-  etapa          Etapa?    @relation(fields: [etapaId], references: [id])
+  usuario        Usuario         @relation("RequerimentosEnviados", fields: [usuarioId], references: [id])
+  destinatario   Usuario?        @relation("RequerimentosRecebidos", fields: [destinatarioId], references: [id])
+  etapa          Etapa?          @relation(fields: [etapaId], references: [id])
+  notificacoes   Notificacao[]   // Notificações relacionadas a este requerimento
 }
 
 model Notificacao {
-  id          Int             @id @default(autoincrement())
-  titulo      String
-  mensagem    String
-  tipo        NotificacaoTipo @default(INFO)
-  lida        Boolean         @default(false)
-  dataCriacao DateTime        @default(now())
-  usuarioId   Int
-  usuario     Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  id             Int              @id @default(autoincrement())
+  titulo         String
+  mensagem       String
+  tipo           NotificacaoTipo  @default(INFO)
+  lida           Boolean          @default(false)
+  dataCriacao    DateTime         @default(now())
+  usuarioId      Int
+  usuario        Usuario          @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  requerimentoId Int?             // Link para o requerimento com detalhes completos
+  requerimento   Requerimento?    @relation(fields: [requerimentoId], references: [id], onDelete: SetNull)
 }
 
 model Fornecedor {

@@ -166,6 +166,10 @@ export default function Stock() {
   });
   const [currentCotacaoIndex, setCurrentCotacaoIndex] = useState<number | null>(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showItemDetailsModal, setShowItemDetailsModal] = useState(false);
+  const [itemToView, setItemToView] = useState<StockItem | null>(null);
+  const [showPurchaseDetailsModal, setShowPurchaseDetailsModal] = useState(false);
+  const [purchaseToViewDetails, setPurchaseToViewDetails] = useState<Purchase | null>(null);
   const [itemForm, setItemForm] = useState<CreateItemForm>({
     item: '',
     codigo: '',
@@ -1726,7 +1730,19 @@ export default function Stock() {
                   const quantidadeDisponivel = item.quantidadeDisponivel ?? item.quantidade ?? 0;
                   
                   return (
-                    <tr key={item.id} className="border-t border-white/5 hover:bg-white/5">
+                    <tr 
+                      key={item.id} 
+                      className="border-t border-white/5 hover:bg-white/5 cursor-pointer"
+                      onClick={(e) => {
+                        // Não abrir modal se clicar em botões ou inputs
+                        const target = e.target as HTMLElement;
+                        if (target.closest('button') || target.closest('input')) {
+                          return;
+                        }
+                        setItemToView(item);
+                        setShowItemDetailsModal(true);
+                      }}
+                    >
                       <td className="px-4 py-3">
                         <div className="flex items-center space-x-3">
                           {item.imagemUrl && (
@@ -1769,7 +1785,7 @@ export default function Stock() {
                           {quantidadeDisponivel}
                         </span>
                       </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => openAlocacaoModal(item)}
@@ -1965,8 +1981,20 @@ export default function Stock() {
                   const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
                   const isSelected = selectedPurchases.includes(purchase.id);
                   return (
-                  <tr key={purchase.id} className={`border-t border-white/5 hover:bg-white/5 ${isSelected ? 'bg-primary/10' : ''}`}>
-                    <td className="px-4 py-3">
+                  <tr 
+                    key={purchase.id} 
+                    className={`border-t border-white/5 hover:bg-white/5 cursor-pointer ${isSelected ? 'bg-primary/10' : ''}`}
+                    onClick={(e) => {
+                      // Não abrir modal se clicar em botões, inputs ou checkbox
+                      const target = e.target as HTMLElement;
+                      if (target.closest('button') || target.closest('input') || target.closest('a')) {
+                        return;
+                      }
+                      setPurchaseToViewDetails(purchase);
+                      setShowPurchaseDetailsModal(true);
+                    }}
+                  >
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -2108,7 +2136,7 @@ export default function Stock() {
                         )}
                       </div>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => {
@@ -5473,6 +5501,12 @@ export default function Stock() {
                 </div>
               )}
 
+              {/* Observação - Sempre exibir */}
+              <div>
+                <label className="block text-sm font-medium text-white/70 mb-1">Observação</label>
+                <p className="text-white/90 whitespace-pre-wrap">{(purchaseToView as any).observacao || 'Nenhuma observação'}</p>
+              </div>
+
               {error && (
                 <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md text-sm">
                   {error}
@@ -5660,6 +5694,437 @@ export default function Stock() {
         onClose={() => setShowCategoryModal(false)}
         onCategoryCreated={handleCategoryCreated}
       />
+
+      {/* Modal Detalhes do Item de Estoque */}
+      {showItemDetailsModal && itemToView && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold">Detalhes do Item</h2>
+              <button
+                onClick={() => {
+                  setShowItemDetailsModal(false);
+                  setItemToView(null);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              {/* Imagem */}
+              {itemToView.imagemUrl && (
+                <div className="flex justify-center">
+                  <img
+                    src={itemToView.imagemUrl}
+                    alt={itemToView.item || 'Item'}
+                    className="max-w-full max-h-64 object-contain rounded-lg border border-white/10"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Informações Básicas */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-1">Item</label>
+                  <p className="text-white/90 font-semibold">{itemToView.item || '—'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-1">Quantidade Total</label>
+                  <p className="text-white/90 font-semibold">{itemToView.quantidade || 0}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-1">Quantidade Alocada</label>
+                  <p className="text-white/90 font-semibold">{itemToView.quantidadeAlocada || 0}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-1">Quantidade Disponível</label>
+                  <p className="text-white/90 font-semibold">{itemToView.quantidadeDisponivel || itemToView.quantidade || 0}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-1">Valor Unitário</label>
+                  <p className="text-white/90 font-semibold">
+                    {itemToView.valorUnitario.toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-1">Valor Total</label>
+                  <p className="text-white/90 font-semibold">
+                    {((itemToView.valorUnitario || 0) * (itemToView.quantidade || 0)).toLocaleString('pt-BR', {
+                      style: 'currency',
+                      currency: 'BRL',
+                    })}
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-1">Status</label>
+                  <p className="text-white/90 font-semibold">{itemToView.status || '—'}</p>
+                </div>
+                {(itemToView as any).codigo && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Código</label>
+                    <p className="text-white/90 font-semibold">{(itemToView as any).codigo}</p>
+                  </div>
+                )}
+                {(itemToView as any).unidadeMedida && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Unidade de Medida</label>
+                    <p className="text-white/90 font-semibold">{(itemToView as any).unidadeMedida}</p>
+                  </div>
+                )}
+                {(itemToView as any).localizacao && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Localização</label>
+                    <p className="text-white/90 font-semibold">{(itemToView as any).localizacao}</p>
+                  </div>
+                )}
+                {(itemToView as any).categoriaId && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Categoria</label>
+                    <p className="text-white/90 font-semibold">{getCategoryName((itemToView as any).categoriaId)}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Descrição */}
+              {itemToView.descricao && (
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-1">Descrição</label>
+                  <p className="text-white/90 whitespace-pre-wrap">{itemToView.descricao}</p>
+                </div>
+              )}
+
+              {/* Cotações */}
+              {itemToView.cotacoesJson && Array.isArray(itemToView.cotacoesJson) && itemToView.cotacoesJson.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-2">Cotações</label>
+                  <div className="space-y-2">
+                    {itemToView.cotacoesJson.map((cotacao: Cotacao, index: number) => {
+                      const total = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0);
+                      const totalComQuantidade = total * (itemToView.quantidade || 1);
+                      return (
+                        <div key={index} className="bg-white/5 border border-white/10 rounded-lg p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-semibold text-white/90">Cotação {index + 1}</span>
+                            <span className="text-sm font-bold text-primary">
+                              {totalComQuantidade.toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs text-white/70">
+                            <div>Valor Unitário: {cotacao.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                            <div>Frete: {cotacao.frete.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                            <div>Impostos: {cotacao.impostos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                            {cotacao.desconto && <div>Desconto: {cotacao.desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>}
+                            {cotacao.formaPagamento && <div>Forma de Pagamento: {cotacao.formaPagamento}</div>}
+                            {cotacao.fornecedorId && (
+                              <div>Fornecedor: {getSupplierName(cotacao.fornecedorId)}</div>
+                            )}
+                          </div>
+                          {cotacao.link && (
+                            <div className="mt-2">
+                              <a
+                                href={cotacao.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-primary hover:text-primary/80 underline"
+                              >
+                                Ver link da cotação
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Botão Fechar */}
+              <div className="flex justify-end pt-4 border-t border-white/10">
+                <button
+                  onClick={() => {
+                    setShowItemDetailsModal(false);
+                    setItemToView(null);
+                  }}
+                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Detalhes da Compra */}
+      {showPurchaseDetailsModal && purchaseToViewDetails && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-6 py-4 flex items-center justify-between">
+              <h2 className="text-xl font-bold">Detalhes da Compra</h2>
+              <button
+                onClick={() => {
+                  setShowPurchaseDetailsModal(false);
+                  setPurchaseToViewDetails(null);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              {/* Imagem */}
+              {purchaseToViewDetails.imagemUrl && (
+                <div className="flex justify-center">
+                  <img
+                    src={purchaseToViewDetails.imagemUrl}
+                    alt={purchaseToViewDetails.item || 'Item'}
+                    className="max-w-full max-h-64 object-contain rounded-lg border border-white/10"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Informações Básicas */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-1">Item</label>
+                  <p className="text-white/90 font-semibold">{purchaseToViewDetails.item || '—'}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-1">Quantidade</label>
+                  <p className="text-white/90 font-semibold">{purchaseToViewDetails.quantidade || 0}</p>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-1">Status</label>
+                  <span className={`px-2 py-1 rounded text-xs ${getStatusColor(purchaseToViewDetails.status)}`}>
+                    {getStatusLabel(purchaseToViewDetails.status)}
+                  </span>
+                </div>
+                {purchaseToViewDetails.statusEntrega && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Status de Entrega</label>
+                    <span className={`px-2 py-1 rounded text-xs ${getStatusEntregaColor(purchaseToViewDetails.statusEntrega)}`}>
+                      {getStatusEntregaLabel(purchaseToViewDetails.statusEntrega)}
+                    </span>
+                  </div>
+                )}
+                {purchaseToViewDetails.solicitadoPor && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Solicitado Por</label>
+                    <p className="text-white/90 font-semibold">{purchaseToViewDetails.solicitadoPor.nome}</p>
+                  </div>
+                )}
+                {(purchaseToViewDetails as any).projeto && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Projeto</label>
+                    <p className="text-white/90 font-semibold">{(purchaseToViewDetails as any).projeto.nome}</p>
+                  </div>
+                )}
+                {(purchaseToViewDetails as any).categoriaId && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Categoria</label>
+                    <p className="text-white/90 font-semibold">{getCategoryName((purchaseToViewDetails as any).categoriaId)}</p>
+                  </div>
+                )}
+                {purchaseToViewDetails.dataSolicitacao && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Data de Solicitação</label>
+                    <p className="text-white/90 font-semibold">
+                      {new Date(purchaseToViewDetails.dataSolicitacao).toLocaleString('pt-BR')}
+                    </p>
+                  </div>
+                )}
+                {purchaseToViewDetails.dataCompra && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Data de Compra</label>
+                    <p className="text-white/90 font-semibold">
+                      {new Date(purchaseToViewDetails.dataCompra).toLocaleString('pt-BR')}
+                    </p>
+                  </div>
+                )}
+                {purchaseToViewDetails.previsaoEntrega && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Previsão de Entrega</label>
+                    <p className="text-white/90 font-semibold">
+                      {new Date(purchaseToViewDetails.previsaoEntrega).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                )}
+                {purchaseToViewDetails.dataEntrega && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Data de Entrega</label>
+                    <p className="text-white/90 font-semibold">
+                      {new Date(purchaseToViewDetails.dataEntrega).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                )}
+                {purchaseToViewDetails.enderecoEntrega && (
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-white/60 mb-1">Endereço de Entrega</label>
+                    <p className="text-white/90 font-semibold">{purchaseToViewDetails.enderecoEntrega}</p>
+                  </div>
+                )}
+                {purchaseToViewDetails.recebidoPor && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Recebido Por</label>
+                    <p className="text-white/90 font-semibold">{purchaseToViewDetails.recebidoPor}</p>
+                  </div>
+                )}
+                {purchaseToViewDetails.formaPagamento && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Forma de Pagamento</label>
+                    <p className="text-white/90 font-semibold">{purchaseToViewDetails.formaPagamento}</p>
+                  </div>
+                )}
+                {purchaseToViewDetails.valorUnitario && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Valor Unitário</label>
+                    <p className="text-white/90 font-semibold">
+                      {purchaseToViewDetails.valorUnitario.toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </p>
+                  </div>
+                )}
+                {purchaseToViewDetails.valorUnitario && (
+                  <div>
+                    <label className="block text-sm font-medium text-white/60 mb-1">Valor Total</label>
+                    <p className="text-white/90 font-semibold">
+                      {((purchaseToViewDetails.valorUnitario || 0) * (purchaseToViewDetails.quantidade || 0)).toLocaleString('pt-BR', {
+                        style: 'currency',
+                        currency: 'BRL',
+                      })}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Descrição */}
+              {purchaseToViewDetails.descricao && (
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-1">Descrição / Motivo</label>
+                  <p className="text-white/90 whitespace-pre-wrap">{purchaseToViewDetails.descricao}</p>
+                </div>
+              )}
+
+              {/* Observação */}
+              <div>
+                <label className="block text-sm font-medium text-white/60 mb-1">Observação</label>
+                <p className="text-white/90 whitespace-pre-wrap">{purchaseToViewDetails.observacao || 'Nenhuma observação'}</p>
+              </div>
+
+              {/* Cotações */}
+              {purchaseToViewDetails.cotacoesJson && Array.isArray(purchaseToViewDetails.cotacoesJson) && purchaseToViewDetails.cotacoesJson.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-2">Cotações</label>
+                  <div className="space-y-2">
+                    {purchaseToViewDetails.cotacoesJson.map((cotacao: Cotacao, index: number) => {
+                      const total = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0);
+                      const totalComQuantidade = total * (purchaseToViewDetails.quantidade || 1);
+                      return (
+                        <div key={index} className="bg-white/5 border border-white/10 rounded-lg p-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-sm font-semibold text-white/90">Cotação {index + 1}</span>
+                            <span className="text-sm font-bold text-primary">
+                              {totalComQuantidade.toLocaleString('pt-BR', {
+                                style: 'currency',
+                                currency: 'BRL',
+                              })}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-xs text-white/70">
+                            <div>Valor Unitário: {cotacao.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                            <div>Frete: {cotacao.frete.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                            <div>Impostos: {cotacao.impostos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
+                            {cotacao.desconto && <div>Desconto: {cotacao.desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>}
+                            {cotacao.formaPagamento && <div>Forma de Pagamento: {cotacao.formaPagamento}</div>}
+                            {cotacao.fornecedorId && (
+                              <div>Fornecedor: {getSupplierName(cotacao.fornecedorId)}</div>
+                            )}
+                          </div>
+                          {cotacao.link && (
+                            <div className="mt-2">
+                              <a
+                                href={cotacao.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-primary hover:text-primary/80 underline"
+                              >
+                                Ver link da cotação
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Documentos */}
+              {(purchaseToViewDetails.nfUrl || purchaseToViewDetails.comprovantePagamentoUrl) && (
+                <div>
+                  <label className="block text-sm font-medium text-white/60 mb-2">Documentos</label>
+                  <div className="space-y-2">
+                    {purchaseToViewDetails.nfUrl && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-white/70">Nota Fiscal:</span>
+                        <a
+                          href={purchaseToViewDetails.nfUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-primary hover:text-primary/80 underline"
+                        >
+                          Ver Nota Fiscal
+                        </a>
+                      </div>
+                    )}
+                    {purchaseToViewDetails.comprovantePagamentoUrl && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-white/70">Comprovante de Pagamento:</span>
+                        <a
+                          href={purchaseToViewDetails.comprovantePagamentoUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-primary hover:text-primary/80 underline"
+                        >
+                          Ver Comprovante
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Botão Fechar */}
+              <div className="flex justify-end pt-4 border-t border-white/10">
+                <button
+                  onClick={() => {
+                    setShowPurchaseDetailsModal(false);
+                    setPurchaseToViewDetails(null);
+                  }}
+                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -97,11 +97,11 @@ export default function MyTasks() {
     
     if (typeof user.cargo === 'string') {
       const allowedMap: Record<string, string[]> = {
-        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/occurrences', '/requests', '/users', '/cargos'],
-        SUPERVISOR: ['/tasks/my', '/occurrences', '/requests'],
-        EXECUTOR: ['/tasks/my', '/occurrences', '/requests'],
-        COTADOR: ['/tasks/my', '/stock', '/occurrences'],
-        PAGADOR: ['/tasks/my', '/stock', '/occurrences'],
+        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/communications', '/users', '/cargos'],
+        SUPERVISOR: ['/tasks/my', '/communications'],
+        EXECUTOR: ['/tasks/my', '/communications'],
+        COTADOR: ['/tasks/my', '/stock', '/communications'],
+        PAGADOR: ['/tasks/my', '/stock', '/communications'],
       };
       paginasPermitidas = allowedMap[user.cargo] || [];
     } else if (user.cargo && typeof user.cargo === 'object' && 'nome' in user.cargo) {
@@ -109,11 +109,11 @@ export default function MyTasks() {
         paginasPermitidas = user.cargo.paginasPermitidas;
       } else {
         const allowedMap: Record<string, string[]> = {
-          DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/occurrences', '/requests', '/users', '/cargos'],
-          SUPERVISOR: ['/tasks/my', '/occurrences', '/requests'],
-          EXECUTOR: ['/tasks/my', '/occurrences', '/requests'],
-          COTADOR: ['/tasks/my', '/stock', '/occurrences'],
-          PAGADOR: ['/tasks/my', '/stock', '/occurrences'],
+          DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/communications', '/users', '/cargos'],
+          SUPERVISOR: ['/tasks/my', '/communications'],
+          EXECUTOR: ['/tasks/my', '/communications'],
+          COTADOR: ['/tasks/my', '/stock'],
+          PAGADOR: ['/tasks/my', '/stock'],
         };
         paginasPermitidas = allowedMap[user.cargo.nome] || [];
       }
@@ -400,7 +400,7 @@ export default function MyTasks() {
       case 'EM_ANALISE':
         return 'Em Análise';
       case 'APROVADA':
-        return 'Aprovada';
+        return 'Completo'; // Quando todas as checkboxes estão marcadas
       case 'REPROVADA':
         return 'Recusada';
       default:
@@ -426,7 +426,7 @@ export default function MyTasks() {
       case 'EM_ANALISE':
         return 'Em Análise';
       case 'APROVADA':
-        return 'Aprovada';
+        return 'Completo'; // Quando todas as checkboxes estão marcadas
       case 'RECUSADA':
         return 'Recusada';
       default:

@@ -3,7 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UpdateResponsiblesDto } from './dto/update-responsibles.dto';
-import { EtapaStatus, ProjetoStatus } from '@prisma/client';
+import { EtapaStatus, ProjetoStatus, NotificacaoTipo, RequerimentoTipo } from '@prisma/client';
 
 @Injectable()
 export class ProjectsService {
@@ -143,6 +143,7 @@ export class ProjectsService {
         supervisor: { include: { cargo: true } },
         responsaveis: { include: { usuario: { include: { cargo: true } } } },
         etapas: {
+          orderBy: { id: 'asc' }, // Ordenar por ID (ordem de criação: primeira etapa criada, segunda, terceira...)
           include: {
             executor: true,
             integrantes: { include: { usuario: true } },
@@ -229,7 +230,21 @@ export class ProjectsService {
   }
 
   async update(id: number, data: UpdateProjectDto) {
-    await this.findOne(id);
+    // Buscar projeto atual para comparar status
+    const projetoAtual = await this.prisma.projeto.findUnique({
+      where: { id },
+      include: {
+        supervisor: true,
+        responsaveis: { include: { usuario: true } },
+      },
+    });
+
+    if (!projetoAtual) {
+      throw new NotFoundException('Projeto não encontrado');
+    }
+
+    const statusAnterior = projetoAtual.status;
+    const novoStatus = data.status;
 
     // Preparar payload para o Prisma
     const payload: any = {
@@ -261,7 +276,7 @@ export class ProjectsService {
       }
     });
 
-    return this.prisma.projeto.update({
+    const projetoAtualizado = await this.prisma.projeto.update({
       where: { id },
       data: payload,
       include: {
@@ -269,6 +284,108 @@ export class ProjectsService {
         responsaveis: { include: { usuario: { include: { cargo: true } } } },
       },
     });
+
+    // Se o status mudou para FINALIZADO (aprovado), criar notificações e requerimentos
+    if (novoStatus && novoStatus !== statusAnterior && novoStatus === ProjetoStatus.FINALIZADO) {
+      await this.notificarAprovacaoReprovacao(projetoAtualizado, novoStatus);
+    }
+
+    return projetoAtualizado;
+  }
+
+  private async notificarAprovacaoReprovacao(projeto: any, status: ProjetoStatus) {
+    // FINALIZADO é considerado como aprovado
+    const isAprovado = status === ProjetoStatus.FINALIZADO;
+    const usuariosParaNotificar: number[] = [];
+
+    // Adicionar supervisor se existir
+    if (projeto.supervisor && projeto.supervisor.id) {
+      usuariosParaNotificar.push(projeto.supervisor.id);
+    }
+
+    // Adicionar responsáveis
+    if (projeto.responsaveis && Array.isArray(projeto.responsaveis)) {
+      projeto.responsaveis.forEach((responsavel: any) => {
+        if (responsavel.usuario && responsavel.usuario.id && !usuariosParaNotificar.includes(responsavel.usuario.id)) {
+          usuariosParaNotificar.push(responsavel.usuario.id);
+        }
+      });
+    }
+
+    // Buscar um usuário DIRETOR ou GM para ser o remetente do requerimento (sistema)
+    const cargoDiretor = await this.prisma.cargo.findFirst({
+      where: {
+        OR: [{ nome: 'DIRETOR' }, { nome: 'GM' }],
+        ativo: true,
+      },
+    });
+
+    let remetenteSistemaId: number | null = null;
+    if (cargoDiretor) {
+      const usuarioDiretor = await this.prisma.usuario.findFirst({
+        where: {
+          cargoId: cargoDiretor.id,
+          ativo: true,
+        },
+      });
+      if (usuarioDiretor) {
+        remetenteSistemaId = usuarioDiretor.id;
+      }
+    }
+
+    // Se não encontrar diretor, usar o primeiro usuário ativo (fallback)
+    if (!remetenteSistemaId) {
+      const usuarioFallback = await this.prisma.usuario.findFirst({
+        where: { ativo: true },
+        orderBy: { id: 'asc' },
+      });
+      if (usuarioFallback) {
+        remetenteSistemaId = usuarioFallback.id;
+      }
+    }
+
+    // Se ainda não houver remetente, não criar requerimentos (mas criar notificações)
+    if (!remetenteSistemaId) {
+      console.warn('Não foi possível encontrar um remetente para os requerimentos de aprovação/reprovação de projeto');
+    }
+
+    const statusLabel = isAprovado ? 'finalizado' : 'alterado';
+    const titulo = `Projeto ${statusLabel}`;
+    const mensagem = `O projeto "${projeto.nome}" foi ${statusLabel}.`;
+
+    // Criar notificações e requerimentos para cada usuário
+    for (const usuarioId of usuariosParaNotificar) {
+      // Criar notificação
+      await this.prisma.notificacao.create({
+        data: {
+          usuarioId,
+          titulo,
+          mensagem,
+          tipo: NotificacaoTipo.INFO, // Sempre usar INFO ao invés de SUCCESS/WARNING
+        },
+      });
+
+      // Criar requerimento do tipo INFORMACAO (sistema envia para o solicitante)
+      // Só criar se o usuário estiver relacionado ao projeto (supervisor ou responsável)
+      if (remetenteSistemaId) {
+        try {
+          const requerimento = await this.prisma.requerimento.create({
+            data: {
+              usuarioId: remetenteSistemaId, // Remetente: sistema (diretor/GM)
+              destinatarioId: usuarioId, // Destinatário: solicitante
+              tipo: RequerimentoTipo.INFORMACAO,
+              texto: `O projeto "${projeto.nome}" foi ${statusLabel}.`,
+              etapaId: null, // Não associar a etapa específica
+            },
+          });
+          console.log(`Requerimento criado com sucesso: ID=${requerimento.id}, destinatarioId=${usuarioId}, remetenteId=${remetenteSistemaId}`);
+        } catch (error) {
+          console.error(`Erro ao criar requerimento para usuário ${usuarioId}:`, error);
+        }
+      } else {
+        console.warn(`Não foi possível criar requerimento para usuário ${usuarioId}: remetenteSistemaId é null`);
+      }
+    }
   }
 
   async updateResponsibles(id: number, data: UpdateResponsiblesDto) {
@@ -312,11 +429,23 @@ export class ProjectsService {
   }
 
   async finalize(id: number) {
-    await this.findOne(id);
-    return this.prisma.projeto.update({
+    const projetoAtual = await this.findOne(id);
+    
+    const projetoAtualizado = await this.prisma.projeto.update({
       where: { id },
       data: { status: ProjetoStatus.FINALIZADO, dataFinalizacao: new Date() },
+      include: {
+        supervisor: true,
+        responsaveis: { include: { usuario: true } },
+      },
     });
+
+    // Se o status mudou para FINALIZADO, criar notificações e requerimentos
+    if (projetoAtual.status !== ProjetoStatus.FINALIZADO) {
+      await this.notificarAprovacaoReprovacao(projetoAtualizado, ProjetoStatus.FINALIZADO);
+    }
+
+    return projetoAtualizado;
   }
 
   async remove(id: number) {

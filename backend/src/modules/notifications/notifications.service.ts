@@ -13,6 +13,9 @@ export class NotificationsService {
         lida: unreadOnly ? false : undefined,
       },
       orderBy: { dataCriacao: 'desc' },
+      include: {
+        requerimento: true, // Incluir o requerimento linkado
+      },
     });
   }
 
@@ -23,6 +26,7 @@ export class NotificationsService {
         titulo: data.titulo,
         mensagem: data.mensagem,
         tipo: data.tipo,
+        requerimentoId: data.requerimentoId, // Link para o requerimento
       },
     });
   }

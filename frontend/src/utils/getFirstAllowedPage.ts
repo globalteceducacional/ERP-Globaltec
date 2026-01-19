@@ -14,12 +14,12 @@ export function getFirstAllowedPage(user: Usuario | null): string {
   if (typeof user.cargo === 'string') {
     // Formato antigo: cargo é uma string
     const allowedMap: Record<string, string[]> = {
-      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences', '/requests', '/users', '/cargos'],
-      GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences', '/requests', '/users', '/cargos'],
-      SUPERVISOR: ['/tasks/my', '/occurrences', '/requests'],
-      EXECUTOR: ['/tasks/my', '/occurrences', '/requests'],
-      COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences'],
-      PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences'],
+      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+      GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+      SUPERVISOR: ['/tasks/my', '/communications'],
+      EXECUTOR: ['/tasks/my', '/communications'],
+      COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications'],
+      PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications'],
     };
     paginasPermitidas = allowedMap[user.cargo] || [];
   } else if (user.cargo && typeof user.cargo === 'object' && 'nome' in user.cargo) {
@@ -29,12 +29,12 @@ export function getFirstAllowedPage(user: Usuario | null): string {
     } else {
       // Fallback para compatibilidade com sistema antigo
       const allowedMap: Record<string, string[]> = {
-        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences', '/requests', '/users', '/cargos'],
-        GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences', '/requests', '/users', '/cargos'],
-        SUPERVISOR: ['/tasks/my', '/occurrences', '/requests'],
-        EXECUTOR: ['/tasks/my', '/occurrences', '/requests'],
-        COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences'],
-        PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences'],
+        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+        GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+        SUPERVISOR: ['/tasks/my', '/communications'],
+        EXECUTOR: ['/tasks/my', '/communications'],
+        COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories'],
+        PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories'],
       };
       paginasPermitidas = allowedMap[user.cargo.nome] || [];
     }

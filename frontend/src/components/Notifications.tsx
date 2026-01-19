@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { Notificacao } from '../types';
 
@@ -12,6 +13,7 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     loadNotifications();
@@ -48,7 +50,7 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
     }
   }
 
-  async function markAsRead(id: number) {
+  async function markAsRead(id: number, requerimentoId?: number | null) {
     try {
       await api.patch(`/notifications/${id}/read`);
       setNotifications(prev => 
@@ -57,8 +59,24 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
       const newCount = Math.max(0, unreadCount - 1);
       setUnreadCount(newCount);
       onUpdateCount?.(newCount);
+
+      // Se tiver requerimento linkado, navegar para a página de requerimentos
+      if (requerimentoId) {
+        onClose?.();
+        navigate('/communications?tab=received&id=' + requerimentoId);
+      }
     } catch (err) {
       console.error('Erro ao marcar notificação como lida:', err);
+    }
+  }
+
+  function handleNotificationClick(notification: Notificacao) {
+    if (!notification.lida) {
+      markAsRead(notification.id, notification.requerimentoId);
+    } else if (notification.requerimentoId) {
+      // Se já está lida mas tem requerimento, navegar diretamente
+      onClose?.();
+      navigate('/communications?tab=received&id=' + notification.requerimentoId);
     }
   }
 
@@ -137,7 +155,7 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
                 className={`p-4 hover:bg-white/5 transition-colors cursor-pointer ${
                   !notification.lida ? 'bg-white/5' : ''
                 }`}
-                onClick={() => !notification.lida && markAsRead(notification.id)}
+                onClick={() => handleNotificationClick(notification)}
               >
                 <div className="flex items-start gap-3">
                   <div className={`flex-shrink-0 w-2 h-2 rounded-full mt-2 ${
@@ -145,12 +163,14 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
                   }`} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className={`px-2 py-0.5 rounded text-xs border ${getTipoColor(notification.tipo)}`}>
-                        {notification.tipo}
-                      </span>
                       <span className="text-xs text-white/50">
                         {formatDate(notification.dataCriacao)}
                       </span>
+                      {notification.requerimentoId && (
+                        <span className="text-xs text-primary">
+                          Ver detalhes →
+                        </span>
+                      )}
                     </div>
                     <h4 className="font-semibold text-sm mb-1">{notification.titulo}</h4>
                     <p className="text-sm text-white/70 line-clamp-2">{notification.mensagem}</p>

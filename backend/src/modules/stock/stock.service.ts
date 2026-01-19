@@ -6,7 +6,7 @@ import { UpdateStockItemDto } from './dto/update-stock-item.dto';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
-import { CompraStatus, EstoqueStatus, NotificacaoTipo } from '@prisma/client';
+import { CompraStatus, EstoqueStatus, NotificacaoTipo, RequerimentoTipo } from '@prisma/client';
 
 @Injectable()
 export class StockService {
@@ -591,7 +591,7 @@ export class StockService {
       throw new BadRequestException('É necessário fornecer cotações ou valor unitário para aprovar a solicitação');
     }
 
-    return this.prisma.compra.update({
+    const compraAprovada = await this.prisma.compra.update({
       where: { id },
       data: {
         status: CompraStatus.PENDENTE,
@@ -605,6 +605,26 @@ export class StockService {
         categoria: true,
       } as any,
     });
+
+    // Criar requerimento e notificação linkada para o solicitante
+    if ((compraAprovada as any).solicitadoPorId) {
+      // Primeiro criar o requerimento (detalhes completos)
+      const requerimentoId = await this.criarRequerimentoAprovacaoCompra(
+        (compraAprovada as any).solicitadoPorId,
+        compraAprovada.item,
+      );
+
+      // Depois criar a notificação linkada ao requerimento (aviso resumido)
+      await this.notificationsService.create({
+        usuarioId: (compraAprovada as any).solicitadoPorId,
+        titulo: 'Solicitação de Compra Aprovada',
+        mensagem: `Sua solicitação de compra "${compraAprovada.item}" foi aprovada. Clique para ver detalhes.`,
+        tipo: NotificacaoTipo.INFO,
+        requerimentoId: requerimentoId ?? undefined, // Link para o requerimento
+      });
+    }
+
+    return compraAprovada;
   }
 
   async rejectPurchase(id: number, motivoRejeicao: string) {
@@ -628,13 +648,22 @@ export class StockService {
       } as any,
     });
 
-    // Criar notificação para o solicitante e supervisor do projeto
+    // Criar requerimento e notificação linkada para o solicitante
     if ((compraReprovada as any).solicitadoPorId) {
+      // Primeiro criar o requerimento (detalhes completos)
+      const requerimentoId = await this.criarRequerimentoRecusaCompra(
+        (compraReprovada as any).solicitadoPorId,
+        compraReprovada.item,
+        motivoRejeicao.trim(),
+      );
+
+      // Depois criar a notificação linkada ao requerimento (aviso resumido)
       await this.notificationsService.create({
         usuarioId: (compraReprovada as any).solicitadoPorId,
         titulo: 'Solicitação de Compra Reprovada',
-        mensagem: `Sua solicitação de compra "${compraReprovada.item}" foi reprovada. Motivo: ${motivoRejeicao.trim()}`,
-        tipo: NotificacaoTipo.ERROR,
+        mensagem: `Sua solicitação de compra "${compraReprovada.item}" foi reprovada. Clique para ver detalhes.`,
+        tipo: NotificacaoTipo.INFO,
+        requerimentoId: requerimentoId ?? undefined, // Link para o requerimento
       });
     }
 
@@ -643,12 +672,193 @@ export class StockService {
       await this.notificationsService.create({
         usuarioId: (compraReprovada as any).projeto.supervisorId,
         titulo: 'Solicitação de Compra Reprovada',
-        mensagem: `A solicitação de compra "${compraReprovada.item}" do projeto "${(compraReprovada as any).projeto.nome}" foi reprovada. Motivo: ${motivoRejeicao.trim()}`,
-        tipo: NotificacaoTipo.WARNING,
+        mensagem: `A solicitação de compra "${compraReprovada.item}" do projeto "${(compraReprovada as any).projeto.nome}" foi reprovada. Clique para ver detalhes.`,
+        tipo: NotificacaoTipo.INFO,
       });
     }
 
     return compraReprovada;
+  }
+
+  /**
+   * Cria um requerimento do tipo INFORMACAO para o solicitante quando uma compra é recusada
+   * Retorna o ID do requerimento criado para linkar com a notificação
+   */
+  private async criarRequerimentoRecusaCompra(
+    destinatarioId: number,
+    itemNome: string,
+    motivoRejeicao: string,
+  ): Promise<number | null> {
+    try {
+      console.log(`[criarRequerimentoRecusaCompra] Iniciando criação para destinatarioId=${destinatarioId}`);
+      
+      // Buscar um usuário DIRETOR, GM, COTADOR ou PAGADOR para ser o remetente
+      // Priorizar um usuário diferente do destinatário
+      const cargosSistema = await this.prisma.cargo.findMany({
+        where: {
+          OR: [{ nome: 'DIRETOR' }, { nome: 'GM' }, { nome: 'COTADOR' }, { nome: 'PAGADOR' }],
+          ativo: true,
+        },
+      });
+
+      let remetenteSistemaId: number | null = null;
+      
+      // Tentar encontrar um usuário diferente do destinatário
+      for (const cargo of cargosSistema) {
+        const usuarioSistema = await this.prisma.usuario.findFirst({
+          where: {
+            cargoId: cargo.id,
+            ativo: true,
+            id: { not: destinatarioId }, // Diferente do destinatário
+          },
+        });
+        if (usuarioSistema) {
+          remetenteSistemaId = usuarioSistema.id;
+          break;
+        }
+      }
+
+      // Se não encontrou usuário diferente, usar o primeiro disponível (mesmo que seja o mesmo)
+      if (!remetenteSistemaId) {
+        for (const cargo of cargosSistema) {
+          const usuarioSistema = await this.prisma.usuario.findFirst({
+            where: {
+              cargoId: cargo.id,
+              ativo: true,
+            },
+          });
+          if (usuarioSistema) {
+            remetenteSistemaId = usuarioSistema.id;
+            break;
+          }
+        }
+      }
+
+      // Fallback: usar o primeiro usuário ativo
+      if (!remetenteSistemaId) {
+        const usuarioFallback = await this.prisma.usuario.findFirst({
+          where: { ativo: true },
+          orderBy: { id: 'asc' },
+        });
+        if (usuarioFallback) {
+          remetenteSistemaId = usuarioFallback.id;
+        }
+      }
+
+      if (!remetenteSistemaId) {
+        console.warn('[criarRequerimentoRecusaCompra] Não foi possível encontrar um remetente');
+        return null;
+      }
+
+      console.log(`[criarRequerimentoRecusaCompra] remetenteSistemaId=${remetenteSistemaId}, destinatarioId=${destinatarioId}`);
+
+      // Criar o requerimento
+      const requerimento = await this.prisma.requerimento.create({
+        data: {
+          usuarioId: remetenteSistemaId, // Remetente: sistema
+          destinatarioId: destinatarioId, // Destinatário: solicitante da compra
+          tipo: RequerimentoTipo.INFORMACAO,
+          texto: `Sua solicitação de compra "${itemNome}" foi REPROVADA.\n\nMotivo: ${motivoRejeicao}`,
+          etapaId: null,
+        },
+      });
+
+      console.log(`[criarRequerimentoRecusaCompra] Requerimento criado com sucesso: ID=${requerimento.id}, remetente=${remetenteSistemaId}, destinatario=${destinatarioId}`);
+      return requerimento.id;
+    } catch (error) {
+      console.error('[criarRequerimentoRecusaCompra] Erro ao criar requerimento:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Cria um requerimento do tipo INFORMACAO para o solicitante quando uma compra é aprovada
+   * Retorna o ID do requerimento criado para linkar com a notificação
+   */
+  private async criarRequerimentoAprovacaoCompra(
+    destinatarioId: number,
+    itemNome: string,
+  ): Promise<number | null> {
+    try {
+      console.log(`[criarRequerimentoAprovacaoCompra] Iniciando criação para destinatarioId=${destinatarioId}`);
+      
+      // Buscar um usuário DIRETOR, GM, COTADOR ou PAGADOR para ser o remetente
+      // Priorizar um usuário diferente do destinatário
+      const cargosSistema = await this.prisma.cargo.findMany({
+        where: {
+          OR: [{ nome: 'DIRETOR' }, { nome: 'GM' }, { nome: 'COTADOR' }, { nome: 'PAGADOR' }],
+          ativo: true,
+        },
+      });
+
+      let remetenteSistemaId: number | null = null;
+      
+      // Tentar encontrar um usuário diferente do destinatário
+      for (const cargo of cargosSistema) {
+        const usuarioSistema = await this.prisma.usuario.findFirst({
+          where: {
+            cargoId: cargo.id,
+            ativo: true,
+            id: { not: destinatarioId }, // Diferente do destinatário
+          },
+        });
+        if (usuarioSistema) {
+          remetenteSistemaId = usuarioSistema.id;
+          break;
+        }
+      }
+
+      // Se não encontrou usuário diferente, usar o primeiro disponível (mesmo que seja o mesmo)
+      if (!remetenteSistemaId) {
+        for (const cargo of cargosSistema) {
+          const usuarioSistema = await this.prisma.usuario.findFirst({
+            where: {
+              cargoId: cargo.id,
+              ativo: true,
+            },
+          });
+          if (usuarioSistema) {
+            remetenteSistemaId = usuarioSistema.id;
+            break;
+          }
+        }
+      }
+
+      // Fallback: usar o primeiro usuário ativo
+      if (!remetenteSistemaId) {
+        const usuarioFallback = await this.prisma.usuario.findFirst({
+          where: { ativo: true },
+          orderBy: { id: 'asc' },
+        });
+        if (usuarioFallback) {
+          remetenteSistemaId = usuarioFallback.id;
+        }
+      }
+
+      if (!remetenteSistemaId) {
+        console.warn('[criarRequerimentoAprovacaoCompra] Não foi possível encontrar um remetente');
+        return null;
+      }
+
+      console.log(`[criarRequerimentoAprovacaoCompra] remetenteSistemaId=${remetenteSistemaId}, destinatarioId=${destinatarioId}`);
+
+      // Criar o requerimento
+      const requerimento = await this.prisma.requerimento.create({
+        data: {
+          usuarioId: remetenteSistemaId, // Remetente: sistema
+          destinatarioId: destinatarioId, // Destinatário: solicitante da compra
+          tipo: RequerimentoTipo.INFORMACAO,
+          texto: `Sua solicitação de compra "${itemNome}" foi APROVADA e está aguardando pagamento.`,
+          etapaId: null,
+        },
+      });
+
+      console.log(`[criarRequerimentoAprovacaoCompra] Requerimento criado com sucesso: ID=${requerimento.id}, remetente=${remetenteSistemaId}, destinatario=${destinatarioId}`);
+      return requerimento.id;
+    } catch (error) {
+      console.error('[criarRequerimentoAprovacaoCompra] Erro ao criar requerimento:', error);
+      return null;
+    }
   }
 
   async createAlocacao(data: { estoqueId: number; projetoId?: number; etapaId?: number; usuarioId?: number; quantidade: number }) {

@@ -8,8 +8,7 @@ const links = [
   { to: '/stock', label: 'Compras & Estoque' },
   { to: '/suppliers', label: 'Fornecedores' },
   { to: '/categories', label: 'Categorias' },
-  { to: '/occurrences', label: 'Ocorrências' },
-  { to: '/requests', label: 'Requerimentos' },
+  { to: '/communications', label: 'Requerimentos' },
   { to: '/users', label: 'Usuários' },
   { to: '/cargos', label: 'Cargos' },
 ];
@@ -30,12 +29,12 @@ export function Sidebar() {
     userCargoNome = user.cargo;
     // Se for formato antigo, usar lógica hardcoded para compatibilidade
     const allowedMap: Record<string, string[]> = {
-      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences', '/requests', '/users', '/cargos'],
-      GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences', '/requests', '/users', '/cargos'],
-      SUPERVISOR: ['/tasks/my', '/occurrences', '/requests'],
-      EXECUTOR: ['/tasks/my', '/occurrences', '/requests'],
-      COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences'],
-      PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences'],
+      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+      GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+      SUPERVISOR: ['/tasks/my', '/communications'],
+      EXECUTOR: ['/tasks/my', '/communications'],
+      COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications'],
+      PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications'],
     };
     paginasPermitidas = allowedMap[userCargoNome] || [];
   } else if (user.cargo && typeof user.cargo === 'object' && 'nome' in user.cargo) {
@@ -53,12 +52,12 @@ export function Sidebar() {
     if (paginasPermitidas.length === 0) {
       // Fallback para compatibilidade com sistema antigo
       const allowedMap: Record<string, string[]> = {
-        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences', '/requests', '/users', '/cargos'],
-        GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences', '/requests', '/users', '/cargos'],
-        SUPERVISOR: ['/tasks/my', '/occurrences', '/requests'],
-        EXECUTOR: ['/tasks/my', '/occurrences', '/requests'],
-        COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences'],
-        PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/occurrences'],
+        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+        GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+        SUPERVISOR: ['/tasks/my', '/communications'],
+        EXECUTOR: ['/tasks/my', '/communications'],
+        COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications'],
+        PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications'],
       };
       return allowedMap[userCargoNome]?.includes(link.to) || false;
     }

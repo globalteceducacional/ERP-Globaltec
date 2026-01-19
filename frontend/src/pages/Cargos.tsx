@@ -24,8 +24,7 @@ const todasPaginas = [
   { value: '/stock', label: 'Compras & Estoque' },
   { value: '/suppliers', label: 'Fornecedores' },
   { value: '/categories', label: 'Categorias' },
-  { value: '/occurrences', label: 'Ocorrências' },
-  { value: '/requests', label: 'Requerimentos' },
+  { value: '/communications', label: 'Requerimentos' },
   { value: '/users', label: 'Usuários' },
   { value: '/cargos', label: 'Cargos' },
 ];

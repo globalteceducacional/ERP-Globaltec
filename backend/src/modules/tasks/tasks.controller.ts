@@ -3,6 +3,8 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseIntPipe,
   Patch,
@@ -150,9 +152,18 @@ export class TasksController {
     return this.tasksService.reviewChecklistItem(etapaId, checklistIndex, user.userId, body);
   }
 
+  // Rotas mais específicas devem vir ANTES das genéricas
   @Delete(':id/subtasks/:subtaskId')
   @Roles('EXECUTOR', 'SUPERVISOR', 'DIRETOR')
   deleteSubtask(@Param('subtaskId', ParseIntPipe) subtaskId: number) {
     return this.tasksService.deleteSubtask(subtaskId);
+  }
+
+  // Rota genérica de deletar etapa - deve vir DEPOIS das rotas específicas
+  @Delete(':id')
+  @HttpCode(HttpStatus.OK)
+  @Roles('DIRETOR', 'SUPERVISOR')
+  remove(@Param('id', ParseIntPipe) id: number) {
+    return this.tasksService.remove(id);
   }
 }

@@ -517,36 +517,105 @@ export class TasksService {
     }
 
     // Normalizar valores booleanos do checklist - garantir valores explícitos
-    const normalizedChecklist = checklist.map((item) => ({
-      texto: item.texto,
-      concluido: Boolean(
+    const normalizedChecklist = checklist.map((item) => {
+      const concluido = Boolean(
         item.concluido === true ||
         item.concluido === 'true' ||
         item.concluido === 1 ||
         item.concluido === '1',
-      ),
-    }));
+      );
+      return {
+        texto: item.texto,
+        concluido,
+      };
+    });
 
     const updateData: any = {
       checklistJson: normalizedChecklist as any,
     };
 
-    const podeAtualizarStatuses: EtapaStatus[] = [
-      EtapaStatus.PENDENTE,
-      EtapaStatus.EM_ANDAMENTO,
-    ];
-    const podeAtualizarStatus = podeAtualizarStatuses.includes(etapa.status as EtapaStatus);
+    // Verificar se todos os itens do checklist estão marcados como concluídos
+    const totalItens = normalizedChecklist.length;
+    const todosConcluidos = totalItens > 0 && normalizedChecklist.every((item) => item.concluido === true);
     const algumConcluido = normalizedChecklist.some((item) => item.concluido === true);
 
-    if (podeAtualizarStatus) {
-      updateData.status = algumConcluido ? EtapaStatus.EM_ANDAMENTO : EtapaStatus.PENDENTE;
+    // Status permitidos para atualização automática (exceto REPROVADA que requer ação manual)
+    const statusAtual = etapa.status as EtapaStatus;
+    const podeAtualizarStatus = statusAtual !== EtapaStatus.REPROVADA;
+
+    // Debug: Log detalhado para verificar a verificação
+    console.log(`[updateChecklist] Etapa ${id}:`, {
+      totalItens,
+      todosConcluidos,
+      statusAtual,
+      podeAtualizarStatus,
+      checklist: normalizedChecklist.map(item => ({ texto: item.texto, concluido: item.concluido })),
+    });
+
+    // Lógica de atualização de status baseada nas checkboxes:
+    // - Nenhum checkbox marcado: PENDENTE
+    // - Pelo menos 1 marcado: EM_ANDAMENTO
+    // - Todos marcados: APROVADA (Completo)
+    
+    // Só atualizar status se não estiver REPROVADA (que requer ação manual)
+    if (statusAtual !== EtapaStatus.REPROVADA) {
+      if (totalItens === 0) {
+        // Se não há itens no checklist, manter o status atual ou definir como PENDENTE
+        if (statusAtual === EtapaStatus.APROVADA) {
+          updateData.status = EtapaStatus.PENDENTE;
+          updateData.dataFim = null;
+        }
+      } else if (todosConcluidos) {
+        // TODOS os checkboxes marcados: APROVADA (Completo)
+        updateData.status = EtapaStatus.APROVADA;
+        // Se ainda não tem data de fim, definir como agora
+        if (!etapa.dataFim) {
+          updateData.dataFim = new Date();
+        }
+        console.log(`[updateChecklist] ✅ Etapa ${id} COMPLETA - todas as ${totalItens} checkboxes marcadas -> APROVADA`);
+      } else if (algumConcluido) {
+        // PELO MENOS 1 checkbox marcado: EM_ANDAMENTO
+        // Mas só se não estiver em EM_ANALISE (aguardando avaliação)
+        if (statusAtual !== EtapaStatus.EM_ANALISE) {
+          updateData.status = EtapaStatus.EM_ANDAMENTO;
+        }
+        // Se estava APROVADA e agora não está mais, limpar dataFim
+        if (statusAtual === EtapaStatus.APROVADA) {
+          updateData.dataFim = null;
+        }
+        console.log(`[updateChecklist] 🔄 Etapa ${id} em andamento - ${normalizedChecklist.filter(item => item.concluido).length}/${totalItens} checkboxes marcadas -> EM_ANDAMENTO`);
+      } else {
+        // NENHUM checkbox marcado: PENDENTE
+        // Mas só se não estiver em EM_ANALISE (aguardando avaliação)
+        if (statusAtual !== EtapaStatus.EM_ANALISE) {
+          updateData.status = EtapaStatus.PENDENTE;
     }
+        // Se estava APROVADA e agora não está mais, limpar dataFim
+        if (statusAtual === EtapaStatus.APROVADA) {
+          updateData.dataFim = null;
+        }
+        console.log(`[updateChecklist] ⏳ Etapa ${id} pendente - nenhum checkbox marcado -> PENDENTE`);
+      }
+    } else {
+      console.log(`[updateChecklist] ⚠️ Etapa ${id} está REPROVADA, não atualizando status automaticamente`);
+    }
+
+    // Log do que será atualizado
+    console.log(`[updateChecklist] 📝 Dados a serem atualizados:`, JSON.stringify(updateData, null, 2));
 
     const updated = await this.prisma.etapa.update({
       where: { id },
       data: updateData,
       include: { executor: true, projeto: true, integrantes: { include: { usuario: true } } },
     });
+
+    // Log para confirmar a atualização
+    console.log(`[updateChecklist] ✅ Etapa ${id} atualizada: status=${updated.status}, dataFim=${updated.dataFim}`);
+    
+    // Verificar se a atualização foi bem-sucedida
+    if (todosConcluidos && updated.status !== EtapaStatus.APROVADA) {
+      console.error(`[updateChecklist] ❌ ERRO: Todas as checkboxes estão marcadas mas o status não foi atualizado para APROVADA! Status atual: ${updated.status}`);
+    }
 
     await this.updateProjetoStatus(updated.projetoId);
 
@@ -733,12 +802,37 @@ export class TasksService {
       if (checklist[checklistIndex]) {
         checklist[checklistIndex].concluido = true;
         
+        // Verificar se todos os itens do checklist estão marcados como concluídos
+        const totalItens = checklist.length;
+        const todosConcluidos = totalItens > 0 && checklist.every((item) => item.concluido === true);
+        
+        const updateData: any = {
+          checklistJson: checklist,
+        };
+        
+        // Se todos os itens estão marcados, atualizar status para APROVADA
+        const podeAtualizarStatuses: EtapaStatus[] = [
+          EtapaStatus.PENDENTE,
+          EtapaStatus.EM_ANDAMENTO,
+          EtapaStatus.APROVADA,
+        ];
+        const podeAtualizarStatus = podeAtualizarStatuses.includes(etapa.status as EtapaStatus);
+        
+        if (podeAtualizarStatus && todosConcluidos) {
+          updateData.status = EtapaStatus.APROVADA;
+          // Se ainda não tem data de fim, definir como agora
+          if (!etapa.dataFim) {
+            updateData.dataFim = new Date();
+          }
+        }
+        
         await this.prisma.etapa.update({
           where: { id: etapaId },
-          data: {
-            checklistJson: checklist,
-          },
+          data: updateData,
         });
+        
+        // Atualizar status do projeto se necessário
+        await this.updateProjetoStatus(etapa.projetoId);
       }
     }
 
@@ -944,6 +1038,20 @@ export class TasksService {
     }
 
     return this.prisma.subetapa.update({ where: { id }, data: payload });
+  }
+
+  async remove(id: number) {
+    const etapa = await this.findOne(id);
+    
+    // Deletar a etapa (as relações serão deletadas em cascata devido ao onDelete: Cascade no schema)
+    await this.prisma.etapa.delete({
+      where: { id },
+    });
+
+    // Atualizar status do projeto após deletar a etapa
+    await this.updateProjetoStatus(etapa.projetoId);
+
+    return { message: 'Etapa deletada com sucesso' };
   }
 
   async deleteSubtask(id: number) {
