@@ -137,8 +137,10 @@ export class TasksController {
     @Param('index', ParseIntPipe) checklistIndex: number,
     @CurrentUser() user: { userId: number },
     @Body() body: SubmitChecklistItemDto,
+    @Query('subitemIndex') subitemIndex?: string,
   ) {
-    return this.tasksService.submitChecklistItem(etapaId, checklistIndex, user.userId, body);
+    const subitemIndexNum = subitemIndex ? parseInt(subitemIndex, 10) : undefined;
+    return this.tasksService.submitChecklistItem(etapaId, checklistIndex, user.userId, body, subitemIndexNum);
   }
 
   @Patch(':id/checklist/:index/review')
@@ -148,8 +150,10 @@ export class TasksController {
     @Param('index', ParseIntPipe) checklistIndex: number,
     @CurrentUser() user: { userId: number },
     @Body() body: ReviewChecklistItemDto,
+    @Query('subitemIndex') subitemIndex?: string,
   ) {
-    return this.tasksService.reviewChecklistItem(etapaId, checklistIndex, user.userId, body);
+    const subitemIndexNum = subitemIndex ? parseInt(subitemIndex, 10) : undefined;
+    return this.tasksService.reviewChecklistItem(etapaId, checklistIndex, user.userId, body, subitemIndexNum);
   }
 
   // Rotas mais específicas devem vir ANTES das genéricas

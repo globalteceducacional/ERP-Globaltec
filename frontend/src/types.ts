@@ -73,6 +73,7 @@ export interface EtapaEntrega {
 export interface ChecklistItemEntrega {
   id: number;
   checklistIndex: number;
+  subitemIndex?: number | null; // Índice do subitem (null se for entrega do item principal)
   descricao: string;
   imagemUrl?: string | null; // Mantido para compatibilidade (deprecated)
   documentoUrl?: string | null; // Mantido para compatibilidade (deprecated)
@@ -94,4 +95,18 @@ export interface Notificacao {
   lida: boolean;
   dataCriacao: string;
   requerimentoId?: number | null; // Link para o requerimento com detalhes completos
+}
+
+// Checklist com suporte a subitens e descrição
+export interface ChecklistSubItem {
+  texto: string;
+  concluido?: boolean;
+  descricao?: string; // Detalhes/descrição do subitem
+}
+
+export interface ChecklistItem {
+  texto: string;
+  concluido?: boolean;
+  descricao?: string; // Detalhes/descrição do item principal
+  subitens?: ChecklistSubItem[]; // Subcategorias/subitens
 }

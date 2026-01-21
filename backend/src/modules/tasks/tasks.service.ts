@@ -118,24 +118,26 @@ export class TasksService {
               return true;
             }
             
-            // Se a etapa tem checklist, verificar se todos os itens foram aprovados
+            // Se a etapa tem checklist, verificar se todos os itens (e subitens) foram concluídos
             if (etapaCompleta.checklistJson && Array.isArray(etapaCompleta.checklistJson)) {
-              const checklist = etapaCompleta.checklistJson as Array<{ texto: string; concluido?: boolean }>;
+              const checklist = etapaCompleta.checklistJson as Array<{
+                texto: string;
+                concluido?: boolean;
+                subitens?: Array<{ texto: string; concluido?: boolean }>;
+              }>;
               const totalItens = checklist.length;
               
               if (totalItens > 0) {
-                // Verificar itens aprovados através das entregas do checklist
-                const itensAprovados = etapaCompleta.checklistEntregas?.filter(
-                  (entrega) => entrega.status === 'APROVADO'
-                ).length || 0;
-                
-                // Verificar itens marcados como concluídos no checklistJson
-                const itensMarcados = checklist.filter(
-                  (item) => item.concluido === true
-                ).length;
-                
-                // Se todos os itens foram aprovados OU marcados como concluídos, considerar concluída
-                if (itensAprovados === totalItens || itensMarcados === totalItens) {
+                // Considerar concluída apenas se TODOS os itens e TODOS os subitens estiverem concluídos
+                const todosItensConcluidos = checklist.every((item) => {
+                  const subitensOk =
+                    !item.subitens || item.subitens.length === 0
+                      ? true
+                      : item.subitens.every((sub) => sub.concluido === true);
+                  return item.concluido === true && subitensOk;
+                });
+
+                if (todosItensConcluidos) {
                   return true;
                 }
               }
@@ -493,7 +495,12 @@ export class TasksService {
     return updated;
   }
 
-  async updateChecklist(id: number, userId: number, checklist: Array<{ texto: string; concluido?: boolean | string | number }>) {
+  async updateChecklist(id: number, userId: number, checklist: Array<{ 
+    texto: string; 
+    concluido?: boolean | string | number;
+    descricao?: string;
+    subitens?: Array<{ texto: string; concluido?: boolean; descricao?: string }>;
+  }>) {
     const etapa = await this.prisma.etapa.findUnique({
       where: { id },
       include: {
@@ -517,6 +524,7 @@ export class TasksService {
     }
 
     // Normalizar valores booleanos do checklist - garantir valores explícitos
+    // Preservar campos adicionais: descricao e subitens
     const normalizedChecklist = checklist.map((item) => {
       const concluido = Boolean(
         item.concluido === true ||
@@ -524,9 +532,19 @@ export class TasksService {
         item.concluido === 1 ||
         item.concluido === '1',
       );
+      
+      // Normalizar subitens se existirem
+      const normalizedSubitens = item.subitens?.map((sub) => ({
+        texto: sub.texto,
+        concluido: Boolean(sub.concluido),
+        descricao: sub.descricao || '',
+      })) || [];
+      
       return {
         texto: item.texto,
         concluido,
+        descricao: item.descricao || '',
+        subitens: normalizedSubitens,
       };
     });
 
@@ -627,6 +645,7 @@ export class TasksService {
     checklistIndex: number,
     userId: number,
     data: SubmitChecklistItemDto,
+    subitemIndex?: number,
   ) {
     const etapa = await this.prisma.etapa.findUnique({
       where: { id: etapaId },
@@ -653,9 +672,22 @@ export class TasksService {
     }
 
     // Validar que o índice do checklist existe
-    const checklist = (etapa.checklistJson as Array<{ texto: string; concluido?: boolean }>) || [];
+    const checklist = (etapa.checklistJson as Array<{ 
+      texto: string; 
+      concluido?: boolean;
+      subitens?: Array<{ texto: string; concluido?: boolean }>;
+    }>) || [];
+    
     if (checklistIndex < 0 || checklistIndex >= checklist.length) {
       throw new BadRequestException('Índice do checklist inválido');
+    }
+
+    // Se for subitem, validar que o subitem existe
+    if (subitemIndex !== undefined && subitemIndex !== null) {
+      const item = checklist[checklistIndex];
+      if (!item.subitens || subitemIndex < 0 || subitemIndex >= item.subitens.length) {
+        throw new BadRequestException('Índice do subitem inválido');
+      }
     }
 
     if (!data.descricao || data.descricao.trim().length < 5) {
@@ -680,42 +712,176 @@ export class TasksService {
       documentosUrls = [data.documento.trim()];
     }
 
-    // Criar ou atualizar a entrega do item do checklist
-    const entrega = await this.prisma.checklistItemEntrega.upsert({
-      where: {
-        etapaId_checklistIndex: {
+    // Buscar entrega existente (item principal ou subitem)
+    // Primeiro tentar buscar com subitemIndex específico
+    let entregaExistente: any = null;
+    
+    if (subitemIndex !== undefined && subitemIndex !== null) {
+      // Buscar entrega do subitem específico
+      entregaExistente = await this.prisma.checklistItemEntrega.findFirst({
+        where: {
+          etapaId,
+          checklistIndex,
+          subitemIndex: subitemIndex,
+        } as any,
+      });
+    } else {
+      // Buscar entrega do item principal (subitemIndex = null)
+      entregaExistente = await this.prisma.checklistItemEntrega.findFirst({
+        where: {
+          etapaId,
+          checklistIndex,
+          subitemIndex: null,
+        } as any,
+      });
+    }
+    
+    // Se não encontrou e é um subitem, também tentar buscar sem filtrar por subitemIndex
+    // (para compatibilidade com constraint antiga que pode não ter subitemIndex)
+    if (!entregaExistente && subitemIndex !== undefined && subitemIndex !== null) {
+      const todasEntregas = await this.prisma.checklistItemEntrega.findMany({
+        where: {
           etapaId,
           checklistIndex,
         },
-      },
-      create: {
-        etapaId,
-        checklistIndex,
+      });
+      
+      // Se só existe uma entrega e ela não tem subitemIndex (ou é null), usar ela
+      if (todasEntregas.length === 1) {
+        const entrega = todasEntregas[0] as any;
+        if (entrega.subitemIndex === null || entrega.subitemIndex === undefined) {
+          entregaExistente = entrega;
+        }
+      }
+    }
+
+    // Função auxiliar para preparar dados de update
+    const prepareUpdateData = (existent: any) => {
+      // Imagens: ao reenviar, acrescentar às existentes em vez de substituir
+      let mergedImagens: string[] | undefined;
+      if (imagensUrls && imagensUrls.length > 0) {
+        const existentesArray =
+          (Array.isArray(existent.imagensUrls)
+            ? (existent.imagensUrls as string[])
+            : []) ?? [];
+        const existentesSingle = existent.imagemUrl
+          ? [existent.imagemUrl]
+          : [];
+        const existentes =
+          existentesArray.length > 0 ? existentesArray : existentesSingle;
+        mergedImagens = [...existentes, ...imagensUrls];
+      }
+
+      // Documentos: mesmo comportamento (acrescentar)
+      let mergedDocumentos: string[] | undefined;
+      if (documentosUrls && documentosUrls.length > 0) {
+        const existentesArray =
+          (Array.isArray(existent.documentosUrls)
+            ? (existent.documentosUrls as string[])
+            : []) ?? [];
+        const existentesSingle = existent.documentoUrl
+          ? [existent.documentoUrl]
+          : [];
+        const existentes =
+          existentesArray.length > 0 ? existentesArray : existentesSingle;
+        mergedDocumentos = [...existentes, ...documentosUrls];
+      }
+
+      return {
         descricao: data.descricao.trim(),
-        imagemUrl: imagensUrls && imagensUrls.length > 0 ? imagensUrls[0] : null, // Mantido para compatibilidade
-        documentoUrl: documentosUrls && documentosUrls.length > 0 ? documentosUrls[0] : null, // Mantido para compatibilidade
-        imagensUrls: imagensUrls && imagensUrls.length > 0 ? imagensUrls : undefined,
-        documentosUrls: documentosUrls && documentosUrls.length > 0 ? documentosUrls : undefined,
-        status: ChecklistItemStatus.EM_ANALISE,
-        executorId: userId,
-      },
-      update: {
-        descricao: data.descricao.trim(),
-        imagemUrl: imagensUrls && imagensUrls.length > 0 ? imagensUrls[0] : null, // Mantido para compatibilidade
-        documentoUrl: documentosUrls && documentosUrls.length > 0 ? documentosUrls[0] : null, // Mantido para compatibilidade
-        imagensUrls: imagensUrls && imagensUrls.length > 0 ? imagensUrls : undefined,
-        documentosUrls: documentosUrls && documentosUrls.length > 0 ? documentosUrls : undefined,
+        // Manter primeira imagem/documento para compatibilidade, ou usar primeira da lista mesclada
+        imagemUrl:
+          mergedImagens && mergedImagens.length > 0
+            ? mergedImagens[0]
+            : existent.imagemUrl,
+        documentoUrl:
+          mergedDocumentos && mergedDocumentos.length > 0
+            ? mergedDocumentos[0]
+            : existent.documentoUrl,
+        imagensUrls: mergedImagens,
+        documentosUrls: mergedDocumentos,
         status: ChecklistItemStatus.EM_ANALISE,
         dataEnvio: new Date(),
         comentario: null,
         avaliadoPorId: null,
         dataAvaliacao: null,
-      },
-      include: {
-        executor: true,
-        avaliadoPor: true,
-      },
-    });
+      };
+    };
+
+    // Criar ou atualizar a entrega do item do checklist (ou subitem)
+    let entrega;
+    
+    if (entregaExistente) {
+      // Atualizar entrega existente
+      entrega = await this.prisma.checklistItemEntrega.update({
+        where: { id: entregaExistente.id },
+        data: prepareUpdateData(entregaExistente),
+        include: {
+          executor: true,
+          avaliadoPor: true,
+        },
+      });
+    } else {
+      // Tentar criar nova entrega
+      try {
+        entrega = await this.prisma.checklistItemEntrega.create({
+          data: {
+            etapaId,
+            checklistIndex,
+            ...(subitemIndex !== undefined && subitemIndex !== null ? { subitemIndex } : { subitemIndex: null }),
+            descricao: data.descricao.trim(),
+            imagemUrl: imagensUrls && imagensUrls.length > 0 ? imagensUrls[0] : null,
+            documentoUrl: documentosUrls && documentosUrls.length > 0 ? documentosUrls[0] : null,
+            imagensUrls: imagensUrls && imagensUrls.length > 0 ? imagensUrls : undefined,
+            documentosUrls: documentosUrls && documentosUrls.length > 0 ? documentosUrls : undefined,
+            status: ChecklistItemStatus.EM_ANALISE,
+            executorId: userId,
+          } as any,
+          include: {
+            executor: true,
+            avaliadoPor: true,
+          },
+        });
+      } catch (error: any) {
+        // Se der erro de constraint única, buscar novamente e atualizar
+        if (error.code === 'P2002' || error.message?.includes('Unique constraint') || error.message?.includes('etapaId') && error.message?.includes('checklistIndex')) {
+          // Buscar qualquer entrega existente para este (etapaId, checklistIndex)
+          // independente do subitemIndex (para compatibilidade com constraint antiga)
+          const todasEntregas = await this.prisma.checklistItemEntrega.findMany({
+            where: {
+              etapaId,
+              checklistIndex,
+            },
+          });
+          
+          if (todasEntregas.length > 0) {
+            // Usar a primeira encontrada (ou a que tem subitemIndex correspondente se existir)
+            const entregaEncontrada = todasEntregas.find((e: any) => 
+              subitemIndex !== undefined && subitemIndex !== null 
+                ? e.subitemIndex === subitemIndex 
+                : (e.subitemIndex === null || e.subitemIndex === undefined)
+            ) || todasEntregas[0];
+            
+            if (entregaEncontrada) {
+              entrega = await this.prisma.checklistItemEntrega.update({
+                where: { id: (entregaEncontrada as any).id },
+                data: prepareUpdateData(entregaEncontrada as any),
+                include: {
+                  executor: true,
+                  avaliadoPor: true,
+                },
+              });
+            } else {
+              throw error;
+            }
+          } else {
+            throw error;
+          }
+        } else {
+          throw error;
+        }
+      }
+    }
 
     return entrega;
   }
@@ -725,6 +891,7 @@ export class TasksService {
     checklistIndex: number,
     reviewerId: number,
     data: ReviewChecklistItemDto,
+    subitemIndex?: number,
   ) {
     const etapa = await this.prisma.etapa.findUnique({
       where: { id: etapaId },
@@ -759,13 +926,12 @@ export class TasksService {
       throw new ForbiddenException('Somente supervisores ou diretores podem avaliar entregas');
     }
 
-    const entrega = await this.prisma.checklistItemEntrega.findUnique({
+    const entrega = await this.prisma.checklistItemEntrega.findFirst({
       where: {
-        etapaId_checklistIndex: {
-          etapaId,
-          checklistIndex,
-        },
-      },
+        etapaId,
+        checklistIndex,
+        ...(subitemIndex !== undefined && subitemIndex !== null ? { subitemIndex } : { subitemIndex: null }),
+      } as any,
     });
 
     if (!entrega) {
@@ -779,10 +945,7 @@ export class TasksService {
     // Atualizar a entrega
     const updatedEntrega = await this.prisma.checklistItemEntrega.update({
       where: {
-        etapaId_checklistIndex: {
-          etapaId,
-          checklistIndex,
-        },
+        id: entrega.id,
       },
       data: {
         status: data.status,
@@ -796,44 +959,77 @@ export class TasksService {
       },
     });
 
-    // Se aprovado, marcar o item do checklist como concluído
+    // Se aprovado, marcar o item do checklist (ou subitem) como concluído
     if (data.status === ChecklistItemStatus.APROVADO) {
-      const checklist = (etapa.checklistJson as Array<{ texto: string; concluido?: boolean }>) || [];
-      if (checklist[checklistIndex]) {
-        checklist[checklistIndex].concluido = true;
-        
-        // Verificar se todos os itens do checklist estão marcados como concluídos
-        const totalItens = checklist.length;
-        const todosConcluidos = totalItens > 0 && checklist.every((item) => item.concluido === true);
-        
-        const updateData: any = {
-          checklistJson: checklist,
-        };
-        
-        // Se todos os itens estão marcados, atualizar status para APROVADA
-        const podeAtualizarStatuses: EtapaStatus[] = [
-          EtapaStatus.PENDENTE,
-          EtapaStatus.EM_ANDAMENTO,
-          EtapaStatus.APROVADA,
-        ];
-        const podeAtualizarStatus = podeAtualizarStatuses.includes(etapa.status as EtapaStatus);
-        
-        if (podeAtualizarStatus && todosConcluidos) {
-          updateData.status = EtapaStatus.APROVADA;
-          // Se ainda não tem data de fim, definir como agora
-          if (!etapa.dataFim) {
-            updateData.dataFim = new Date();
+      const checklist = (etapa.checklistJson as Array<{ 
+        texto: string; 
+        concluido?: boolean;
+        subitens?: Array<{ texto: string; concluido?: boolean }>;
+      }>) || [];
+      
+      if (subitemIndex !== undefined && subitemIndex !== null) {
+        // Se for subitem, marcar o subitem como concluído
+        const item = checklist[checklistIndex];
+        if (item && item.subitens && item.subitens[subitemIndex]) {
+          item.subitens[subitemIndex].concluido = true;
+        }
+      } else {
+        // Se for item principal, marcar o item como concluído
+        if (checklist[checklistIndex]) {
+          checklist[checklistIndex].concluido = true;
+        }
+      }
+      
+      // Atualizar conclusão dos itens com base nos subitens
+      checklist.forEach((item) => {
+        if (item.subitens && item.subitens.length > 0) {
+          const todosSubitensConcluidos = item.subitens.every((sub) => sub.concluido === true);
+          // Se todos os subitens estiverem concluídos, marcar o item como concluído
+          if (todosSubitensConcluidos && !item.concluido) {
+            item.concluido = true;
           }
         }
-        
-        await this.prisma.etapa.update({
-          where: { id: etapaId },
-          data: updateData,
+      });
+
+      // Verificar se todos os itens do checklist (e seus subitens) estão concluídos
+      const totalItens = checklist.length;
+      const todosConcluidos =
+        totalItens > 0 &&
+        checklist.every((item) => {
+          const subitensOk =
+            !item.subitens || item.subitens.length === 0
+              ? true
+              : item.subitens.every((sub) => sub.concluido === true);
+          return item.concluido === true && subitensOk;
         });
-        
-        // Atualizar status do projeto se necessário
-        await this.updateProjetoStatus(etapa.projetoId);
+      
+      const updateData: any = {
+        checklistJson: checklist,
+      };
+      
+      // Se todos os itens estão marcados, atualizar status para APROVADA
+      const podeAtualizarStatuses: EtapaStatus[] = [
+        EtapaStatus.PENDENTE,
+        EtapaStatus.EM_ANDAMENTO,
+        EtapaStatus.APROVADA,
+      ];
+      const podeAtualizarStatus = podeAtualizarStatuses.includes(etapa.status as EtapaStatus);
+      
+      if (podeAtualizarStatus && todosConcluidos) {
+        updateData.status = EtapaStatus.APROVADA;
+        // Se ainda não tem data de fim, definir como agora
+        if (!etapa.dataFim) {
+          updateData.dataFim = new Date();
+        }
       }
+      
+      await this.prisma.etapa.update({
+        where: { id: etapaId },
+        data: updateData,
+      });
+      
+      // Atualizar status do projeto se necessário
+      await this.updateProjetoStatus(etapa.projetoId);
     }
 
     return updatedEntrega;

@@ -182,7 +182,7 @@ export function SupplierModal({ isOpen, onClose, onSupplierCreated }: SupplierMo
               className="px-4 py-2.5 rounded-md bg-primary/80 hover:bg-primary text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm whitespace-nowrap"
               title="Buscar dados do CNPJ"
             >
-              {loadingCNPJ ? '...' : '🔍'}
+              {loadingCNPJ ? 'Buscando...' : 'Buscar'}
             </button>
           </div>
         </div>

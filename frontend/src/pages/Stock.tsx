@@ -2,6 +2,7 @@ import { useEffect, useState, FormEvent, useMemo } from 'react';
 import { api } from '../services/api';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx-js-style';
+import { ExcelDownloadButton } from '../components/ExcelDownloadButton';
 import { toast, formatApiError } from '../utils/toast';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
 
@@ -473,198 +474,189 @@ export default function Stock() {
     };
   }
 
-  function exportToExcel() {
-    try {
-      const reportData = calculateReportTotals();
+  function buildPurchasesWorkbook() {
+    const reportData = calculateReportTotals();
+    
+    // Criar workbook
+    const wb = XLSX.utils.book_new();
+    
+    // Preparar dados da tabela principal
+    const headers = [
+      'Projeto', 'Item', 'Categoria', 'Quantidade', 'Valor Unitário', 'Valor Total', 'Status', 
+      'Solicitado Por', 'Cargo', 'Data Compra', 'Forma Pagamento', 'Previsão Entrega', 
+      'Data Entrega', 'Status Entrega', 'Recebido Por', 'Fornecedor', 'Descrição', 'Observações'
+    ];
+    
+    const tableData: any[][] = [headers];
+    
+    // Agrupar por projeto
+    const projetoGroups: Record<number, Purchase[]> = {};
+    reportData.purchases.forEach((purchase) => {
+      const projetoId = purchase.projetoId || 0;
+      if (!projetoGroups[projetoId]) {
+        projetoGroups[projetoId] = [];
+      }
+      projetoGroups[projetoId].push(purchase);
+    });
+    
+    // Preencher dados
+    Object.entries(projetoGroups).forEach(([projetoId, projetoPurchases]) => {
+      const projeto = projects.find((p) => p.id === Number(projetoId));
       
-      // Criar workbook
-      const wb = XLSX.utils.book_new();
-      
-      // Preparar dados da tabela principal
-      const headers = [
-        'Projeto', 'Item', 'Categoria', 'Quantidade', 'Valor Unitário', 'Valor Total', 'Status', 
-        'Solicitado Por', 'Cargo', 'Data Compra', 'Forma Pagamento', 'Previsão Entrega', 
-        'Data Entrega', 'Status Entrega', 'Recebido Por', 'Fornecedor', 'Descrição', 'Observações'
-      ];
-      
-      const tableData: any[][] = [headers];
-      
-      // Agrupar por projeto
-      const projetoGroups: Record<number, Purchase[]> = {};
-      reportData.purchases.forEach((purchase) => {
-        const projetoId = purchase.projetoId || 0;
-        if (!projetoGroups[projetoId]) {
-          projetoGroups[projetoId] = [];
-        }
-        projetoGroups[projetoId].push(purchase);
-      });
-      
-      // Preencher dados
-      Object.entries(projetoGroups).forEach(([projetoId, projetoPurchases]) => {
-        const projeto = projects.find((p) => p.id === Number(projetoId));
+      projetoPurchases.forEach((purchase) => {
+        const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
+        const cotacaoSelecionada = cotacoes.length > 0 ? cotacoes[0] : null;
+        const valorTotal = purchase.valorUnitario * (purchase.quantidade || 0);
         
-        projetoPurchases.forEach((purchase) => {
-          const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
-          const cotacaoSelecionada = cotacoes.length > 0 ? cotacoes[0] : null;
-          const valorTotal = purchase.valorUnitario * (purchase.quantidade || 0);
-          
-          tableData.push([
-            projeto ? projeto.nome : 'Sem Projeto',
-            purchase.item,
-            (purchase as any).categoriaId ? getCategoryName((purchase as any).categoriaId) : '-',
-            purchase.quantidade || 0,
-            purchase.valorUnitario, // Valor numérico para formatação
-            valorTotal, // Valor numérico para formatação
-            getStatusLabel(purchase.status),
-            purchase.solicitadoPor?.nome || '-',
-            purchase.solicitadoPor?.cargo?.nome || '-',
-            purchase.dataCompra ? new Date(purchase.dataCompra) : null,
-            purchase.formaPagamento || '-',
-            purchase.status === 'COMPRADO_ACAMINHO' && purchase.previsaoEntrega 
-              ? new Date(purchase.previsaoEntrega) 
-              : null,
-            purchase.dataEntrega ? new Date(purchase.dataEntrega) : null,
-            purchase.statusEntrega ? getStatusLabel(purchase.statusEntrega) : '-',
-            purchase.recebidoPor || '-',
-            cotacaoSelecionada?.fornecedorId ? getSupplierName(cotacaoSelecionada.fornecedorId) : '-',
-            purchase.descricao || '-',
-            purchase.observacao || '-',
-          ]);
-        });
+        tableData.push([
+          projeto ? projeto.nome : 'Sem Projeto',
+          purchase.item,
+          (purchase as any).categoriaId ? getCategoryName((purchase as any).categoriaId) : '-',
+          purchase.quantidade || 0,
+          purchase.valorUnitario, // Valor numérico para formatação
+          valorTotal, // Valor numérico para formatação
+          getStatusLabel(purchase.status),
+          purchase.solicitadoPor?.nome || '-',
+          purchase.solicitadoPor?.cargo?.nome || '-',
+          purchase.dataCompra ? new Date(purchase.dataCompra) : null,
+          purchase.formaPagamento || '-',
+          purchase.status === 'COMPRADO_ACAMINHO' && purchase.previsaoEntrega 
+            ? new Date(purchase.previsaoEntrega) 
+            : null,
+          purchase.dataEntrega ? new Date(purchase.dataEntrega) : null,
+          purchase.statusEntrega ? getStatusLabel(purchase.statusEntrega) : '-',
+          purchase.recebidoPor || '-',
+          cotacaoSelecionada?.fornecedorId ? getSupplierName(cotacaoSelecionada.fornecedorId) : '-',
+          purchase.descricao || '-',
+          purchase.observacao || '-',
+        ]);
       });
-      
-      // Criar worksheet
-      const ws = XLSX.utils.aoa_to_sheet(tableData);
-      
-      // Definir range da tabela
-      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-      
-      // Estilo do cabeçalho (azul escuro com texto branco)
-      const headerStyle: any = {
+    });
+    
+    // Criar worksheet
+    const ws = XLSX.utils.aoa_to_sheet(tableData);
+    
+    // Definir range da tabela
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+    
+    // Estilo do cabeçalho (azul escuro com texto branco)
+    const headerStyle: any = {
+      fill: {
+        fgColor: { rgb: '1E3A8A' } // Azul escuro
+      },
+      font: {
+        color: { rgb: 'FFFFFF' }, // Branco
+        bold: true,
+        sz: 11
+      },
+      alignment: {
+        horizontal: 'center',
+        vertical: 'center',
+        wrapText: true
+      },
+      border: {
+        top: { style: 'thin', color: { rgb: '000000' } },
+        bottom: { style: 'thin', color: { rgb: '000000' } },
+        left: { style: 'thin', color: { rgb: '000000' } },
+        right: { style: 'thin', color: { rgb: '000000' } }
+      }
+    };
+    
+    // Aplicar estilo ao cabeçalho
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+      if (!ws[cellAddress]) {
+        ws[cellAddress] = { t: 's', v: '' };
+      }
+      ws[cellAddress].s = headerStyle;
+    }
+    
+    // Estilo das linhas de dados (alternando cores)
+    for (let row = 1; row <= range.e.r; row++) {
+      const isEven = row % 2 === 0;
+      const rowStyle: any = {
         fill: {
-          fgColor: { rgb: '1E3A8A' } // Azul escuro
+          fgColor: { rgb: isEven ? 'E8F4F8' : 'FFFFFF' } // Azul claro alternado com branco
         },
         font: {
-          color: { rgb: 'FFFFFF' }, // Branco
-          bold: true,
-          sz: 11
+          color: { rgb: '000000' },
+          sz: 10
         },
         alignment: {
-          horizontal: 'center',
           vertical: 'center',
           wrapText: true
         },
         border: {
-          top: { style: 'thin', color: { rgb: '000000' } },
-          bottom: { style: 'thin', color: { rgb: '000000' } },
-          left: { style: 'thin', color: { rgb: '000000' } },
-          right: { style: 'thin', color: { rgb: '000000' } }
+          top: { style: 'thin', color: { rgb: 'D0D0D0' } },
+          bottom: { style: 'thin', color: { rgb: 'D0D0D0' } },
+          left: { style: 'thin', color: { rgb: 'D0D0D0' } },
+          right: { style: 'thin', color: { rgb: 'D0D0D0' } }
         }
       };
       
-      // Aplicar estilo ao cabeçalho
       for (let col = range.s.c; col <= range.e.c; col++) {
-        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
-        if (!ws[cellAddress]) {
-          ws[cellAddress] = { t: 's', v: '' };
-        }
-        ws[cellAddress].s = headerStyle;
-      }
-      
-      // Estilo das linhas de dados (alternando cores)
-      for (let row = 1; row <= range.e.r; row++) {
-        const isEven = row % 2 === 0;
-        const rowStyle: any = {
-          fill: {
-            fgColor: { rgb: isEven ? 'E8F4F8' : 'FFFFFF' } // Azul claro alternado com branco
-          },
-          font: {
-            color: { rgb: '000000' },
-            sz: 10
-          },
-          alignment: {
-            vertical: 'center',
-            wrapText: true
-          },
-          border: {
-            top: { style: 'thin', color: { rgb: 'D0D0D0' } },
-            bottom: { style: 'thin', color: { rgb: 'D0D0D0' } },
-            left: { style: 'thin', color: { rgb: 'D0D0D0' } },
-            right: { style: 'thin', color: { rgb: 'D0D0D0' } }
-          }
-        };
+        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+        if (!ws[cellAddress]) continue;
         
-        for (let col = range.s.c; col <= range.e.c; col++) {
-          const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-          if (!ws[cellAddress]) continue;
-          
-          // Formatação especial para colunas numéricas
-          if (col === 3) { // Quantidade
+        // Formatação especial para colunas numéricas
+        if (col === 3) { // Quantidade
+          ws[cellAddress].s = {
+            ...rowStyle,
+            numFmt: '#,##0'
+          };
+        } else if (col === 4 || col === 5) { // Valor Unitário e Valor Total
+          ws[cellAddress].s = {
+            ...rowStyle,
+            numFmt: '"R$" #,##0.00'
+          };
+        } else if (col === 9 || col === 11 || col === 12) { // Datas
+          if (ws[cellAddress].v && ws[cellAddress].v instanceof Date) {
             ws[cellAddress].s = {
               ...rowStyle,
-              numFmt: '#,##0'
+              numFmt: 'dd/mm/yyyy'
             };
-          } else if (col === 4 || col === 5) { // Valor Unitário e Valor Total
-            ws[cellAddress].s = {
-              ...rowStyle,
-              numFmt: '"R$" #,##0.00'
-            };
-          } else if (col === 9 || col === 11 || col === 12) { // Datas
-            if (ws[cellAddress].v && ws[cellAddress].v instanceof Date) {
-              ws[cellAddress].s = {
-                ...rowStyle,
-                numFmt: 'dd/mm/yyyy'
-              };
-            } else {
-              ws[cellAddress].s = rowStyle;
-            }
           } else {
             ws[cellAddress].s = rowStyle;
           }
+        } else {
+          ws[cellAddress].s = rowStyle;
         }
       }
-      
-      // Ajustar largura das colunas
-      ws['!cols'] = [
-        { wch: 20 }, // Projeto
-        { wch: 30 }, // Item
-        { wch: 20 }, // Categoria
-        { wch: 12 }, // Quantidade
-        { wch: 15 }, // Valor Unitário
-        { wch: 15 }, // Valor Total
-        { wch: 18 }, // Status
-        { wch: 20 }, // Solicitado Por
-        { wch: 15 }, // Cargo
-        { wch: 12 }, // Data Compra
-        { wch: 15 }, // Forma Pagamento
-        { wch: 15 }, // Previsão Entrega
-        { wch: 12 }, // Data Entrega
-        { wch: 15 }, // Status Entrega
-        { wch: 18 }, // Recebido Por
-        { wch: 25 }, // Fornecedor
-        { wch: 40 }, // Descrição
-        { wch: 40 }, // Observações
-      ];
-      
-      // Adicionar filtros automáticos na primeira linha
-      const filterRange = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: range.e.r, c: range.e.c } });
-      ws['!autofilter'] = { ref: filterRange };
-      
-      // Congelar primeira linha (cabeçalho) - será aplicado pelo Excel ao abrir
-      ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft' };
-      
-      // Adicionar ao workbook
-      XLSX.utils.book_append_sheet(wb, ws, 'Compras');
-      
-      // Gerar arquivo
-      const fileName = `relatorio-compras-${new Date().toISOString().split('T')[0]}.xlsx`;
-      XLSX.writeFile(wb, fileName);
-      
-      toast.success('Relatório Excel gerado com sucesso!');
-    } catch (error: any) {
-      console.error('Erro ao gerar Excel:', error);
-      toast.error('Erro ao gerar relatório Excel: ' + (error.message || 'Erro desconhecido'));
     }
+    
+    // Ajustar largura das colunas
+    ws['!cols'] = [
+      { wch: 20 }, // Projeto
+      { wch: 30 }, // Item
+      { wch: 20 }, // Categoria
+      { wch: 12 }, // Quantidade
+      { wch: 15 }, // Valor Unitário
+      { wch: 15 }, // Valor Total
+      { wch: 18 }, // Status
+      { wch: 20 }, // Solicitado Por
+      { wch: 15 }, // Cargo
+      { wch: 12 }, // Data Compra
+      { wch: 15 }, // Forma Pagamento
+      { wch: 15 }, // Previsão Entrega
+      { wch: 12 }, // Data Entrega
+      { wch: 15 }, // Status Entrega
+      { wch: 18 }, // Recebido Por
+      { wch: 25 }, // Fornecedor
+      { wch: 40 }, // Descrição
+      { wch: 40 }, // Observações
+    ];
+    
+    // Adicionar filtros automáticos na primeira linha
+    const filterRange = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: range.e.r, c: range.e.c } });
+    ws['!autofilter'] = { ref: filterRange };
+    
+    // Congelar primeira linha (cabeçalho) - será aplicado pelo Excel ao abrir
+    ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft' };
+    
+    // Adicionar ao workbook
+    XLSX.utils.book_append_sheet(wb, ws, 'Compras');
+    
+    return wb;
   }
 
 
@@ -1166,9 +1158,6 @@ export default function Stock() {
       // Adicionar campos opcionais apenas se tiverem valor válido (não vazio)
       if (purchaseForm.descricao && purchaseForm.descricao.trim().length > 0) {
         payload.descricao = purchaseForm.descricao.trim();
-        console.log('✓ descricao adicionada:', payload.descricao);
-      } else {
-        console.log('✗ descricao omitida (vazia ou undefined)');
       }
       
       if (purchaseForm.imagemUrl && purchaseForm.imagemUrl.trim().length > 0) {
@@ -1176,12 +1165,7 @@ export default function Stock() {
         const processedImageUrl = await processImageUrl(purchaseForm.imagemUrl.trim());
         if (processedImageUrl && processedImageUrl.length > 0) {
           payload.imagemUrl = processedImageUrl;
-          console.log('✓ imagemUrl processada e adicionada:', payload.imagemUrl.substring(0, 50) + '...', `(${payload.imagemUrl.length} chars)`);
-        } else {
-          console.log('✗ imagemUrl omitida após processamento (vazia ou inválida)');
         }
-      } else {
-        console.log('✗ imagemUrl omitida (vazia ou undefined)');
       }
       
       if (purchaseForm.nfUrl && purchaseForm.nfUrl.trim().length > 0) {
@@ -1189,12 +1173,7 @@ export default function Stock() {
         const processedNfUrl = await processImageUrl(purchaseForm.nfUrl.trim());
         if (processedNfUrl && processedNfUrl.length > 0) {
           payload.nfUrl = processedNfUrl;
-          console.log('✓ nfUrl processada e adicionada:', payload.nfUrl.substring(0, 50) + '...', `(${payload.nfUrl.length} chars)`);
-      } else {
-          console.log('✗ nfUrl omitida após processamento (vazia ou inválida)');
         }
-      } else {
-        console.log('✗ nfUrl omitida (vazia ou undefined)');
       }
       
       if (purchaseForm.comprovantePagamentoUrl && purchaseForm.comprovantePagamentoUrl.trim().length > 0) {
@@ -1202,26 +1181,15 @@ export default function Stock() {
         const processedComprovanteUrl = await processImageUrl(purchaseForm.comprovantePagamentoUrl.trim());
         if (processedComprovanteUrl && processedComprovanteUrl.length > 0) {
           payload.comprovantePagamentoUrl = processedComprovanteUrl;
-          console.log('✓ comprovantePagamentoUrl processada e adicionada:', payload.comprovantePagamentoUrl.substring(0, 50) + '...', `(${payload.comprovantePagamentoUrl.length} chars)`);
-      } else {
-          console.log('✗ comprovantePagamentoUrl omitida após processamento (vazia ou inválida)');
         }
-      } else {
-        console.log('✗ comprovantePagamentoUrl omitida (vazia ou undefined)');
       }
       
       if (purchaseForm.dataCompra && purchaseForm.dataCompra.trim().length > 0) {
         payload.dataCompra = purchaseForm.dataCompra.trim();
-        console.log('✓ dataCompra adicionada:', payload.dataCompra);
-      } else {
-        console.log('✗ dataCompra omitida (vazia ou undefined)');
       }
 
       if (purchaseForm.categoriaId) {
         payload.categoriaId = Number(purchaseForm.categoriaId);
-        console.log('✓ categoriaId adicionada:', payload.categoriaId);
-      } else {
-        console.log('✗ categoriaId omitida (não selecionada)');
       }
       
       // Sempre enviar cotações (array com pelo menos uma cotação)
@@ -1254,22 +1222,15 @@ export default function Stock() {
               if (cot.formaPagamento && cot.formaPagamento.trim().length > 0) {
                 cotacao.formaPagamento = cot.formaPagamento.trim();
               }
-              console.log(`✓ Cotação ${index + 1} válida:`, cotacao);
               return cotacao;
             }
-            console.log(`✗ Cotação ${index + 1} inválida (valorUnitario: ${valorUnitario})`);
             return null;
           })
           .filter((cot) => cot !== null); // Remove cotações inválidas
         
         if (cotacoesFiltradas.length > 0) {
           payload.cotacoes = cotacoesFiltradas;
-          console.log('✓ cotações adicionadas:', cotacoesFiltradas.length, 'cotação(ões)');
-        } else {
-          console.log('✗ Nenhuma cotação válida encontrada');
         }
-      } else {
-        console.log('✗ Sem cotações no formulário');
       }
 
       // Limpar propriedades undefined/null do payload final
@@ -4551,16 +4512,12 @@ export default function Stock() {
                       >
                         Fechar
                       </button>
-                      <button
-                        type="button"
-                        onClick={exportToExcel}
+                      <ExcelDownloadButton
+                        buildWorkbook={buildPurchasesWorkbook}
+                        fileName={`relatorio-compras-${new Date().toISOString().split('T')[0]}.xlsx`}
+                        label="Exportar Excel"
                         className="px-6 py-2.5 rounded-md bg-green-600 hover:bg-green-700 text-white font-semibold transition-colors flex items-center gap-2"
-                      >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        Exportar Excel
-                      </button>
+                      />
                       <button
                         type="button"
                         onClick={() => {

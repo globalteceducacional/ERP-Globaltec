@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
 import { buttonStyles } from '../utils/buttonStyles';
-import { ChecklistItemEntrega } from '../types';
+import { ChecklistItemEntrega, ChecklistItem, ChecklistSubItem } from '../types';
 import { toast, formatApiError } from '../utils/toast';
 import {
   getStatusColor,
@@ -26,10 +26,7 @@ interface Projeto {
   progress?: number;
 }
 
-interface ChecklistItem {
-  texto: string;
-  concluido?: boolean;
-}
+// ChecklistItem importado de ../types
 
 interface Usuario {
   id: number;
@@ -90,6 +87,7 @@ export default function MyTasks() {
   const [showChecklistModal, setShowChecklistModal] = useState(false);
   const [selectedChecklistEtapa, setSelectedChecklistEtapa] = useState<Etapa | null>(null);
   const [selectedChecklistIndex, setSelectedChecklistIndex] = useState<number | null>(null);
+  const [selectedSubitemIndex, setSelectedSubitemIndex] = useState<number | null>(null);
   const [objetivoDescricao, setObjetivoDescricao] = useState('');
   const [objetivoImagens, setObjetivoImagens] = useState<string[]>([]);
   const [objetivoDocumentos, setObjetivoDocumentos] = useState<string[]>([]);
@@ -99,6 +97,22 @@ export default function MyTasks() {
   const [showViewEntregaModal, setShowViewEntregaModal] = useState(false);
   const [selectedViewEntrega, setSelectedViewEntrega] = useState<{ etapa: Etapa; index: number; entrega: ChecklistItemEntrega } | null>(null);
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
+  
+  // Estado para controlar expansão de detalhes dos itens do checklist
+  // Chave: "etapaId-itemIndex" ou "etapaId-itemIndex-subIndex" para subitens
+  const [expandedChecklistDetails, setExpandedChecklistDetails] = useState<Set<string>>(new Set());
+
+  const toggleChecklistDetails = (key: string) => {
+    setExpandedChecklistDetails((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+      return newSet;
+    });
+  };
 
   // Verificar se o usuário tem acesso à página de projetos
   const hasProjectsAccess = useMemo(() => {
@@ -168,9 +182,10 @@ export default function MyTasks() {
     setObjetivoLoading(false);
   }
 
-  function handleOpenChecklistModal(etapa: Etapa, index: number) {
+  function handleOpenChecklistModal(etapa: Etapa, index: number, subitemIndex?: number) {
     setSelectedChecklistEtapa(etapa);
     setSelectedChecklistIndex(index);
+    setSelectedSubitemIndex(subitemIndex ?? null);
     resetChecklistForm();
     setShowChecklistModal(true);
   }
@@ -179,6 +194,7 @@ export default function MyTasks() {
     setShowChecklistModal(false);
     setSelectedChecklistEtapa(null);
     setSelectedChecklistIndex(null);
+    setSelectedSubitemIndex(null);
     resetChecklistForm();
   }
 
@@ -262,21 +278,25 @@ export default function MyTasks() {
     setObjetivoPreviews(prev => [...prev.filter(p => p.type !== 'image'), ...newPreviews]);
   }
 
-  async function handleObjetivoDocumentosChange(event: ChangeEvent<HTMLInputElement>) {
+  async function handleObjetivoFilesChange(event: ChangeEvent<HTMLInputElement>) {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) {
+      setObjetivoImagens([]);
       setObjetivoDocumentos([]);
-      setObjetivoPreviews(prev => prev.filter(p => p.type !== 'document'));
+      setObjetivoPreviews([]);
       return;
     }
 
+    const MAX_SIZE_MB = 10;
+    const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+
+    const newImages: string[] = [];
     const newDocuments: string[] = [];
     const newPreviews: { url: string; name: string; type: 'image' | 'document' }[] = [];
 
     for (const file of files) {
-      const isValidDocument = file.type === 'application/pdf' || file.type.startsWith('image/');
-      if (!isValidDocument) {
-        setObjetivoError(`O arquivo "${file.name}" não é um documento válido (PDF ou imagem).`);
+      if (file.size > MAX_SIZE_BYTES) {
+        setObjetivoError(`O arquivo "${file.name}" excede o limite de ${MAX_SIZE_MB}MB.`);
         continue;
       }
 
@@ -285,21 +305,27 @@ export default function MyTasks() {
         reader.onload = () => {
           const result = typeof reader.result === 'string' ? reader.result : null;
           if (result) {
-            newDocuments.push(result);
-            newPreviews.push({ url: result, name: file.name, type: 'document' });
+            if (file.type.startsWith('image/')) {
+              newImages.push(result);
+              newPreviews.push({ url: result, name: file.name, type: 'image' });
+            } else {
+              newDocuments.push(result);
+              newPreviews.push({ url: result, name: file.name, type: 'document' });
+            }
           }
           resolve();
         };
         reader.onerror = () => {
-          setObjetivoError(`Falha ao carregar o documento "${file.name}".`);
+          setObjetivoError(`Falha ao carregar o arquivo "${file.name}".`);
           reject();
         };
         reader.readAsDataURL(file);
       });
     }
 
+    setObjetivoImagens(prev => [...prev, ...newImages]);
     setObjetivoDocumentos(prev => [...prev, ...newDocuments]);
-    setObjetivoPreviews(prev => [...prev.filter(p => p.type !== 'document'), ...newPreviews]);
+    setObjetivoPreviews(prev => [...prev, ...newPreviews]);
   }
 
   function removeObjetivoPreview(index: number) {
@@ -328,7 +354,10 @@ export default function MyTasks() {
     try {
       setObjetivoLoading(true);
       setObjetivoError(null);
-      await api.post(`/tasks/${selectedChecklistEtapa.id}/checklist/${selectedChecklistIndex}/submit`, {
+      const url = `/tasks/${selectedChecklistEtapa.id}/checklist/${selectedChecklistIndex}/submit${
+        selectedSubitemIndex !== null ? `?subitemIndex=${selectedSubitemIndex}` : ''
+      }`;
+      await api.post(url, {
         descricao: objetivoDescricao.trim(),
         imagens: objetivoImagens.length > 0 ? objetivoImagens : undefined,
         documentos: objetivoDocumentos.length > 0 ? objetivoDocumentos : undefined,
@@ -546,7 +575,7 @@ export default function MyTasks() {
                             <span className="text-white/60">
                               {stats.total} etapa{stats.total !== 1 ? 's' : ''} pendente{stats.total !== 1 ? 's' : ''}
                             </span>
-                                            {stats.pendentes > 0 && (
+                            {stats.pendentes > 0 && (
                               <span className="px-2 py-0.5 rounded-md bg-amber-500/25 text-amber-200 border border-amber-400/40 font-medium">
                                 {stats.pendentes} pendente{stats.pendentes !== 1 ? 's' : ''}
                               </span>
@@ -734,56 +763,183 @@ export default function MyTasks() {
                           </div>
                           <div className="space-y-2">
                             {etapa.checklistJson.map((item, index) => {
-                              const entregaItem = etapa.checklistEntregas?.find((e) => e.checklistIndex === index);
+                              // Entrega do item principal (ignorar entregas de subitens)
+                              const entregaItem = etapa.checklistEntregas?.find(
+                                (e) => e.checklistIndex === index && (e.subitemIndex === null || e.subitemIndex === undefined)
+                              );
                               const statusItem = entregaItem?.status ?? 'PENDENTE';
                               const podeEnviarObjetivo = podeInteragir && (statusItem === 'PENDENTE' || statusItem === 'REPROVADO');
+                              const detailsKey = `${etapa.id}-${index}`;
+                              const isExpanded = expandedChecklistDetails.has(detailsKey);
+                              const hasDetails = item.descricao && item.descricao.trim().length > 0;
+                              const hasSubitens = item.subitens && item.subitens.length > 0;
+                              
                               return (
-                                <div
-                                  key={index}
-                                  className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
-                                    podeInteragir ? 'hover:bg-white/10 hover:scale-[1.01]' : ''
-                                  } ${getChecklistItemStyle(item.concluido)}`}
-                                >
+                                <div key={index} className="space-y-1">
+                                  {/* Item principal */}
                                   <div
-                                    className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${getCheckboxStyle(item.concluido)}`}
-                                    title="Status do item"
+                                    className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
+                                      podeInteragir ? 'hover:bg-white/10 hover:scale-[1.01]' : ''
+                                    } ${getChecklistItemStyle(item.concluido ?? false ? 'true' : 'false')}`}
                                   >
-                                    {item.concluido && (
-                                      <svg className="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                      </svg>
+                                    <div
+                                      className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${getCheckboxStyle(item.concluido ?? false)}`}
+                                      title="Status do item"
+                                    >
+                                      {item.concluido && (
+                                        <svg className="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
+                                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                        </svg>
+                                      )}
+                                    </div>
+                                    <div className="flex-1">
+                                      <span className={`text-sm ${getChecklistTextStyle(item.concluido ?? false)}`}>
+                                        {item.texto}
+                                      </span>
+                                    </div>
+                                    <span
+                                      className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${getChecklistItemStatusColor(statusItem)}`}
+                                    >
+                                      {getChecklistItemStatusLabel(statusItem)}
+                                    </span>
+                                    {(hasDetails || hasSubitens) && (
+                                      <button
+                                        type="button"
+                                        onClick={() => toggleChecklistDetails(detailsKey)}
+                                        className="px-2 py-0.5 rounded text-xs transition-colors bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/30"
+                                        title={isExpanded ? 'Ocultar detalhes' : 'Ver detalhes e subitens'}
+                                      >
+                                        {hasSubitens ? `(${item.subitens!.length})` : ''} {isExpanded ? '▲' : '▼'}
+                                      </button>
+                                    )}
+                                    {entregaItem && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
+                                          setShowViewEntregaModal(true);
+                                        }}
+                                        className="px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                                        title="Ver detalhes da entrega"
+                                      >
+                                        Ver entrega
+                                      </button>
+                                    )}
+                                    {podeEnviarObjetivo && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenChecklistModal(etapa, index)}
+                                        className="px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                                        title="Enviar objetivo para análise"
+                                      >
+                                        Enviar
+                                      </button>
                                     )}
                                   </div>
-                                  <span className={`flex-1 text-sm ${getChecklistTextStyle(item.concluido)}`}>
-                                    {item.texto}
-                                  </span>
-                                  <span
-                                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${getChecklistItemStatusColor(statusItem)}`}
-                                  >
-                                    {getChecklistItemStatusLabel(statusItem)}
-                                  </span>
-                                  {entregaItem && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
-                                        setShowViewEntregaModal(true);
-                                      }}
-                                      className="ml-2 px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                                      title="Ver detalhes da entrega"
-                                    >
-                                      Ver detalhes
-                                    </button>
-                                  )}
-                                  {podeEnviarObjetivo && (
-            <button
-                                      type="button"
-                                      onClick={() => handleOpenChecklistModal(etapa, index)}
-                                      className="ml-2 px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                                      title="Enviar objetivo para análise"
-            >
-                                      Enviar
-            </button>
+                                  
+                                  {/* Detalhes expandidos (descrição + subitens) */}
+                                  {isExpanded && (
+                                    <div className="ml-8 pl-4 border-l-2 border-sky-500/30 space-y-2 py-2">
+                                      {/* Descrição do item */}
+                                      {hasDetails && (
+                                        <div className="p-3 bg-sky-500/5 rounded-lg border border-sky-500/20">
+                                          <p className="text-xs text-sky-300/70 mb-1 font-medium">Descrição:</p>
+                                          <p className="text-sm text-white/80 whitespace-pre-wrap">{item.descricao}</p>
+                                        </div>
+                                      )}
+                                      
+                                      {/* Subitens */}
+                                      {hasSubitens && (
+                                        <div className="space-y-1">
+                                          <p className="text-xs text-sky-300/70 font-medium">Subitens / Subcategorias:</p>
+                                          {item.subitens!.map((subitem, subIndex) => {
+                                            const subKey = `${etapa.id}-${index}-${subIndex}`;
+                                            const subExpanded = expandedChecklistDetails.has(subKey);
+                                            const subHasDetails = subitem.descricao && subitem.descricao.trim().length > 0;
+                                            // Buscar entrega do subitem
+                                            const entregaSubitem = etapa.checklistEntregas?.find(
+                                              (e) => e.checklistIndex === index && e.subitemIndex === subIndex
+                                            );
+                                            const statusSubitem = entregaSubitem?.status ?? 'PENDENTE';
+                                            const podeEnviarSubitem = podeInteragir && (statusSubitem === 'PENDENTE' || statusSubitem === 'REPROVADO');
+                                            
+                                            return (
+                                              <div key={subIndex} className="space-y-1">
+                                                <div
+                                                  className={`flex items-center gap-2 p-2 rounded-md transition-all ${
+                                                    subitem.concluido
+                                                      ? 'bg-emerald-500/10 border border-emerald-500/20'
+                                                      : 'bg-white/5 border border-white/10'
+                                                  }`}
+                                                >
+                                                  <div
+                                                    className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer hover:scale-110 transition-transform ${
+                                                      subitem.concluido
+                                                        ? 'bg-emerald-500/30 border-emerald-400/50'
+                                                        : 'border-slate-400/40 hover:border-slate-300'
+                                                    }`}
+                                                    title={subitem.concluido ? 'Concluído' : 'Pendente'}
+                                                  >
+                                                    {subitem.concluido && (
+                                                      <svg className="w-3 h-3 text-emerald-300" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                      </svg>
+                                                    )}
+                                                  </div>
+                                                  <span className={`flex-1 text-xs ${subitem.concluido ? 'text-emerald-300/70 line-through' : 'text-white/80'}`}>
+                                                    {subitem.texto}
+                                                  </span>
+                                                  <span
+                                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${getChecklistItemStatusColor(statusSubitem)}`}
+                                                  >
+                                                    {getChecklistItemStatusLabel(statusSubitem)}
+                                                  </span>
+                                                  {entregaSubitem && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => {
+                                                        setSelectedViewEntrega({ etapa, index, entrega: entregaSubitem });
+                                                        setShowViewEntregaModal(true);
+                                                      }}
+                                                      className="px-1.5 py-0.5 rounded text-[10px] bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                                                      title="Ver detalhes da entrega"
+                                                    >
+                                                      Ver
+                                                    </button>
+                                                  )}
+                                                  {podeEnviarSubitem && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleOpenChecklistModal(etapa, index, subIndex)}
+                                                      className="px-1.5 py-0.5 rounded text-[10px] bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                                                      title="Enviar subitem para análise"
+                                                    >
+                                                      Enviar
+                                                    </button>
+                                                  )}
+                                                  {subHasDetails && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => toggleChecklistDetails(subKey)}
+                                                      className="px-1.5 py-0.5 rounded text-[10px] bg-slate-500/20 hover:bg-slate-500/30 text-slate-300 border border-slate-400/30 transition-colors"
+                                                    >
+                                                      {subExpanded ? '▲' : '▼'}
+                                                    </button>
+                                                  )}
+                                                </div>
+                                                {/* Descrição do subitem expandida */}
+                                                {subExpanded && subHasDetails && (
+                                                  <div className="ml-6 p-3 bg-sky-500/5 rounded-lg border border-sky-500/20">
+                                                    <p className="text-xs text-sky-300/70 mb-1 font-medium">Descrição:</p>
+                                                    <p className="text-sm text-white/80 whitespace-pre-wrap">{subitem.descricao}</p>
+                                                  </div>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
                                   )}
                                 </div>
                               );
@@ -794,7 +950,7 @@ export default function MyTasks() {
                              !temItensMarcados && (
                             <div className="mt-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
                               <p className="text-xs text-yellow-300">
-                                💡 Marque pelo menos um item do checklist na página de Projetos para poder enviar a entrega com descrição e imagem.
+                                Marque pelo menos um item do checklist na página de Projetos para poder enviar a entrega com descrição e imagem.
                               </p>
                             </div>
                           )}
@@ -931,14 +1087,18 @@ export default function MyTasks() {
           <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-white/20 flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-semibold text-white">Enviar objetivo</h2>
+                <h2 className="text-xl font-semibold text-white">
+                  {selectedSubitemIndex !== null ? 'Enviar subitem' : 'Enviar objetivo'}
+                </h2>
                 <p className="text-sm text-white/60 mt-1">
-                  {selectedChecklistEtapa.nome} • Objetivo #{selectedChecklistIndex + 1}
+                  {selectedChecklistEtapa.nome} • {selectedSubitemIndex !== null ? `Subitem #${selectedSubitemIndex + 1}` : `Objetivo #${selectedChecklistIndex + 1}`}
                 </p>
                 {selectedChecklistEtapa.checklistJson &&
                   selectedChecklistEtapa.checklistJson[selectedChecklistIndex] && (
                     <p className="text-xs text-white/40">
-                      {selectedChecklistEtapa.checklistJson[selectedChecklistIndex]?.texto}
+                      {selectedSubitemIndex !== null 
+                        ? selectedChecklistEtapa.checklistJson[selectedChecklistIndex]?.subitens?.[selectedSubitemIndex]?.texto
+                        : selectedChecklistEtapa.checklistJson[selectedChecklistIndex]?.texto}
                     </p>
                   )}
               </div>
@@ -964,28 +1124,17 @@ export default function MyTasks() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-white/90 mb-2">
-                    Imagens (opcional) - Você pode selecionar múltiplas imagens
+                    Arquivos (opcional) - Você pode selecionar múltiplos arquivos (até 10MB cada)
                   </label>
                   <input 
                     type="file" 
-                    accept="image/*" 
                     multiple
-                    onChange={handleObjetivoImagensChange} 
+                    onChange={handleObjetivoFilesChange} 
                     className="w-full text-sm text-white/80 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary/20 file:text-primary hover:file:bg-primary/30" 
                   />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-white/90 mb-2">
-                    Documentos (opcional) - Você pode selecionar múltiplos documentos
-                  </label>
-                  <input 
-                    type="file" 
-                    accept="application/pdf,image/*" 
-                    multiple
-                    onChange={handleObjetivoDocumentosChange} 
-                    className="w-full text-sm text-white/80 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary/20 file:text-primary hover:file:bg-primary/30" 
-                  />
-                  <p className="text-xs text-white/50 mt-1">PDF ou imagem.</p>
+                  <p className="text-xs text-white/50 mt-1">
+                    Imagens serão exibidas como pré-visualização. Outros tipos de arquivos serão enviados normalmente (limite 10MB por arquivo).
+                  </p>
                 </div>
 
                 {/* Previews dos arquivos */}
@@ -1197,12 +1346,12 @@ export default function MyTasks() {
                     }`}
                   >
                     {selectedViewEntrega.entrega.status === 'PENDENTE'
-                      ? '⏳ Pendente'
+                      ? 'Pendente'
                       : selectedViewEntrega.entrega.status === 'EM_ANALISE'
-                      ? '🔍 Em análise'
+                      ? 'Em análise'
                       : selectedViewEntrega.entrega.status === 'APROVADO'
-                      ? '✓ Aprovado'
-                      : '✗ Reprovado'}
+                      ? 'Aprovado'
+                      : 'Reprovado'}
                   </span>
                 </div>
                 {selectedViewEntrega.entrega.avaliadoPor && (

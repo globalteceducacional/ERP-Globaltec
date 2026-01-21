@@ -2,7 +2,7 @@ import { useEffect, useState, FormEvent, useRef, ChangeEvent, useMemo } from 're
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
-import { Cargo, ChecklistItemEntrega } from '../types';
+import { Cargo, ChecklistItemEntrega, ChecklistItem, ChecklistSubItem } from '../types';
 import { buttonStyles } from '../utils/buttonStyles';
 import { toast, formatApiError } from '../utils/toast';
 import {
@@ -39,7 +39,7 @@ interface Etapa {
   dataInicio?: string | null;
   dataFim?: string | null;
   valorInsumos?: number;
-  checklistJson?: Array<{ texto: string; concluido?: boolean }> | null;
+  checklistJson?: ChecklistItem[] | null;
   executor: Usuario;
   integrantes?: Array<{ usuario: Usuario }>;
   subetapas: Subetapa[];
@@ -142,7 +142,7 @@ export default function ProjectDetails() {
     dataInicio: '',
     dataFim: '',
     valorInsumos: 0,
-    checklist: [{ texto: '', concluido: false }],
+    checklist: [{ texto: '', concluido: false, descricao: '', subitens: [] as ChecklistSubItem[] }] as ChecklistItem[],
     status: 'PENDENTE' as string,
     estoqueItems: [] as Array<{ itemId: number; quantidade: number }>,
   });
@@ -153,6 +153,21 @@ export default function ProjectDetails() {
   const [selectedStockQuantity, setSelectedStockQuantity] = useState<number>(1);
 
   const [updatingChecklist, setUpdatingChecklist] = useState<number | null>(null);
+  
+  // Estado para controlar expansão de detalhes dos itens do checklist
+  const [expandedChecklistDetails, setExpandedChecklistDetails] = useState<Set<string>>(new Set());
+
+  const toggleChecklistDetails = (key: string) => {
+    setExpandedChecklistDetails((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(key)) {
+        newSet.delete(key);
+      } else {
+        newSet.add(key);
+      }
+      return newSet;
+    });
+  };
   const [showEntregaModal, setShowEntregaModal] = useState(false);
   const [selectedEntregaEtapa, setSelectedEntregaEtapa] = useState<Etapa | null>(null);
   const [entregaDescricao, setEntregaDescricao] = useState('');
@@ -361,6 +376,14 @@ export default function ProjectDetails() {
           .map((item) => ({
             texto: item.texto.trim(),
             concluido: item.concluido || false,
+            descricao: item.descricao?.trim() || '',
+            subitens: (item.subitens || [])
+              .filter((sub) => sub.texto && sub.texto.trim().length > 0)
+              .map((sub) => ({
+                texto: sub.texto.trim(),
+                concluido: sub.concluido || false,
+                descricao: sub.descricao?.trim() || '',
+              })),
           }));
         
         if (checklistFiltrado.length > 0) {
@@ -462,7 +485,7 @@ export default function ProjectDetails() {
         dataInicio: '',
         dataFim: '',
         valorInsumos: 0,
-        checklist: [{ texto: '', concluido: false }],
+        checklist: [{ texto: '', concluido: false, descricao: '', subitens: [] }],
         status: 'PENDENTE',
         estoqueItems: [],
       });
@@ -553,8 +576,16 @@ export default function ProjectDetails() {
           ? etapa.checklistJson.map((item: any) => ({
               texto: item.texto || '',
               concluido: item.concluido || false,
+              descricao: item.descricao || '',
+              subitens: item.subitens && Array.isArray(item.subitens)
+                ? item.subitens.map((sub: any) => ({
+                    texto: sub.texto || '',
+                    concluido: sub.concluido || false,
+                    descricao: sub.descricao || '',
+                  }))
+                : [],
             }))
-          : [{ texto: '', concluido: false }],
+          : [{ texto: '', concluido: false, descricao: '', subitens: [] }],
       status: etapa.status || 'PENDENTE',
       estoqueItems,
     });
@@ -911,7 +942,7 @@ export default function ProjectDetails() {
         </h3>
           {isDiretor && (
             <button
-              onClick={async () => {   
+              onClick={async () => {
                 setEditingEtapa(null);
                 setEtapaForm({
                   nome: '',
@@ -921,7 +952,7 @@ export default function ProjectDetails() {
                   dataInicio: '',
                   dataFim: '',
                   valorInsumos: 0,
-                  checklist: [{ texto: '', concluido: false }],
+                  checklist: [{ texto: '', concluido: false, descricao: '', subitens: [] }],
                   status: 'PENDENTE',
                   estoqueItems: [],
                 });
@@ -975,9 +1006,9 @@ export default function ProjectDetails() {
                         </span>
                         {isDiretor && (
                           <>
-                            <button onClick={() => handleEditEtapa(etapa)} className={buttonStyles.edit}>
-                              Editar
-                            </button>
+                          <button onClick={() => handleEditEtapa(etapa)} className={buttonStyles.edit}>
+                            Editar
+                          </button>
                             <button 
                               onClick={() => handleDeleteEtapa(etapa)} 
                               className="px-3 py-1 rounded-md bg-danger/20 hover:bg-danger/30 text-danger text-xs border border-danger/30 transition-colors"
@@ -1055,9 +1086,14 @@ export default function ProjectDetails() {
                       <div className="flex items-start justify-between gap-3">
                         <div>
                           <span className="text-xs text-white/60 block">Última entrega</span>
-                          <span className="text-sm text-white/80">
+                          <span className="text-sm text-white/80 block">
                             {new Date(latestEntrega.dataEnvio).toLocaleString('pt-BR')}
                           </span>
+                          {latestEntrega.executor && (
+                            <span className="mt-1 text-xs text-white/60 block">
+                              Enviado por {latestEntrega.executor.nome}
+                            </span>
+                          )}
                         </div>
                         <span className={`px-2 py-1 rounded text-xs ${getEntregaStatusColor(latestEntrega.status)}`}>
                           {getEntregaStatusLabel(latestEntrega.status)}
@@ -1137,123 +1173,338 @@ export default function ProjectDetails() {
                         )}
                       </div>
                       <div className="space-y-2">
-                        {etapa.checklistJson.map((item: { texto: string; concluido?: boolean }, index: number) => {
-                          const entregaItem = etapa.checklistEntregas?.find((e) => e.checklistIndex === index);
+                        {etapa.checklistJson.map((item: ChecklistItem, index: number) => {
+                          // Entrega do item principal (ignorar entregas de subitens)
+                          const entregaItem = etapa.checklistEntregas?.find(
+                            (e) => e.checklistIndex === index && (e.subitemIndex === null || e.subitemIndex === undefined)
+                          );
                           const statusItem = entregaItem?.status ?? 'PENDENTE';
                           const canApprove = canReview && statusItem === 'EM_ANALISE';
                           const itemLoading = reviewLoading[`${etapa.id}-${index}`] ?? false;
+                          const detailsKey = `view-${etapa.id}-${index}`;
+                          const isExpanded = expandedChecklistDetails.has(detailsKey);
+                          const hasDetails = item.descricao && item.descricao.trim().length > 0;
+                          const hasSubitens = item.subitens && item.subitens.length > 0;
+                          
                           return (
-                            <div
-                              key={`${etapa.id}-checklist-${index}`}
-                              className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
-                                isExecutor ? 'hover:bg-white/10 hover:scale-[1.01]' : ''
-                              } ${getChecklistItemStyle(item.concluido || false)}`}
-                            >
+                            <div key={`${etapa.id}-checklist-${index}`} className="space-y-1">
+                              {/* Item principal */}
                               <div
-                                className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
-                                  updatingChecklist === etapa.id ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
-                                } ${getCheckboxStyle(item.concluido || false)}`}
-                                onClick={() => {
-                                  if (updatingChecklist !== etapa.id) {
-                                    handleChecklistUpdate(etapa.id, index, !item.concluido);
-                                  }
-                                }}
-                                title="Status do item"
+                                className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
+                                  isExecutor ? 'hover:bg-white/10 hover:scale-[1.01]' : ''
+                                } ${getChecklistItemStyle(item.concluido || false)}`}
                               >
-                                {item.concluido && (
-                                  <svg className="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                  </svg>
+                                <div
+                                  className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
+                                    updatingChecklist === etapa.id ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                                  } ${getCheckboxStyle(item.concluido || false)}`}
+                                  onClick={() => {
+                                    if (updatingChecklist !== etapa.id) {
+                                      handleChecklistUpdate(etapa.id, index, !item.concluido);
+                                    }
+                                  }}
+                                  title="Status do item"
+                                >
+                                  {item.concluido && (
+                                    <svg className="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div className="flex-1">
+                                  <span className={`text-sm ${getChecklistTextStyle(item.concluido || false)}`}>
+                                    {item.texto}
+                                  </span>
+                                </div>
+                                <span
+                                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${getChecklistItemStatusColor(statusItem)}`}
+                                >
+                                  {getChecklistItemStatusLabel(statusItem)}
+                                </span>
+                                {(hasDetails || hasSubitens) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleChecklistDetails(detailsKey)}
+                                    className="px-2 py-0.5 rounded text-xs transition-colors bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/30"
+                                    title={isExpanded ? 'Ocultar detalhes' : 'Ver detalhes e subitens'}
+                                  >
+                                    {hasSubitens ? `(${item.subitens!.length})` : ''} {isExpanded ? '▲' : '▼'}
+                                  </button>
+                                )}
+                                {entregaItem && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
+                                      setShowViewEntregaModal(true);
+                                    }}
+                                    className="px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                                    title="Ver detalhes da entrega"
+                                  >
+                                    Ver entrega
+                                  </button>
+                                )}
+                                {canApprove && !hasSubitens && (
+                                  <div className="flex flex-col gap-2">
+                                    <div className="flex items-center gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={async (e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          try {
+                                            setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: true }));
+                                            setError(null);
+                                            await api.patch(`/tasks/${etapa.id}/checklist/${index}/review`, {
+                                              status: 'APROVADO',
+                                              comentario: reviewNotes[`${etapa.id}-${index}`]?.trim() || undefined,
+                                            });
+                                            setReviewNotes((prev) => ({ ...prev, [`${etapa.id}-${index}`]: '' }));
+                                            await refreshProject(false);
+                                          } catch (err: any) {
+                                            const message = err.response?.data?.message ?? 'Falha ao aprovar objetivo';
+                                            setError(message);
+                                            console.error('Erro ao aprovar:', err);
+                                          } finally {
+                                            setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: false }));
+                                          }
+                                        }}
+                                        className="px-2 py-0.5 rounded text-xs bg-success/20 hover:bg-success/30 text-success border border-success/30"
+                                        disabled={itemLoading}
+                                      >
+                                        Aprovar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={async (e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          try {
+                                            setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: true }));
+                                            setError(null);
+                                            await api.patch(`/tasks/${etapa.id}/checklist/${index}/review`, {
+                                              status: 'REPROVADO',
+                                              comentario: reviewNotes[`${etapa.id}-${index}`]?.trim() || undefined,
+                                            });
+                                            await refreshProject(false);
+                                          } catch (err: any) {
+                                            const message = err.response?.data?.message ?? 'Falha ao recusar objetivo';
+                                            setError(message);
+                                            console.error('Erro ao recusar:', err);
+                                          } finally {
+                                            setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: false }));
+                                          }
+                                        }}
+                                        className="px-2 py-0.5 rounded text-xs bg-danger/20 hover:bg-danger/30 text-danger border border-danger/30"
+                                        disabled={itemLoading}
+                                      >
+                                        Recusar
+                                      </button>
+                                    </div>
+                                    <input
+                                      type="text"
+                                      value={reviewNotes[`${etapa.id}-${index}`] ?? ''}
+                                      onChange={(e) =>
+                                        setReviewNotes((prev) => ({ ...prev, [`${etapa.id}-${index}`]: e.target.value }))
+                                      }
+                                      placeholder="Comentário (opcional)"
+                                      disabled={itemLoading}
+                                      className="bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                                    />
+                                  </div>
                                 )}
                               </div>
-                              <span className={`flex-1 text-sm ${getChecklistTextStyle(item.concluido || false)}`}>
-                                {item.texto}
-                              </span>
-                              <span
-                                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${getChecklistItemStatusColor(statusItem)}`}
-                              >
-                                {getChecklistItemStatusLabel(statusItem)}
-                              </span>
-                              {entregaItem && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
-                                    setShowViewEntregaModal(true);
-                                  }}
-                                  className="ml-2 px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                                  title="Ver detalhes da entrega"
-                                >
-                                  Ver detalhes
-                                </button>
-                              )}
-                              {canApprove && (
-                                <div className="ml-2 flex flex-col gap-2">
-                                  <div className="flex items-center gap-1">
-                                    <button
-                                      type="button"
-                                      onClick={async (e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        try {
-                                          setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: true }));
-                                          setError(null);
-                                          await api.patch(`/tasks/${etapa.id}/checklist/${index}/review`, {
-                                            status: 'APROVADO',
-                                            comentario: reviewNotes[`${etapa.id}-${index}`]?.trim() || undefined,
-                                          });
-                                          setReviewNotes((prev) => ({ ...prev, [`${etapa.id}-${index}`]: '' }));
-                                          await refreshProject(false);
-                                        } catch (err: any) {
-                                          const message = err.response?.data?.message ?? 'Falha ao aprovar objetivo';
-                                          setError(message);
-                                          console.error('Erro ao aprovar:', err);
-                                        } finally {
-                                          setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: false }));
-                                        }
-                                      }}
-                                      className="px-2 py-0.5 rounded text-xs bg-success/20 hover:bg-success/30 text-success border border-success/30"
-                                      disabled={itemLoading}
-                                    >
-                                      Aprovar
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={async (e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        try {
-                                          setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: true }));
-                                          setError(null);
-                                          await api.patch(`/tasks/${etapa.id}/checklist/${index}/review`, {
-                                            status: 'REPROVADO',
-                                            comentario: reviewNotes[`${etapa.id}-${index}`]?.trim() || undefined,
-                                          });
-                                          await refreshProject(false);
-                                        } catch (err: any) {
-                                          const message = err.response?.data?.message ?? 'Falha ao recusar objetivo';
-                                          setError(message);
-                                          console.error('Erro ao recusar:', err);
-                                        } finally {
-                                          setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: false }));
-                                        }
-                                      }}
-                                      className="px-2 py-0.5 rounded text-xs bg-danger/20 hover:bg-danger/30 text-danger border border-danger/30"
-                                      disabled={itemLoading}
-                                    >
-                                      Recusar
-                                    </button>
-                                  </div>
-                                  <input
-                                    type="text"
-                                    value={reviewNotes[`${etapa.id}-${index}`] ?? ''}
-                                    onChange={(e) =>
-                                      setReviewNotes((prev) => ({ ...prev, [`${etapa.id}-${index}`]: e.target.value }))
-                                    }
-                                    placeholder="Comentário (opcional)"
-                                    disabled={itemLoading}
-                                    className="bg-white/5 border border-white/10 rounded px-2 py-1 text-xs text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
-                                  />
+                              
+                              {/* Detalhes expandidos (descrição + subitens) */}
+                              {isExpanded && (
+                                <div className="ml-8 pl-4 border-l-2 border-sky-500/30 space-y-2 py-2">
+                                  {/* Descrição do item */}
+                                  {hasDetails && (
+                                    <div className="p-3 bg-sky-500/5 rounded-lg border border-sky-500/20">
+                                      <p className="text-xs text-sky-300/70 mb-1 font-medium">Descrição:</p>
+                                      <p className="text-sm text-white/80 whitespace-pre-wrap">{item.descricao}</p>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Subitens */}
+                                {hasSubitens && (
+                                    <div className="space-y-1">
+                                      <p className="text-xs text-sky-300/70 font-medium">Subitens / Subcategorias:</p>
+                                      {item.subitens!.map((subitem, subIndex) => {
+                                        const subKey = `view-${etapa.id}-${index}-${subIndex}`;
+                                        const subExpanded = expandedChecklistDetails.has(subKey);
+                                        const subHasDetails = subitem.descricao && subitem.descricao.trim().length > 0;
+                                        // Buscar entrega do subitem
+                                        const entregaSubitem = etapa.checklistEntregas?.find(
+                                          (e) => e.checklistIndex === index && e.subitemIndex === subIndex
+                                        );
+                                        const statusSubitem = entregaSubitem?.status ?? 'PENDENTE';
+                                        const canApproveSubitem = canReview && statusSubitem === 'EM_ANALISE';
+                                        const subLoading = reviewLoading[`sub-${etapa.id}-${index}-${subIndex}`] ?? false;
+                                        
+                                        return (
+                                          <div key={subIndex} className="space-y-1">
+                                            <div
+                                              className={`flex items-center gap-2 p-2 rounded-md transition-all ${
+                                                subitem.concluido
+                                                  ? 'bg-emerald-500/10 border border-emerald-500/20'
+                                                  : 'bg-white/5 border border-white/10'
+                                              }`}
+                                            >
+                                              <div
+                                                className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer hover:scale-110 transition-transform ${
+                                                  subitem.concluido
+                                                    ? 'bg-emerald-500/30 border-emerald-400/50'
+                                                    : 'border-slate-400/40 hover:border-slate-300'
+                                                }`}
+                                                title={subitem.concluido ? 'Concluído' : 'Pendente'}
+                                              >
+                                                {subitem.concluido && (
+                                                  <svg className="w-3 h-3 text-emerald-300" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                  </svg>
+                                                )}
+                                              </div>
+                                              <span className={`flex-1 text-xs ${subitem.concluido ? 'text-emerald-300/70 line-through' : 'text-white/80'}`}>
+                                                {subitem.texto}
+                                              </span>
+                                              <span
+                                                className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${getChecklistItemStatusColor(statusSubitem)}`}
+                                              >
+                                                {getChecklistItemStatusLabel(statusSubitem)}
+                                              </span>
+                                              {entregaSubitem && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setSelectedViewEntrega({ etapa, index, entrega: entregaSubitem });
+                                                    setShowViewEntregaModal(true);
+                                                  }}
+                                                  className="px-1.5 py-0.5 rounded text-[10px] bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                                                  title="Ver detalhes da entrega"
+                                                >
+                                                  Ver
+                                                </button>
+                                              )}
+                                              {canApproveSubitem && (
+                                                <div className="flex items-center gap-1">
+                                                  <button
+                                                    type="button"
+                                                    onClick={async (e) => {
+                                                      e.preventDefault();
+                                                      e.stopPropagation();
+                                                      try {
+                                                        setReviewLoading((prev) => ({ ...prev, [`sub-${etapa.id}-${index}-${subIndex}`]: true }));
+                                                        setError(null);
+                                                        await api.patch(
+                                                          `/tasks/${etapa.id}/checklist/${index}/review`,
+                                                          {
+                                                            status: 'APROVADO',
+                                                            comentario:
+                                                              reviewNotes[`sub-${etapa.id}-${index}-${subIndex}`]?.trim() || undefined,
+                                                          },
+                                                          {
+                                                            params: { subitemIndex: subIndex },
+                                                          },
+                                                        );
+                                                        setReviewNotes((prev) => ({
+                                                          ...prev,
+                                                          [`sub-${etapa.id}-${index}-${subIndex}`]: '',
+                                                        }));
+                                                        await refreshProject(false);
+                                                      } catch (err: any) {
+                                                        const message =
+                                                          err.response?.data?.message ?? 'Falha ao aprovar subitem';
+                                                        setError(message);
+                                                        console.error('Erro ao aprovar subitem:', err);
+                                                      } finally {
+                                                        setReviewLoading((prev) => ({
+                                                          ...prev,
+                                                          [`sub-${etapa.id}-${index}-${subIndex}`]: false,
+                                                        }));
+                                                      }
+                                                    }}
+                                                    className="px-1.5 py-0.5 rounded text-[10px] bg-success/20 hover:bg-success/30 text-success border border-success/30"
+                                                    disabled={subLoading}
+                                                  >
+                                                    Aprovar
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={async (e) => {
+                                                      e.preventDefault();
+                                                      e.stopPropagation();
+                                                      try {
+                                                        setReviewLoading((prev) => ({ ...prev, [`sub-${etapa.id}-${index}-${subIndex}`]: true }));
+                                                        setError(null);
+                                                        await api.patch(
+                                                          `/tasks/${etapa.id}/checklist/${index}/review`,
+                                                          {
+                                                            status: 'REPROVADO',
+                                                            comentario:
+                                                              reviewNotes[`sub-${etapa.id}-${index}-${subIndex}`]?.trim() || undefined,
+                                                          },
+                                                          {
+                                                            params: { subitemIndex: subIndex },
+                                                          },
+                                                        );
+                                                        await refreshProject(false);
+                                                      } catch (err: any) {
+                                                        const message =
+                                                          err.response?.data?.message ?? 'Falha ao recusar subitem';
+                                                        setError(message);
+                                                        console.error('Erro ao recusar subitem:', err);
+                                                      } finally {
+                                                        setReviewLoading((prev) => ({
+                                                          ...prev,
+                                                          [`sub-${etapa.id}-${index}-${subIndex}`]: false,
+                                                        }));
+                                                      }
+                                                    }}
+                                                    className="px-1.5 py-0.5 rounded text-[10px] bg-danger/20 hover:bg-danger/30 text-danger border border-danger/30"
+                                                    disabled={subLoading}
+                                                  >
+                                                    Recusar
+                                                  </button>
+                                                </div>
+                                              )}
+                                              {canApproveSubitem && (
+                                                <input
+                                                  type="text"
+                                                  value={reviewNotes[`sub-${etapa.id}-${index}-${subIndex}`] ?? ''}
+                                                  onChange={(e) =>
+                                                    setReviewNotes((prev) => ({
+                                                      ...prev,
+                                                      [`sub-${etapa.id}-${index}-${subIndex}`]: e.target.value,
+                                                    }))
+                                                  }
+                                                  placeholder="Comentário (opcional)"
+                                                  disabled={subLoading}
+                                                  className="bg-white/5 border border-white/10 rounded px-2 py-1 text-[10px] text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                                                />
+                                              )}
+                                              {subHasDetails && (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => toggleChecklistDetails(subKey)}
+                                                  className="px-1.5 py-0.5 rounded text-[10px] bg-slate-500/20 hover:bg-slate-500/30 text-slate-300 border border-slate-400/30 transition-colors"
+                                                >
+                                                  {subExpanded ? '▲' : '▼'}
+                                                </button>
+                                              )}
+                                            </div>
+                                            {/* Descrição do subitem expandida */}
+                                            {subExpanded && subHasDetails && (
+                                              <div className="ml-6 p-3 bg-sky-500/5 rounded-lg border border-sky-500/20">
+                                                <p className="text-xs text-sky-300/70 mb-1 font-medium">Descrição:</p>
+                                                <p className="text-sm text-white/80 whitespace-pre-wrap">{subitem.descricao}</p>
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
                                 </div>
                               )}
                             </div>
@@ -1691,12 +1942,12 @@ export default function ProjectDetails() {
                     }`}
                   >
                     {selectedViewEntrega.entrega.status === 'PENDENTE'
-                      ? '⏳ Pendente'
+                      ? 'Pendente'
                       : selectedViewEntrega.entrega.status === 'EM_ANALISE'
-                      ? '🔍 Em análise'
+                      ? 'Em análise'
                       : selectedViewEntrega.entrega.status === 'APROVADO'
-                      ? '✓ Aprovado'
-                      : '✗ Reprovado'}
+                      ? 'Aprovado'
+                      : 'Reprovado'}
                   </span>
                 </div>
                 {selectedViewEntrega.entrega.avaliadoPor && (
@@ -1758,7 +2009,7 @@ export default function ProjectDetails() {
                     dataInicio: '',
                     dataFim: '',
                     valorInsumos: 0,
-                    checklist: [{ texto: '', concluido: false }],
+                    checklist: [{ texto: '', concluido: false, descricao: '', subitens: [] }],
                     status: 'PENDENTE',
                     estoqueItems: [],
                   });
@@ -1975,40 +2226,161 @@ export default function ProjectDetails() {
 
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Checklist de Objetos</label>
-                <div className="space-y-2">
-                  {etapaForm.checklist.map((item, index) => (
-                    <div key={`checklist-item-${index}`} className="flex gap-2">
-                      <input
-                        type="text"
-                        value={item.texto}
-                        onChange={(e) => {
-                          const newChecklist = [...etapaForm.checklist];
-                          newChecklist[index] = { ...newChecklist[index], texto: e.target.value };
-                          setEtapaForm({ ...etapaForm, checklist: newChecklist });
-                        }}
-                        className="flex-1 bg-white/10 border border-white/30 rounded-md px-4 py-2 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                        placeholder={`Objeto ${index + 1}`}
-                      />
-                      {etapaForm.checklist.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const newChecklist = etapaForm.checklist.filter((_, i) => i !== index);
-                            setEtapaForm({ ...etapaForm, checklist: newChecklist });
-                          }}
-                          className={buttonStyles.danger}
-                        >
-                          Remover
-                        </button>
-                      )}
-                    </div>
-                  ))}
+                <div className="space-y-4">
+                  {etapaForm.checklist.map((item, index) => {
+                    const formItemKey = `form-${index}`;
+                    const isFormExpanded = expandedChecklistDetails.has(formItemKey);
+                    
+                    return (
+                      <div key={`checklist-item-${index}`} className="bg-white/5 border border-white/10 rounded-lg p-3 space-y-3">
+                        {/* Linha principal: texto + botões */}
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={item.texto}
+                            onChange={(e) => {
+                              const newChecklist = [...etapaForm.checklist];
+                              newChecklist[index] = { ...newChecklist[index], texto: e.target.value };
+                              setEtapaForm({ ...etapaForm, checklist: newChecklist });
+                            }}
+                            className="flex-1 bg-white/10 border border-white/30 rounded-md px-4 py-2 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                            placeholder={`Objeto ${index + 1}`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => toggleChecklistDetails(formItemKey)}
+                            className="px-3 py-2 rounded-md bg-slate-500/20 hover:bg-slate-500/30 text-slate-300 border border-slate-400/30 transition-colors text-sm"
+                            title={isFormExpanded ? 'Ocultar detalhes' : 'Expandir detalhes'}
+                          >
+                            {isFormExpanded ? '▲' : '▼'}
+                          </button>
+                          {etapaForm.checklist.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newChecklist = etapaForm.checklist.filter((_, i) => i !== index);
+                                setEtapaForm({ ...etapaForm, checklist: newChecklist });
+                              }}
+                              className={buttonStyles.danger}
+                            >
+                              Remover
+                            </button>
+                          )}
+                        </div>
+                        
+                        {/* Detalhes expandidos: descrição + subitens */}
+                        {isFormExpanded && (
+                          <div className="space-y-3 pl-2 border-l-2 border-white/10">
+                            {/* Campo de descrição */}
+                            <div>
+                              <label className="block text-xs text-white/60 mb-1">Descrição / Detalhes (opcional)</label>
+                              <textarea
+                                value={item.descricao || ''}
+                                onChange={(e) => {
+                                  const newChecklist = [...etapaForm.checklist];
+                                  newChecklist[index] = { ...newChecklist[index], descricao: e.target.value };
+                                  setEtapaForm({ ...etapaForm, checklist: newChecklist });
+                                }}
+                                rows={2}
+                                className="w-full bg-white/10 border border-white/20 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-primary"
+                                placeholder="Descreva detalhes adicionais sobre este item..."
+                              />
+                            </div>
+                            
+                            {/* Subitens */}
+                            <div>
+                              <label className="block text-xs text-white/60 mb-2">Subitens / Subcategorias</label>
+                              <div className="space-y-2">
+                                {(item.subitens || []).map((subitem, subIndex) => {
+                                  const subFormKey = `form-${index}-${subIndex}`;
+                                  const isSubExpanded = expandedChecklistDetails.has(subFormKey);
+                                  
+                                  return (
+                                    <div key={`subitem-${index}-${subIndex}`} className="bg-white/5 border border-white/10 rounded-md p-2 space-y-2">
+                                      <div className="flex gap-2 items-center">
+                                        <span className="text-white/40 text-xs">↳</span>
+                                        <input
+                                          type="text"
+                                          value={subitem.texto}
+                                          onChange={(e) => {
+                                            const newChecklist = [...etapaForm.checklist];
+                                            const newSubitens = [...(newChecklist[index].subitens || [])];
+                                            newSubitens[subIndex] = { ...newSubitens[subIndex], texto: e.target.value };
+                                            newChecklist[index] = { ...newChecklist[index], subitens: newSubitens };
+                                            setEtapaForm({ ...etapaForm, checklist: newChecklist });
+                                          }}
+                                          className="flex-1 bg-white/10 border border-white/20 rounded px-3 py-1.5 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-primary"
+                                          placeholder={`Subitem ${subIndex + 1}`}
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleChecklistDetails(subFormKey)}
+                                          className="px-2 py-1 rounded text-xs bg-slate-500/20 hover:bg-slate-500/30 text-slate-300 border border-slate-400/30 transition-colors"
+                                        >
+                                          {isSubExpanded ? '▲' : '▼'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            const newChecklist = [...etapaForm.checklist];
+                                            const newSubitens = (newChecklist[index].subitens || []).filter((_, i) => i !== subIndex);
+                                            newChecklist[index] = { ...newChecklist[index], subitens: newSubitens };
+                                            setEtapaForm({ ...etapaForm, checklist: newChecklist });
+                                          }}
+                                          className="px-2 py-1 rounded text-xs bg-danger/20 hover:bg-danger/30 text-danger border border-danger/30 transition-colors"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                      {/* Descrição do subitem */}
+                                      {isSubExpanded && (
+                                        <div className="ml-4">
+                                          <textarea
+                                            value={subitem.descricao || ''}
+                                            onChange={(e) => {
+                                              const newChecklist = [...etapaForm.checklist];
+                                              const newSubitens = [...(newChecklist[index].subitens || [])];
+                                              newSubitens[subIndex] = { ...newSubitens[subIndex], descricao: e.target.value };
+                                              newChecklist[index] = { ...newChecklist[index], subitens: newSubitens };
+                                              setEtapaForm({ ...etapaForm, checklist: newChecklist });
+                                            }}
+                                            rows={2}
+                                            className="w-full bg-white/10 border border-white/20 rounded px-3 py-2 text-xs text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-primary"
+                                            placeholder="Descrição do subitem (opcional)..."
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const newChecklist = [...etapaForm.checklist];
+                                    const currentSubitens = newChecklist[index].subitens || [];
+                                    newChecklist[index] = {
+                                      ...newChecklist[index],
+                                      subitens: [...currentSubitens, { texto: '', concluido: false, descricao: '' }],
+                                    };
+                                    setEtapaForm({ ...etapaForm, checklist: newChecklist });
+                                  }}
+                                  className="w-full py-1.5 rounded text-xs bg-white/5 hover:bg-white/10 text-white/60 border border-white/10 border-dashed transition-colors"
+                                >
+                                  + Adicionar Subitem
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                   <button
                     type="button"
                     onClick={() => {
                       setEtapaForm({
                         ...etapaForm,
-                        checklist: [...etapaForm.checklist, { texto: '', concluido: false }],
+                        checklist: [...etapaForm.checklist, { texto: '', concluido: false, descricao: '', subitens: [] }],
                       });
                     }}
                     className={`${buttonStyles.secondary} w-full text-center`}
@@ -2281,7 +2653,7 @@ export default function ProjectDetails() {
                       dataInicio: '',
                       dataFim: '',
                       valorInsumos: 0,
-                      checklist: [{ texto: '', concluido: false }],
+                      checklist: [{ texto: '', concluido: false, descricao: '', subitens: [] }],
                       status: 'PENDENTE',
                       estoqueItems: [],
                     });

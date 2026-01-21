@@ -19,6 +19,12 @@ interface ProjectDetails extends Omit<Projeto, 'responsaveis'> {
   responsaveis?: Array<{ usuario: { id: number; nome: string; email: string } }>;
 }
 
+// Resposta simplificada da rota /tasks/my (reutilizada para limitar projetos do usuário)
+interface MyTasksResponse {
+  projetos: Projeto[];
+  etapasPendentes: any[];
+}
+
 interface SimpleUser {
   id: number;
   nome: string;
@@ -48,6 +54,39 @@ export default function Dashboard() {
     return false;
   }, [user]);
 
+  // Verificar se o usuário tem acesso à página de projetos
+  const hasProjectsAccess = useMemo(() => {
+    if (!user) return false;
+
+    let paginasPermitidas: string[] = [];
+    
+    if (typeof user.cargo === 'string') {
+      const allowedMap: Record<string, string[]> = {
+        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/communications', '/users', '/cargos'],
+        SUPERVISOR: ['/tasks/my', '/communications'],
+        EXECUTOR: ['/tasks/my', '/communications'],
+        COTADOR: ['/tasks/my', '/stock', '/communications'],
+        PAGADOR: ['/tasks/my', '/stock', '/communications'],
+      };
+      paginasPermitidas = allowedMap[user.cargo] || [];
+    } else if (user.cargo && typeof user.cargo === 'object' && 'nome' in user.cargo) {
+      if (user.cargo.paginasPermitidas && Array.isArray(user.cargo.paginasPermitidas)) {
+        paginasPermitidas = user.cargo.paginasPermitidas;
+      } else {
+        const allowedMap: Record<string, string[]> = {
+          DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/communications', '/users', '/cargos'],
+          SUPERVISOR: ['/tasks/my', '/communications'],
+          EXECUTOR: ['/tasks/my', '/communications'],
+          COTADOR: ['/tasks/my', '/stock'],
+          PAGADOR: ['/tasks/my', '/stock'],
+        };
+        paginasPermitidas = allowedMap[user.cargo.nome] || [];
+      }
+    }
+
+    return paginasPermitidas.includes('/projects');
+  }, [user]);
+
   // Carregar usuários para o filtro (apenas se for diretor)
   useEffect(() => {
     async function loadUsers() {
@@ -66,9 +105,45 @@ export default function Dashboard() {
   useEffect(() => {
     async function load() {
       try {
-        const { data } = await api.get<Projeto[]>('/projects');
-        setAllProjects(data);
-        setProjects(data);
+        setLoading(true);
+
+        if (hasProjectsAccess) {
+          // Usuários com acesso a "Projetos" veem todos os projetos
+          const { data } = await api.get<Projeto[]>('/projects');
+          setAllProjects(data);
+          setProjects(data);
+        } else {
+          // Usuários SEM acesso a "Projetos" veem apenas projetos em que estão inseridos
+          const { data } = await api.get<MyTasksResponse>('/tasks/my');
+          const userProjects = data.projetos ?? [];
+          const etapasPendentes = (data.etapasPendentes ?? []) as any[];
+
+          // Agrupar etapas pendentes por projeto
+          const projectsWithEtapas: ProjectDetails[] = userProjects.map((project) => {
+            const etapasForProject: Etapa[] = etapasPendentes
+              .filter((etapa: any) => etapa.projeto?.id === project.id)
+              .map((etapa: any) => ({
+                id: etapa.id,
+                nome: etapa.nome,
+                descricao: etapa.descricao,
+                status: etapa.status,
+                executor: etapa.executor
+                  ? { id: etapa.executor.id, nome: etapa.executor.nome }
+                  : null,
+                integrantes: (etapa.integrantes ?? []).map((i: any) => ({
+                  usuario: { id: i.usuario.id, nome: i.usuario.nome },
+                })),
+              }));
+
+            return {
+              ...project,
+              etapas: etapasForProject,
+            };
+          });
+
+          setAllProjects(projectsWithEtapas);
+          setProjects(projectsWithEtapas);
+        }
       } catch (err: any) {
         const errorMessage = formatApiError(err);
         setError(errorMessage);
@@ -78,7 +153,7 @@ export default function Dashboard() {
       }
     }
     load();
-  }, []);
+  }, [hasProjectsAccess]);
 
   // Filtrar projetos baseado no usuário selecionado
   useEffect(() => {
@@ -186,7 +261,17 @@ export default function Dashboard() {
         return newSet;
       });
     } else {
-      // Expandir - buscar detalhes
+      // Usuários sem acesso a "Projetos" não devem buscar detalhes adicionais via /projects/:id
+      if (!hasProjectsAccess) {
+        setExpandedProjects(prev => {
+          const newSet = new Set(prev);
+          newSet.add(projectId);
+          return newSet;
+        });
+        return;
+      }
+
+      // Expandir - buscar detalhes completos do projeto
       setLoadingDetails(prev => new Set(prev).add(projectId));
       
       try {
@@ -338,22 +423,24 @@ export default function Dashboard() {
           </div>
           <p className="text-4xl font-bold text-green-100">{finalizados}</p>
         </div>
-        <div className="rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-6 hover:border-amber-500/50 transition-all">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm text-amber-300/80 font-medium">Valor Total</h3>
-            <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
-              <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+        {hasProjectsAccess && (
+          <div className="rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-6 hover:border-amber-500/50 transition-all">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm text-amber-300/80 font-medium">Valor Total</h3>
+              <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                <svg className="w-5 h-5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
             </div>
+            <p className="text-3xl font-bold text-amber-100">
+              {projects.reduce((acc, project) => acc + (project.valorTotal ?? 0), 0).toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}
+            </p>
           </div>
-          <p className="text-3xl font-bold text-amber-100">
-            {projects.reduce((acc, project) => acc + (project.valorTotal ?? 0), 0).toLocaleString('pt-BR', {
-              style: 'currency',
-              currency: 'BRL',
-            })}
-          </p>
-        </div>
+        )}
       </div>
 
       {/* Visualização Estilo Trello */}
@@ -371,253 +458,219 @@ export default function Dashboard() {
                 key={project.id}
                 className="bg-gradient-to-br from-neutral/90 to-neutral/70 border border-white/10 rounded-xl overflow-hidden hover:border-primary/50 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300"
               >
-                {/* Cabeçalho do Card - Oculto quando expandido */}
-                {!isExpanded && (
-                  <div
-                    className="p-4 cursor-pointer"
-                    onClick={() => toggleProject(project.id)}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <h4 className="font-semibold text-lg text-white flex-1 pr-2">
-                        {project.nome}
-                      </h4>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
+                {/* Cabeçalho do Card - Sempre visível */}
+                <div className="p-4">
+                  <div className="flex items-start justify-between mb-2">
+                    <h4 className="font-semibold text-lg text-white flex-1 pr-2">
+                      {project.nome}
+                    </h4>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (hasProjectsAccess) {
                           navigate(`/projects/${project.id}`);
-                        }}
-                        className="px-2 py-1 text-xs bg-primary/20 hover:bg-primary/30 text-primary rounded border border-primary/30 transition-colors"
-                        title="Ver detalhes completos"
-                      >
-                        Ver
-                      </button>
-                    </div>
-
-                    {project.resumo && (
-                      <p className="text-sm text-white/60 mb-3 line-clamp-2">
-                        {project.resumo}
-                      </p>
-                    )}
-
-                    <div className="flex items-center gap-2 mb-3">
-                      <span className={`px-2 py-1 rounded text-xs border ${getStatusColor(project.status)}`}>
-                        {project.status === 'EM_ANDAMENTO' ? 'Em Andamento' : 'Finalizado'}
-                      </span>
-                      {project.progress !== undefined && (
-                        <span className="text-xs text-white/60">
-                          {project.progress}% concluído
-                        </span>
-                      )}
-                    </div>
-
-                    {project.progress !== undefined && (
-                      <div className="w-full bg-white/10 rounded-full h-2.5 mb-3 overflow-hidden">
-                        <div
-                          className={`h-2.5 rounded-full transition-all duration-500 ${
-                            project.progress >= 100 
-                              ? 'bg-gradient-to-r from-green-500 to-emerald-400' 
-                              : project.progress >= 50 
-                                ? 'bg-gradient-to-r from-blue-500 to-cyan-400'
-                                : 'bg-gradient-to-r from-amber-500 to-yellow-400'
-                          }`}
-                          style={{ width: `${project.progress}%` }}
-                        />
-              </div>
-                    )}
-
-                    <div className="flex items-center justify-between text-xs text-white/60">
-                      <span>
-                {project.supervisor ? `Supervisor: ${project.supervisor.nome}` : 'Sem supervisor'}
-              </span>
-                      <span className="flex items-center gap-1">
-                        {isLoadingDetails ? (
-                          <span>Carregando...</span>
-                        ) : (
-                          <>
-                            <svg
-                              className="w-4 h-4 transition-transform"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                            </svg>
-                            Expandir
-                          </>
-                        )}
-                      </span>
-                    </div>
+                        } else {
+                          navigate('/tasks/my');
+                        }
+                      }}
+                      className="px-2 py-1 text-xs bg-primary/20 hover:bg-primary/30 text-primary rounded border border-primary/30 transition-colors"
+                      title="Ver detalhes completos"
+                    >
+                      Ver
+                    </button>
                   </div>
-                )}
 
-                {/* Conteúdo Expandido - Mostra apenas quando expandido */}
-                {isExpanded && !isLoadingDetails && (
-                  <div className="p-4 space-y-4">
-                    {/* Cabeçalho do conteúdo expandido */}
-                    <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
-                      <div>
-                        <h4 className="font-semibold text-lg text-white mb-1">
-                          {project.nome}
-                        </h4>
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2 py-1 rounded text-xs border ${getStatusColor(project.status)}`}>
-                            {project.status === 'EM_ANDAMENTO' ? 'Em Andamento' : 'Finalizado'}
-                          </span>
-                          {project.progress !== undefined && (
-                            <span className="text-xs text-white/60">
-                              {project.progress}% concluído
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigate(`/projects/${project.id}`);
-                          }}
-                          className="px-3 py-1.5 text-xs bg-primary/20 hover:bg-primary/30 text-primary rounded border border-primary/30 transition-colors"
-                          title="Ver detalhes completos"
-                        >
-                          Ver Detalhes
-                        </button>
-                        <button
-                          onClick={() => toggleProject(project.id)}
-                          className="px-3 py-1.5 text-xs bg-white/10 hover:bg-white/20 text-white rounded border border-white/20 transition-colors flex items-center gap-1"
-                          title="Recolher"
-                        >
+                  {project.resumo && (
+                    <p className="text-sm text-white/60 mb-3 line-clamp-2">
+                      {project.resumo}
+                    </p>
+                  )}
+
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className={`px-2 py-1 rounded text-xs border ${getStatusColor(project.status)}`}>
+                      {project.status === 'EM_ANDAMENTO' ? 'Em Andamento' : 'Finalizado'}
+                    </span>
+                    {project.progress !== undefined && (
+                      <span className="text-xs text-white/60">
+                        {project.progress}% concluído
+                      </span>
+                    )}
+                  </div>
+
+                  {project.progress !== undefined && (
+                    <div className="w-full bg-white/10 rounded-full h-2.5 mb-3 overflow-hidden">
+                      <div
+                        className={`h-2.5 rounded-full transition-all duration-500 ${
+                          project.progress >= 100 
+                            ? 'bg-gradient-to-r from-green-500 to-emerald-400' 
+                            : project.progress >= 50 
+                              ? 'bg-gradient-to-r from-blue-500 to-cyan-400'
+                              : 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                        }`}
+                        style={{ width: `${project.progress}%` }}
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between text-xs text-white/60">
+                    <span>
+                      {project.supervisor ? `Supervisor: ${project.supervisor.nome}` : 'Sem supervisor'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => toggleProject(project.id)}
+                      className="flex items-center gap-1 text-xs text-white/70 hover:text-primary transition-colors"
+                    >
+                      {isLoadingDetails ? (
+                        <span>Carregando...</span>
+                      ) : (
+                        <>
                           <svg
-                            className="w-4 h-4 rotate-180"
+                            className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                             fill="none"
                             stroke="currentColor"
                             viewBox="0 0 24 24"
                           >
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                           </svg>
-                          Recolher
-                        </button>
-                      </div>
-                    </div>
-                    {/* Integrantes */}
-                    {(project.supervisor || responsaveis.length > 0) && (
+                          {isExpanded ? 'Recolher' : 'Expandir'}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Conteúdo Expandido com animação de abrir/fechar */}
+                <div
+                  className={`transition-all duration-300 ease-in-out overflow-hidden border-t border-white/10 ${
+                    isExpanded && !isLoadingDetails ? 'max-h-[520px] opacity-100 px-4 pb-4 pt-4' : 'max-h-0 opacity-0 px-4'
+                  }`}
+                >
+                  {isExpanded && !isLoadingDetails && (
+                    <div className="space-y-4">
+                      {/* Integrantes */}
+                      {(project.supervisor || responsaveis.length > 0) && (
+                        <div>
+                          <h5 className="text-sm font-semibold text-white/90 mb-2 flex items-center gap-2">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-3-3h-4a3 3 0 00-3 3v2zM13 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            Equipe
+                          </h5>
+                          <div className="flex flex-wrap gap-2">
+                            {project.supervisor && (
+                              <div className="flex items-center gap-2 text-sm bg-primary/10 border border-primary/30 rounded-full px-3 py-1">
+                                <div className="w-2 h-2 rounded-full bg-primary"></div>
+                                <span className="text-primary/90 font-medium">
+                                  {project.supervisor.nome}
+                                </span>
+                                <span className="text-xs text-primary/60">(Supervisor)</span>
+                              </div>
+                            )}
+                            {responsaveis.map((resp, idx) => (
+                              <div key={idx} className="flex items-center gap-2 text-sm bg-blue-500/10 border border-blue-500/30 rounded-full px-3 py-1">
+                                <div className="w-2 h-2 rounded-full bg-blue-400"></div>
+                                <span className="text-blue-300">
+                                  {resp.usuario.nome}
+                                </span>
+                              </div>
+                            ))}
+                            {!project.supervisor && responsaveis.length === 0 && (
+                              <p className="text-xs text-white/50">Nenhum integrante cadastrado</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Tarefas (Etapas) */}
                       <div>
                         <h5 className="text-sm font-semibold text-white/90 mb-2 flex items-center gap-2">
                           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-3-3h-4a3 3 0 00-3 3v2zM13 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                           </svg>
-                          Equipe
+                          Tarefas ({etapas.length})
                         </h5>
-                        <div className="flex flex-wrap gap-2">
-                          {project.supervisor && (
-                            <div className="flex items-center gap-2 text-sm bg-primary/10 border border-primary/30 rounded-full px-3 py-1">
-                              <div className="w-2 h-2 rounded-full bg-primary"></div>
-                              <span className="text-primary/90 font-medium">
-                                {project.supervisor.nome}
-                              </span>
-                              <span className="text-xs text-primary/60">(Supervisor)</span>
-                            </div>
-                          )}
-                          {responsaveis.map((resp, idx) => (
-                            <div key={idx} className="flex items-center gap-2 text-sm bg-blue-500/10 border border-blue-500/30 rounded-full px-3 py-1">
-                              <div className="w-2 h-2 rounded-full bg-blue-400"></div>
-                              <span className="text-blue-300">
-                                {resp.usuario.nome}
-                              </span>
-                            </div>
-                          ))}
-                          {!project.supervisor && responsaveis.length === 0 && (
-                            <p className="text-xs text-white/50">Nenhum integrante cadastrado</p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Tarefas (Etapas) */}
-                    <div>
-                      <h5 className="text-sm font-semibold text-white/90 mb-2 flex items-center gap-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                        </svg>
-                        Tarefas ({etapas.length})
-                      </h5>
-                      {etapas.length > 0 ? (
-                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                          {etapas.map((etapa) => {
-                            // Cor de destaque lateral baseada no status
-                            const borderLeftColor = 
-                              etapa.status === 'APROVADA' ? 'border-l-green-500' :
-                              etapa.status === 'EM_ANDAMENTO' ? 'border-l-blue-500' :
-                              etapa.status === 'EM_ANALISE' ? 'border-l-purple-500' :
-                              etapa.status === 'REPROVADA' ? 'border-l-red-500' :
-                              'border-l-yellow-500';
-                            
-                            return (
-                            <div
-                              key={etapa.id}
-                                className={`bg-white/5 border border-white/10 border-l-4 ${borderLeftColor} rounded-lg p-3 hover:bg-white/10 transition-all duration-200`}
-                            >
-                              <div className="flex items-start justify-between gap-2 mb-2">
-                                <h6 className="font-medium text-sm text-white/90 flex-1">
-                                  {etapa.nome}
-                                </h6>
-                                <span className={`px-2 py-0.5 rounded text-xs font-medium ${getEtapaStatusColor(etapa.status)}`}>
-                                  {getEtapaStatusLabel(etapa.status)}
-                                </span>
-                              </div>
+                        {etapas.length > 0 ? (
+                          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                            {etapas.map((etapa) => {
+                              // Cor de destaque lateral baseada no status
+                              const borderLeftColor = 
+                                etapa.status === 'APROVADA' ? 'border-l-green-500' :
+                                etapa.status === 'EM_ANDAMENTO' ? 'border-l-blue-500' :
+                                etapa.status === 'EM_ANALISE' ? 'border-l-purple-500' :
+                                etapa.status === 'REPROVADA' ? 'border-l-red-500' :
+                                'border-l-yellow-500';
                               
-                              {etapa.descricao && (
-                                <p className="text-xs text-white/60 mb-2 line-clamp-2">
-                                  {etapa.descricao}
-                                </p>
-                              )}
+                              return (
+                                <div
+                                  key={etapa.id}
+                                  className={`bg-white/5 border border-white/10 border-l-4 ${borderLeftColor} rounded-lg p-3 hover:bg-white/10 transition-all duration-200`}
+                                >
+                                  <div className="flex items-start justify-between gap-2 mb-2">
+                                    <h6 className="font-medium text-sm text-white/90 flex-1">
+                                      {etapa.nome}
+                                    </h6>
+                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${getEtapaStatusColor(etapa.status)}`}>
+                                      {getEtapaStatusLabel(etapa.status)}
+                                    </span>
+                                  </div>
+                                  
+                                  {etapa.descricao && (
+                                    <p className="text-xs text-white/60 mb-2 line-clamp-2">
+                                      {etapa.descricao}
+                                    </p>
+                                  )}
 
-                              <div className="flex items-center gap-3 text-xs text-white/50">
-                                {etapa.executor && (
-                                  <span className="flex items-center gap-1 bg-white/5 px-2 py-0.5 rounded">
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                    </svg>
-                                    {etapa.executor.nome}
-                                  </span>
-                                )}
-                                {etapa.integrantes && etapa.integrantes.length > 0 && (
-                                  <span className="flex items-center gap-1 bg-white/5 px-2 py-0.5 rounded">
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                                    </svg>
-                                    {etapa.integrantes.length} integrante{etapa.integrantes.length !== 1 ? 's' : ''}
-                                  </span>
-                                )}
-                              </div>
-            </div>
-                            );
-          })}
-                        </div>
-                      ) : (
-                        <p className="text-xs text-white/50">Nenhuma tarefa cadastrada</p>
-                      )}
-                    </div>
-
-                    {/* Informações Adicionais */}
-                    <div className="pt-3 border-t border-white/10">
-                      <div className="grid grid-cols-2 gap-3 text-xs">
-                        <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
-                          <span className="text-amber-300/80 block mb-0.5">Valor Total</span>
-                          <p className="text-amber-100 font-bold text-base">
-                            {project.valorTotal.toLocaleString('pt-BR', {
-                              style: 'currency',
-                              currency: 'BRL',
+                                  <div className="flex items-center gap-3 text-xs text-white/50">
+                                    {etapa.executor && (
+                                      <span className="flex items-center gap-1 bg-white/5 px-2 py-0.5 rounded">
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                        </svg>
+                                        {etapa.executor.nome}
+                                      </span>
+                                    )}
+                                    {etapa.integrantes && etapa.integrantes.length > 0 && (
+                                      <span className="flex items-center gap-1 bg-white/5 px-2 py-0.5 rounded">
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                        </svg>
+                                        {etapa.integrantes.length} integrante{etapa.integrantes.length !== 1 ? 's' : ''}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              );
                             })}
-                          </p>
-                        </div>
-                        <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-2">
-                          <span className="text-blue-300/80 block mb-0.5">Total de Etapas</span>
-                          <p className="text-blue-100 font-bold text-base">{project._count?.etapas || etapas.length}</p>
+                          </div>
+                        ) : (
+                          <p className="text-xs text-white/50">Nenhuma tarefa cadastrada</p>
+                        )}
+                      </div>
+
+                      {/* Informações Adicionais */}
+                      <div className="pt-3 border-t border-white/10">
+                        <div className="grid grid-cols-2 gap-3 text-xs">
+                          {hasProjectsAccess && (
+                            <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg p-2">
+                              <span className="text-amber-300/80 block mb-0.5">Valor Total</span>
+                              <p className="text-amber-100 font-bold text-base">
+                                {project.valorTotal.toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                })}
+                              </p>
+                            </div>
+                          )}
+                          <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-2">
+                            <span className="text-blue-300/80 block mb-0.5">Total de Etapas</span>
+                            <p className="text-blue-100 font-bold text-base">{project._count?.etapas || etapas.length}</p>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 {/* Loading state quando expandindo */}
                 {isExpanded && isLoadingDetails && (

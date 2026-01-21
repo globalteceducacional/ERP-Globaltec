@@ -1,7 +1,4 @@
-/**
- * Utilitários compartilhados para estilos de status
- * Usado em MyTasks, ProjectDetails e outras páginas
- */
+// Utilitários centralizados de estilos e labels de status
 
 // Cores para status de etapa/tarefa
 export function getStatusColor(status: string): string {
@@ -11,112 +8,140 @@ export function getStatusColor(status: string): string {
     case 'EM_ANDAMENTO':
       return 'bg-sky-500/30 text-sky-200 border border-sky-400/50 font-medium';
     case 'EM_ANALISE':
-      return 'bg-violet-500/30 text-violet-200 border border-violet-400/50 font-medium';
+      return 'bg-indigo-500/30 text-indigo-200 border border-indigo-400/50 font-medium';
     case 'APROVADA':
-    case 'ENTREGUE':
       return 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/50 font-medium';
     case 'REPROVADA':
-    case 'REPROVADO':
       return 'bg-rose-500/30 text-rose-200 border border-rose-400/50 font-medium';
     case 'FINALIZADO':
-      return 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/50 font-medium';
-    case 'COMPRADO_ACAMINHO':
-      return 'bg-sky-500/30 text-sky-200 border border-sky-400/50 font-medium';
-    case 'SOLICITADO':
-      return 'bg-amber-500/30 text-amber-200 border border-amber-400/50 font-medium';
+      return 'bg-emerald-600/30 text-emerald-200 border border-emerald-500/60 font-semibold';
     default:
-      return 'bg-slate-500/20 text-slate-300 border border-slate-400/40';
+      return 'bg-slate-500/30 text-slate-200 border border-slate-400/50 font-medium';
   }
 }
 
 // Labels para status de etapa
 export function getStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    PENDENTE: 'Pendente',
-    EM_ANDAMENTO: 'Em Andamento',
-    EM_ANALISE: 'Em Análise',
-    APROVADA: 'Completo',
-    REPROVADA: 'Recusada',
-    REPROVADO: 'Reprovado',
-    FINALIZADO: 'Finalizado',
-    ENTREGUE: 'Entregue',
-    COMPRADO_ACAMINHO: 'Comprado/A Caminho',
-    SOLICITADO: 'Solicitado',
-  };
-  return labels[status] || status;
-}
-
-// Cores para status de entrega
-export function getEntregaStatusColor(status: string): string {
-  switch (status) {
-    case 'EM_ANALISE':
-      return 'bg-violet-500/30 text-violet-200 border border-violet-400/50 font-medium';
-    case 'APROVADA':
-      return 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/50 font-medium';
-    case 'RECUSADA':
-      return 'bg-rose-500/30 text-rose-200 border border-rose-400/50 font-medium';
-    default:
-      return 'bg-slate-500/20 text-slate-300 border border-slate-400/40';
-  }
-}
-
-// Labels para status de entrega
-export function getEntregaStatusLabel(status: string): string {
-  const labels: Record<string, string> = {
-    EM_ANALISE: 'Em Análise',
-    APROVADA: 'Completo',
-    RECUSADA: 'Recusada',
-  };
-  return labels[status] || status;
-}
-
-// Cores para status de checklist item
-export function getChecklistItemStatusColor(status: string): string {
-  switch (status) {
-    case 'EM_ANALISE':
-      return 'bg-violet-500/30 text-violet-200 border-violet-400/50';
-    case 'APROVADO':
-      return 'bg-emerald-500/30 text-emerald-200 border-emerald-400/50';
-    case 'REPROVADO':
-      return 'bg-rose-500/30 text-rose-200 border-rose-400/50';
-    default:
-      return 'bg-amber-500/20 text-amber-200 border-amber-400/40';
-  }
-}
-
-// Labels para status de checklist item com emoji
-export function getChecklistItemStatusLabel(status: string): string {
   switch (status) {
     case 'PENDENTE':
-      return '⏳ Pendente';
+      return 'Pendente';
+    case 'EM_ANDAMENTO':
+      return 'Em andamento';
     case 'EM_ANALISE':
-      return '🔍 Em análise';
-    case 'APROVADO':
-      return '✓ Aprovado';
-    case 'REPROVADO':
-      return '✗ Reprovado';
+      return 'Em análise';
+    case 'APROVADA':
+      return 'Aprovada';
+    case 'REPROVADA':
+      return 'Reprovada';
+    case 'FINALIZADO':
+      return 'Finalizado';
     default:
       return status;
   }
 }
 
-// Estilo do checkbox marcado/desmarcado
-export function getCheckboxStyle(checked: boolean): string {
-  return checked
-    ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 border-emerald-400 shadow-lg shadow-emerald-500/30'
-    : 'border-slate-400/50 bg-slate-700/50 hover:border-slate-300/60';
+// Cores para status de entrega de checklist
+export function getEntregaStatusColor(status: string): string {
+  switch (status) {
+    case 'PENDENTE':
+      return 'bg-amber-500/25 text-amber-100 border border-amber-400/40';
+    case 'EM_ANALISE':
+      return 'bg-sky-500/25 text-sky-100 border border-sky-400/40';
+    case 'APROVADO':
+      return 'bg-emerald-500/25 text-emerald-100 border border-emerald-400/40';
+    case 'REPROVADO':
+      return 'bg-rose-500/25 text-rose-100 border border-rose-400/40';
+    default:
+      return 'bg-slate-500/25 text-slate-100 border border-slate-400/40';
+  }
 }
 
-// Estilo do item do checklist
-export function getChecklistItemStyle(checked: boolean): string {
-  return checked
-    ? 'bg-emerald-500/10 border border-emerald-500/20'
-    : 'bg-white/5 border border-white/10';
+// Labels para status de entrega de checklist
+export function getEntregaStatusLabel(status: string): string {
+  switch (status) {
+    case 'PENDENTE':
+      return 'Pendente';
+    case 'EM_ANALISE':
+      return 'Em análise';
+    case 'APROVADO':
+      return 'Aprovado';
+    case 'REPROVADO':
+      return 'Reprovado';
+    default:
+      return status;
+  }
 }
 
-// Estilo do texto do checklist item
-export function getChecklistTextStyle(checked: boolean): string {
-  return checked
-    ? 'text-emerald-300/70 line-through'
-    : 'text-white/90';
+// Cores para status de item de checklist (principal ou subitem)
+export function getChecklistItemStatusColor(status: string): string {
+  switch (status) {
+    case 'PENDENTE':
+      return 'bg-amber-500/20 text-amber-100 border border-amber-400/40';
+    case 'EM_ANALISE':
+      return 'bg-sky-500/20 text-sky-100 border border-sky-400/40';
+    case 'APROVADO':
+      return 'bg-emerald-500/20 text-emerald-100 border border-emerald-400/40';
+    case 'REPROVADO':
+      return 'bg-rose-500/20 text-rose-100 border border-rose-400/40';
+    default:
+      return 'bg-slate-500/20 text-slate-100 border border-slate-400/40';
+  }
 }
+
+// Labels para status de item de checklist (sem emojis)
+export function getChecklistItemStatusLabel(status: string): string {
+  switch (status) {
+    case 'PENDENTE':
+      return 'Pendente';
+    case 'EM_ANALISE':
+      return 'Em análise';
+    case 'APROVADO':
+      return 'Aprovado';
+    case 'REPROVADO':
+      return 'Reprovado';
+    default:
+      return status;
+  }
+}
+
+// Estilo para checkbox customizado
+export function getCheckboxStyle(checked: boolean, disabled?: boolean): string {
+  const base =
+    'w-4 h-4 rounded-md border transition-colors duration-150 flex items-center justify-center';
+
+  if (disabled) {
+    return `${base} border-slate-500/60 bg-slate-700/40 text-slate-300/70 cursor-not-allowed`;
+  }
+
+  if (checked) {
+    return `${base} border-emerald-400 bg-emerald-500/80 text-white shadow-sm shadow-emerald-500/40`;
+  }
+
+  return `${base} border-slate-400/70 bg-slate-800/40 hover:border-emerald-400/80 hover:bg-emerald-500/10 cursor-pointer`;
+}
+
+// Estilo para container de item de checklist
+export function getChecklistItemStyle(status: string): string {
+  const base =
+    'rounded-xl border px-3 py-2.5 bg-slate-900/60 backdrop-blur-sm flex items-start gap-3 transition-colors duration-150';
+
+  switch (status) {
+    case 'APROVADO':
+      return `${base} border-emerald-500/40 bg-emerald-950/40`;
+    case 'REPROVADO':
+      return `${base} border-rose-500/40 bg-rose-950/40`;
+    case 'EM_ANALISE':
+      return `${base} border-sky-500/40 bg-sky-950/40`;
+    default:
+      return `${base} border-slate-600/60 hover:border-emerald-500/40`;
+  }
+}
+
+// Estilo para texto de item de checklist
+export function getChecklistTextStyle(checked?: boolean): string {
+  if (checked) {
+    return 'text-sm text-slate-200 line-through decoration-emerald-400/70 decoration-2';
+  }
+  return 'text-sm text-slate-50';
+}
+

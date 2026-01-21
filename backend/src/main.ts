@@ -2,9 +2,21 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { json, urlencoded } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { cors: true });
+
+  // Aumentar limite do corpo das requisições para permitir envios de arquivos em base64
+  // (mantendo um limite seguro para não sobrecarregar o servidor).
+  const bodyLimit = '20mb';
+  app.use(json({ limit: bodyLimit }));
+  app.use(
+    urlencoded({
+      limit: bodyLimit,
+      extended: true,
+    }),
+  );
 
   app.useGlobalPipes(
     new ValidationPipe({

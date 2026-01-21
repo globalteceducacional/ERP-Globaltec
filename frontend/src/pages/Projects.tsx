@@ -261,9 +261,17 @@ export default function Projects() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-xl font-semibold">Projetos</h3>
-        <button onClick={openCreateModal} className={buttonStyles.primary}>
-          Novo Projeto
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={() => navigate('/projects/import')}
+            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+          >
+            Importar do Excel
+          </button>
+          <button onClick={openCreateModal} className={buttonStyles.primary}>
+            Novo Projeto
+          </button>
+        </div>
       </div>
 
       {error && !showModal && (

@@ -66,24 +66,26 @@ export class ProjectsService {
               return true;
             }
             
-            // Se a etapa tem checklist, verificar se todos os itens foram aprovados
+            // Se a etapa tem checklist, verificar se todos os itens (e subitens) foram concluídos
             if (etapaCompleta.checklistJson && Array.isArray(etapaCompleta.checklistJson)) {
-              const checklist = etapaCompleta.checklistJson as Array<{ texto: string; concluido?: boolean }>;
+              const checklist = etapaCompleta.checklistJson as Array<{
+                texto: string;
+                concluido?: boolean;
+                subitens?: Array<{ texto: string; concluido?: boolean }>;
+              }>;
               const totalItens = checklist.length;
               
               if (totalItens > 0) {
-                // Verificar itens aprovados através das entregas do checklist
-                const itensAprovados = etapaCompleta.checklistEntregas?.filter(
-                  (entrega) => entrega.status === 'APROVADO'
-                ).length || 0;
-                
-                // Verificar itens marcados como concluídos no checklistJson
-                const itensMarcados = checklist.filter(
-                  (item) => item.concluido === true
-                ).length;
-                
-                // Se todos os itens foram aprovados OU marcados como concluídos, considerar concluída
-                if (itensAprovados === totalItens || itensMarcados === totalItens) {
+                // Considerar concluída apenas se TODOS os itens e TODOS os subitens estiverem concluídos
+                const todosItensConcluidos = checklist.every((item) => {
+                  const subitensOk =
+                    !item.subitens || item.subitens.length === 0
+                      ? true
+                      : item.subitens.every((sub) => sub.concluido === true);
+                  return item.concluido === true && subitensOk;
+                });
+
+                if (todosItensConcluidos) {
                   return true;
                 }
               }

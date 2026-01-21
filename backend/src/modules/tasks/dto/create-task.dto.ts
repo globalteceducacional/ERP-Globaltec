@@ -10,6 +10,20 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
+export class ChecklistSubItemDto {
+  @IsString()
+  @MaxLength(500)
+  texto: string;
+
+  @IsOptional()
+  concluido?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  descricao?: string;
+}
+
 export class ChecklistItemDto {
   @IsString()
   @MaxLength(500)
@@ -17,6 +31,17 @@ export class ChecklistItemDto {
 
   @IsOptional()
   concluido?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  descricao?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ChecklistSubItemDto)
+  subitens?: ChecklistSubItemDto[];
 }
 
 export class CreateTaskDto {

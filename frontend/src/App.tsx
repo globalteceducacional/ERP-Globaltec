@@ -3,6 +3,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Projects from './pages/Projects';
 import ProjectDetails from './pages/ProjectDetails';
+import ImportProjects from './pages/ImportProjects';
 import MyTasks from './pages/MyTasks';
 import Stock from './pages/Stock';
 import Communications from './pages/Communications';
@@ -34,6 +35,7 @@ export default function App() {
             <Route path="/" element={<DefaultRedirect />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/projects" element={<Projects />} />
+            <Route path="/projects/import" element={<ImportProjects />} />
             <Route path="/projects/:id" element={<ProjectDetails />} />
             <Route path="/tasks/my" element={<MyTasks />} />
             <Route path="/stock" element={<Stock />} />

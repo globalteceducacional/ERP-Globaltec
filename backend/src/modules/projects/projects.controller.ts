@@ -10,8 +10,13 @@ import {
   Query,
   UseGuards,
   ParseIntPipe,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ProjectsService } from './projects.service';
+import { ProjectsImportService } from './projects-import.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UpdateResponsiblesDto } from './dto/update-responsibles.dto';
@@ -19,11 +24,15 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { ProjetoStatus } from '@prisma/client';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('projects')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class ProjectsController {
-  constructor(private readonly projectsService: ProjectsService) {}
+  constructor(
+    private readonly projectsService: ProjectsService,
+    private readonly projectsImportService: ProjectsImportService,
+  ) {}
 
   @Get()
   @Roles('DIRETOR')
@@ -71,5 +80,32 @@ export class ProjectsController {
   @HttpCode(204)
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.projectsService.remove(id);
+  }
+
+  @Post('import')
+  @Roles('DIRETOR')
+  @UseInterceptors(FileInterceptor('file'))
+  async import(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: { userId: number },
+  ) {
+    if (!file) {
+      throw new BadRequestException('Arquivo não fornecido');
+    }
+
+    // Validar extensão do arquivo
+    const allowedExtensions = ['.xlsx', '.xls'];
+    const fileExtension = file.originalname
+      .toLowerCase()
+      .substring(file.originalname.lastIndexOf('.'));
+    
+    if (!allowedExtensions.includes(fileExtension)) {
+      throw new BadRequestException('Formato de arquivo inválido. Use .xlsx ou .xls');
+    }
+
+    return this.projectsImportService.importFromExcel(
+      file.buffer,
+      user.userId,
+    );
   }
 }
