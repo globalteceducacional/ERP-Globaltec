@@ -719,7 +719,7 @@ export class TasksService {
     if (subitemIndex !== undefined && subitemIndex !== null) {
       // Buscar entrega do subitem específico
       entregaExistente = await this.prisma.checklistItemEntrega.findFirst({
-        where: {
+      where: {
           etapaId,
           checklistIndex,
           subitemIndex: subitemIndex,
@@ -826,16 +826,16 @@ export class TasksService {
       try {
         entrega = await this.prisma.checklistItemEntrega.create({
           data: {
-            etapaId,
-            checklistIndex,
+        etapaId,
+        checklistIndex,
             ...(subitemIndex !== undefined && subitemIndex !== null ? { subitemIndex } : { subitemIndex: null }),
-            descricao: data.descricao.trim(),
+        descricao: data.descricao.trim(),
             imagemUrl: imagensUrls && imagensUrls.length > 0 ? imagensUrls[0] : null,
             documentoUrl: documentosUrls && documentosUrls.length > 0 ? documentosUrls[0] : null,
-            imagensUrls: imagensUrls && imagensUrls.length > 0 ? imagensUrls : undefined,
-            documentosUrls: documentosUrls && documentosUrls.length > 0 ? documentosUrls : undefined,
-            status: ChecklistItemStatus.EM_ANALISE,
-            executorId: userId,
+        imagensUrls: imagensUrls && imagensUrls.length > 0 ? imagensUrls : undefined,
+        documentosUrls: documentosUrls && documentosUrls.length > 0 ? documentosUrls : undefined,
+        status: ChecklistItemStatus.EM_ANALISE,
+        executorId: userId,
           } as any,
           include: {
             executor: true,
@@ -866,11 +866,11 @@ export class TasksService {
               entrega = await this.prisma.checklistItemEntrega.update({
                 where: { id: (entregaEncontrada as any).id },
                 data: prepareUpdateData(entregaEncontrada as any),
-                include: {
-                  executor: true,
-                  avaliadoPor: true,
-                },
-              });
+      include: {
+        executor: true,
+        avaliadoPor: true,
+      },
+    });
             } else {
               throw error;
             }
@@ -928,8 +928,8 @@ export class TasksService {
 
     const entrega = await this.prisma.checklistItemEntrega.findFirst({
       where: {
-        etapaId,
-        checklistIndex,
+          etapaId,
+          checklistIndex,
         ...(subitemIndex !== undefined && subitemIndex !== null ? { subitemIndex } : { subitemIndex: null }),
       } as any,
     });
@@ -975,8 +975,8 @@ export class TasksService {
         }
       } else {
         // Se for item principal, marcar o item como concluído
-        if (checklist[checklistIndex]) {
-          checklist[checklistIndex].concluido = true;
+      if (checklist[checklistIndex]) {
+        checklist[checklistIndex].concluido = true;
         }
       }
       
@@ -1022,11 +1022,11 @@ export class TasksService {
           updateData.dataFim = new Date();
         }
       }
-      
-      await this.prisma.etapa.update({
-        where: { id: etapaId },
+        
+        await this.prisma.etapa.update({
+          where: { id: etapaId },
         data: updateData,
-      });
+        });
       
       // Atualizar status do projeto se necessário
       await this.updateProjetoStatus(etapa.projetoId);

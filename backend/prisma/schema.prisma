@@ -21,7 +21,7 @@ model Cargo {
   dataCriacao       DateTime          @default(now())
   usuarios          Usuario[]
   permissions       CargoPermission[]
-
+  
   @@map("Cargo")
 }
 
@@ -331,7 +331,7 @@ model EstoqueAlocacao {
   usuario      Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   quantidade   Int // Quantidade alocada para este projeto/etapa/usuário
   dataAlocacao DateTime @default(now())
-
+  
   @@index([estoqueId])
   @@index([projetoId])
   @@index([etapaId])

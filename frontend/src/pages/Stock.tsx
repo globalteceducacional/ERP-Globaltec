@@ -475,187 +475,187 @@ export default function Stock() {
   }
 
   function buildPurchasesWorkbook() {
-    const reportData = calculateReportTotals();
-    
-    // Criar workbook
-    const wb = XLSX.utils.book_new();
-    
-    // Preparar dados da tabela principal
-    const headers = [
-      'Projeto', 'Item', 'Categoria', 'Quantidade', 'Valor Unitário', 'Valor Total', 'Status', 
-      'Solicitado Por', 'Cargo', 'Data Compra', 'Forma Pagamento', 'Previsão Entrega', 
-      'Data Entrega', 'Status Entrega', 'Recebido Por', 'Fornecedor', 'Descrição', 'Observações'
-    ];
-    
-    const tableData: any[][] = [headers];
-    
-    // Agrupar por projeto
-    const projetoGroups: Record<number, Purchase[]> = {};
-    reportData.purchases.forEach((purchase) => {
-      const projetoId = purchase.projetoId || 0;
-      if (!projetoGroups[projetoId]) {
-        projetoGroups[projetoId] = [];
-      }
-      projetoGroups[projetoId].push(purchase);
-    });
-    
-    // Preencher dados
-    Object.entries(projetoGroups).forEach(([projetoId, projetoPurchases]) => {
-      const projeto = projects.find((p) => p.id === Number(projetoId));
+      const reportData = calculateReportTotals();
       
-      projetoPurchases.forEach((purchase) => {
-        const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
-        const cotacaoSelecionada = cotacoes.length > 0 ? cotacoes[0] : null;
-        const valorTotal = purchase.valorUnitario * (purchase.quantidade || 0);
-        
-        tableData.push([
-          projeto ? projeto.nome : 'Sem Projeto',
-          purchase.item,
-          (purchase as any).categoriaId ? getCategoryName((purchase as any).categoriaId) : '-',
-          purchase.quantidade || 0,
-          purchase.valorUnitario, // Valor numérico para formatação
-          valorTotal, // Valor numérico para formatação
-          getStatusLabel(purchase.status),
-          purchase.solicitadoPor?.nome || '-',
-          purchase.solicitadoPor?.cargo?.nome || '-',
-          purchase.dataCompra ? new Date(purchase.dataCompra) : null,
-          purchase.formaPagamento || '-',
-          purchase.status === 'COMPRADO_ACAMINHO' && purchase.previsaoEntrega 
-            ? new Date(purchase.previsaoEntrega) 
-            : null,
-          purchase.dataEntrega ? new Date(purchase.dataEntrega) : null,
-          purchase.statusEntrega ? getStatusLabel(purchase.statusEntrega) : '-',
-          purchase.recebidoPor || '-',
-          cotacaoSelecionada?.fornecedorId ? getSupplierName(cotacaoSelecionada.fornecedorId) : '-',
-          purchase.descricao || '-',
-          purchase.observacao || '-',
-        ]);
+      // Criar workbook
+      const wb = XLSX.utils.book_new();
+      
+      // Preparar dados da tabela principal
+      const headers = [
+        'Projeto', 'Item', 'Categoria', 'Quantidade', 'Valor Unitário', 'Valor Total', 'Status', 
+        'Solicitado Por', 'Cargo', 'Data Compra', 'Forma Pagamento', 'Previsão Entrega', 
+        'Data Entrega', 'Status Entrega', 'Recebido Por', 'Fornecedor', 'Descrição', 'Observações'
+      ];
+      
+      const tableData: any[][] = [headers];
+      
+      // Agrupar por projeto
+      const projetoGroups: Record<number, Purchase[]> = {};
+      reportData.purchases.forEach((purchase) => {
+        const projetoId = purchase.projetoId || 0;
+        if (!projetoGroups[projetoId]) {
+          projetoGroups[projetoId] = [];
+        }
+        projetoGroups[projetoId].push(purchase);
       });
-    });
-    
-    // Criar worksheet
-    const ws = XLSX.utils.aoa_to_sheet(tableData);
-    
-    // Definir range da tabela
-    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-    
-    // Estilo do cabeçalho (azul escuro com texto branco)
-    const headerStyle: any = {
-      fill: {
-        fgColor: { rgb: '1E3A8A' } // Azul escuro
-      },
-      font: {
-        color: { rgb: 'FFFFFF' }, // Branco
-        bold: true,
-        sz: 11
-      },
-      alignment: {
-        horizontal: 'center',
-        vertical: 'center',
-        wrapText: true
-      },
-      border: {
-        top: { style: 'thin', color: { rgb: '000000' } },
-        bottom: { style: 'thin', color: { rgb: '000000' } },
-        left: { style: 'thin', color: { rgb: '000000' } },
-        right: { style: 'thin', color: { rgb: '000000' } }
-      }
-    };
-    
-    // Aplicar estilo ao cabeçalho
-    for (let col = range.s.c; col <= range.e.c; col++) {
-      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
-      if (!ws[cellAddress]) {
-        ws[cellAddress] = { t: 's', v: '' };
-      }
-      ws[cellAddress].s = headerStyle;
-    }
-    
-    // Estilo das linhas de dados (alternando cores)
-    for (let row = 1; row <= range.e.r; row++) {
-      const isEven = row % 2 === 0;
-      const rowStyle: any = {
+      
+      // Preencher dados
+      Object.entries(projetoGroups).forEach(([projetoId, projetoPurchases]) => {
+        const projeto = projects.find((p) => p.id === Number(projetoId));
+        
+        projetoPurchases.forEach((purchase) => {
+          const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
+          const cotacaoSelecionada = cotacoes.length > 0 ? cotacoes[0] : null;
+          const valorTotal = purchase.valorUnitario * (purchase.quantidade || 0);
+          
+          tableData.push([
+            projeto ? projeto.nome : 'Sem Projeto',
+            purchase.item,
+            (purchase as any).categoriaId ? getCategoryName((purchase as any).categoriaId) : '-',
+            purchase.quantidade || 0,
+            purchase.valorUnitario, // Valor numérico para formatação
+            valorTotal, // Valor numérico para formatação
+            getStatusLabel(purchase.status),
+            purchase.solicitadoPor?.nome || '-',
+            purchase.solicitadoPor?.cargo?.nome || '-',
+            purchase.dataCompra ? new Date(purchase.dataCompra) : null,
+            purchase.formaPagamento || '-',
+            purchase.status === 'COMPRADO_ACAMINHO' && purchase.previsaoEntrega 
+              ? new Date(purchase.previsaoEntrega) 
+              : null,
+            purchase.dataEntrega ? new Date(purchase.dataEntrega) : null,
+            purchase.statusEntrega ? getStatusLabel(purchase.statusEntrega) : '-',
+            purchase.recebidoPor || '-',
+            cotacaoSelecionada?.fornecedorId ? getSupplierName(cotacaoSelecionada.fornecedorId) : '-',
+            purchase.descricao || '-',
+            purchase.observacao || '-',
+          ]);
+        });
+      });
+      
+      // Criar worksheet
+      const ws = XLSX.utils.aoa_to_sheet(tableData);
+      
+      // Definir range da tabela
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      
+      // Estilo do cabeçalho (azul escuro com texto branco)
+      const headerStyle: any = {
         fill: {
-          fgColor: { rgb: isEven ? 'E8F4F8' : 'FFFFFF' } // Azul claro alternado com branco
+          fgColor: { rgb: '1E3A8A' } // Azul escuro
         },
         font: {
-          color: { rgb: '000000' },
-          sz: 10
+          color: { rgb: 'FFFFFF' }, // Branco
+          bold: true,
+          sz: 11
         },
         alignment: {
+          horizontal: 'center',
           vertical: 'center',
           wrapText: true
         },
         border: {
-          top: { style: 'thin', color: { rgb: 'D0D0D0' } },
-          bottom: { style: 'thin', color: { rgb: 'D0D0D0' } },
-          left: { style: 'thin', color: { rgb: 'D0D0D0' } },
-          right: { style: 'thin', color: { rgb: 'D0D0D0' } }
+          top: { style: 'thin', color: { rgb: '000000' } },
+          bottom: { style: 'thin', color: { rgb: '000000' } },
+          left: { style: 'thin', color: { rgb: '000000' } },
+          right: { style: 'thin', color: { rgb: '000000' } }
         }
       };
       
+      // Aplicar estilo ao cabeçalho
       for (let col = range.s.c; col <= range.e.c; col++) {
-        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
-        if (!ws[cellAddress]) continue;
+        const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+        if (!ws[cellAddress]) {
+          ws[cellAddress] = { t: 's', v: '' };
+        }
+        ws[cellAddress].s = headerStyle;
+      }
+      
+      // Estilo das linhas de dados (alternando cores)
+      for (let row = 1; row <= range.e.r; row++) {
+        const isEven = row % 2 === 0;
+        const rowStyle: any = {
+          fill: {
+            fgColor: { rgb: isEven ? 'E8F4F8' : 'FFFFFF' } // Azul claro alternado com branco
+          },
+          font: {
+            color: { rgb: '000000' },
+            sz: 10
+          },
+          alignment: {
+            vertical: 'center',
+            wrapText: true
+          },
+          border: {
+            top: { style: 'thin', color: { rgb: 'D0D0D0' } },
+            bottom: { style: 'thin', color: { rgb: 'D0D0D0' } },
+            left: { style: 'thin', color: { rgb: 'D0D0D0' } },
+            right: { style: 'thin', color: { rgb: 'D0D0D0' } }
+          }
+        };
         
-        // Formatação especial para colunas numéricas
-        if (col === 3) { // Quantidade
-          ws[cellAddress].s = {
-            ...rowStyle,
-            numFmt: '#,##0'
-          };
-        } else if (col === 4 || col === 5) { // Valor Unitário e Valor Total
-          ws[cellAddress].s = {
-            ...rowStyle,
-            numFmt: '"R$" #,##0.00'
-          };
-        } else if (col === 9 || col === 11 || col === 12) { // Datas
-          if (ws[cellAddress].v && ws[cellAddress].v instanceof Date) {
+        for (let col = range.s.c; col <= range.e.c; col++) {
+          const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+          if (!ws[cellAddress]) continue;
+          
+          // Formatação especial para colunas numéricas
+          if (col === 3) { // Quantidade
             ws[cellAddress].s = {
               ...rowStyle,
-              numFmt: 'dd/mm/yyyy'
+              numFmt: '#,##0'
             };
+          } else if (col === 4 || col === 5) { // Valor Unitário e Valor Total
+            ws[cellAddress].s = {
+              ...rowStyle,
+              numFmt: '"R$" #,##0.00'
+            };
+          } else if (col === 9 || col === 11 || col === 12) { // Datas
+            if (ws[cellAddress].v && ws[cellAddress].v instanceof Date) {
+              ws[cellAddress].s = {
+                ...rowStyle,
+                numFmt: 'dd/mm/yyyy'
+              };
+            } else {
+              ws[cellAddress].s = rowStyle;
+            }
           } else {
             ws[cellAddress].s = rowStyle;
           }
-        } else {
-          ws[cellAddress].s = rowStyle;
         }
       }
-    }
-    
-    // Ajustar largura das colunas
-    ws['!cols'] = [
-      { wch: 20 }, // Projeto
-      { wch: 30 }, // Item
-      { wch: 20 }, // Categoria
-      { wch: 12 }, // Quantidade
-      { wch: 15 }, // Valor Unitário
-      { wch: 15 }, // Valor Total
-      { wch: 18 }, // Status
-      { wch: 20 }, // Solicitado Por
-      { wch: 15 }, // Cargo
-      { wch: 12 }, // Data Compra
-      { wch: 15 }, // Forma Pagamento
-      { wch: 15 }, // Previsão Entrega
-      { wch: 12 }, // Data Entrega
-      { wch: 15 }, // Status Entrega
-      { wch: 18 }, // Recebido Por
-      { wch: 25 }, // Fornecedor
-      { wch: 40 }, // Descrição
-      { wch: 40 }, // Observações
-    ];
-    
-    // Adicionar filtros automáticos na primeira linha
-    const filterRange = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: range.e.r, c: range.e.c } });
-    ws['!autofilter'] = { ref: filterRange };
-    
-    // Congelar primeira linha (cabeçalho) - será aplicado pelo Excel ao abrir
-    ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft' };
-    
-    // Adicionar ao workbook
-    XLSX.utils.book_append_sheet(wb, ws, 'Compras');
-    
+      
+      // Ajustar largura das colunas
+      ws['!cols'] = [
+        { wch: 20 }, // Projeto
+        { wch: 30 }, // Item
+        { wch: 20 }, // Categoria
+        { wch: 12 }, // Quantidade
+        { wch: 15 }, // Valor Unitário
+        { wch: 15 }, // Valor Total
+        { wch: 18 }, // Status
+        { wch: 20 }, // Solicitado Por
+        { wch: 15 }, // Cargo
+        { wch: 12 }, // Data Compra
+        { wch: 15 }, // Forma Pagamento
+        { wch: 15 }, // Previsão Entrega
+        { wch: 12 }, // Data Entrega
+        { wch: 15 }, // Status Entrega
+        { wch: 18 }, // Recebido Por
+        { wch: 25 }, // Fornecedor
+        { wch: 40 }, // Descrição
+        { wch: 40 }, // Observações
+      ];
+      
+      // Adicionar filtros automáticos na primeira linha
+      const filterRange = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: range.e.r, c: range.e.c } });
+      ws['!autofilter'] = { ref: filterRange };
+      
+      // Congelar primeira linha (cabeçalho) - será aplicado pelo Excel ao abrir
+      ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft' };
+      
+      // Adicionar ao workbook
+      XLSX.utils.book_append_sheet(wb, ws, 'Compras');
+      
     return wb;
   }
 

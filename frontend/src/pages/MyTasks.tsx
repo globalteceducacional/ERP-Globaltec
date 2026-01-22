@@ -309,8 +309,8 @@ export default function MyTasks() {
               newImages.push(result);
               newPreviews.push({ url: result, name: file.name, type: 'image' });
             } else {
-              newDocuments.push(result);
-              newPreviews.push({ url: result, name: file.name, type: 'document' });
+            newDocuments.push(result);
+            newPreviews.push({ url: result, name: file.name, type: 'document' });
             }
           }
           resolve();
@@ -781,27 +781,27 @@ export default function MyTasks() {
                                     className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
                                       podeInteragir ? 'hover:bg-white/10 hover:scale-[1.01]' : ''
                                     } ${getChecklistItemStyle(item.concluido ?? false ? 'true' : 'false')}`}
-                                  >
-                                    <div
+                                >
+                                  <div
                                       className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${getCheckboxStyle(item.concluido ?? false)}`}
                                       title="Status do item"
-                                    >
-                                      {item.concluido && (
+                                  >
+                                    {item.concluido && (
                                         <svg className="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
-                                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                        </svg>
-                                      )}
-                                    </div>
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                  </div>
                                     <div className="flex-1">
                                       <span className={`text-sm ${getChecklistTextStyle(item.concluido ?? false)}`}>
-                                        {item.texto}
-                                      </span>
+                                    {item.texto}
+                                  </span>
                                     </div>
-                                    <span
+                                  <span
                                       className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${getChecklistItemStatusColor(statusItem)}`}
                                     >
                                       {getChecklistItemStatusLabel(statusItem)}
-                                    </span>
+                                  </span>
                                     {(hasDetails || hasSubitens) && (
                                       <button
                                         type="button"
@@ -812,28 +812,28 @@ export default function MyTasks() {
                                         {hasSubitens ? `(${item.subitens!.length})` : ''} {isExpanded ? '▲' : '▼'}
                                       </button>
                                     )}
-                                    {entregaItem && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
-                                          setShowViewEntregaModal(true);
-                                        }}
+                                  {entregaItem && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
+                                        setShowViewEntregaModal(true);
+                                      }}
                                         className="px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                                        title="Ver detalhes da entrega"
-                                      >
+                                      title="Ver detalhes da entrega"
+                                    >
                                         Ver entrega
-                                      </button>
-                                    )}
-                                    {podeEnviarObjetivo && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleOpenChecklistModal(etapa, index)}
+                                    </button>
+                                  )}
+                                  {podeEnviarObjetivo && (
+            <button
+                                      type="button"
+                                      onClick={() => handleOpenChecklistModal(etapa, index)}
                                         className="px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                                        title="Enviar objetivo para análise"
-                                      >
-                                        Enviar
-                                      </button>
+                                      title="Enviar objetivo para análise"
+            >
+                                      Enviar
+            </button>
                                     )}
                                   </div>
                                   

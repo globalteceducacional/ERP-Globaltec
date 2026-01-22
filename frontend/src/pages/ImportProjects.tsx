@@ -16,17 +16,92 @@ export default function ImportProjects() {
   const buildTemplateWorkbook = () => {
     const wb = XLSX.utils.book_new();
 
+    const maxRows = 50; // número de linhas "pre-bordadas" para o usuário preencher
+
+    const headerStyle: XLSX.CellStyle = {
+      fill: {
+        patternType: 'solid',
+        fgColor: { rgb: '1F4E78' }, // azul escuro parecido com o print
+      },
+      font: {
+        bold: true,
+        color: { rgb: 'FFFFFF' },
+      },
+      alignment: {
+        horizontal: 'center',
+        vertical: 'center',
+        wrapText: true,
+      },
+      border: {
+        top: { style: 'thin', color: { rgb: '000000' } },
+        bottom: { style: 'thin', color: { rgb: '000000' } },
+        left: { style: 'thin', color: { rgb: '000000' } },
+        right: { style: 'thin', color: { rgb: '000000' } },
+      },
+    };
+
+    const bodyCellStyle: XLSX.CellStyle = {
+      border: {
+        top: { style: 'thin', color: { rgb: '000000' } },
+        bottom: { style: 'thin', color: { rgb: '000000' } },
+        left: { style: 'thin', color: { rgb: '000000' } },
+        right: { style: 'thin', color: { rgb: '000000' } },
+      },
+    };
+
+    const createSheetWithStyledHeader = (
+      headers: string[],
+      sheetName: string,
+      colWidths?: number[],
+      dateColumns: number[] = [],
+    ) => {
+      const sheet = XLSX.utils.aoa_to_sheet([headers]);
+
+      // Estilo do cabeçalho
+      headers.forEach((_, index) => {
+        const cellRef = XLSX.utils.encode_cell({ r: 0, c: index });
+        const cell = sheet[cellRef];
+        if (cell) {
+          cell.s = headerStyle;
+        }
+      });
+
+      // Bordas em todas as células de algumas linhas iniciais (tabela visual completa)
+      for (let r = 1; r <= maxRows; r += 1) {
+        headers.forEach((_, c) => {
+          const cellRef = XLSX.utils.encode_cell({ r, c });
+          let cell = sheet[cellRef];
+          if (!cell) {
+            cell = { t: 's', v: '' };
+            sheet[cellRef] = cell;
+          }
+
+          const isDateCol = dateColumns.includes(c);
+
+          const baseStyle = isDateCol ? { ...bodyCellStyle, numFmt: 'yyyy-mm-dd' } : bodyCellStyle;
+
+          cell.s = cell.s ? { ...cell.s, ...baseStyle } : baseStyle;
+        });
+      }
+
+      // Garantir que o range da planilha cubra todas as linhas/colunas geradas
+      const range = {
+        s: { r: 0, c: 0 },
+        e: { r: maxRows, c: headers.length - 1 },
+      };
+      sheet['!ref'] = XLSX.utils.encode_range(range);
+
+      // Largura das colunas (opcional, para ficar mais legível)
+      if (colWidths && colWidths.length > 0) {
+        sheet['!cols'] = colWidths.map((w) => ({ wch: w }));
+      }
+
+      XLSX.utils.book_append_sheet(wb, sheet, sheetName);
+    };
+
     // Aba Projetos
-    const projetosHeaders = [
-      'nome',
-      'resumo',
-      'objetivo',
-      'valorTotal',
-      'supervisorEmail',
-      'responsaveisEmails',
-    ];
-    const projetosSheet = XLSX.utils.aoa_to_sheet([projetosHeaders]);
-    XLSX.utils.book_append_sheet(wb, projetosSheet, 'Projetos');
+    const projetosHeaders = ['nome', 'resumo', 'objetivo', 'valorTotal', 'supervisorEmail', 'responsaveisEmails'];
+    createSheetWithStyledHeader(projetosHeaders, 'Projetos', [25, 30, 30, 18, 30, 35]);
 
     // Aba Etapas
     const etapasHeaders = [
@@ -39,20 +114,59 @@ export default function ImportProjects() {
       'executorEmail',
       'integrantesEmails',
     ];
-    const etapasSheet = XLSX.utils.aoa_to_sheet([etapasHeaders]);
-    XLSX.utils.book_append_sheet(wb, etapasSheet, 'Etapas');
+    // dataInicio (índice 3) e dataFim (índice 4) formatadas como data (yyyy-mm-dd)
+    createSheetWithStyledHeader(etapasHeaders, 'Etapas', [25, 25, 35, 14, 14, 18, 28, 32], [3, 4]);
 
     // Aba Checklist
-    const checklistHeaders = [
-      'projetoNome',
-      'etapaNome',
-      'itemTexto',
-      'itemDescricao',
-      'subitemTexto',
-      'subitemDescricao',
-    ];
-    const checklistSheet = XLSX.utils.aoa_to_sheet([checklistHeaders]);
-    XLSX.utils.book_append_sheet(wb, checklistSheet, 'Checklist');
+    const checklistHeaders = ['projetoNome', 'etapaNome', 'itemTexto', 'itemDescricao', 'subitemTexto', 'subitemDescricao'];
+    createSheetWithStyledHeader(checklistHeaders, 'Checklist', [25, 25, 35, 35, 30, 35]);
+
+    // Preenchimento automático entre abas
+    const etapasSheet = wb.Sheets.Etapas;
+    const projetosSheetName = 'Projetos';
+
+    if (etapasSheet) {
+      for (let r = 1; r <= maxRows; r += 1) {
+        const excelRow = r + 1; // linha real no Excel (começa em 2)
+
+        // Coluna projetoNome (A) da aba Etapas = coluna nome (A) da aba Projetos
+        const etapaProjetoCellRef = XLSX.utils.encode_cell({ r, c: 0 });
+        const etapaProjetoCell: any = {
+          t: 'n',
+          f: `${projetosSheetName}!A${excelRow}`,
+          s: bodyCellStyle,
+        };
+        etapasSheet[etapaProjetoCellRef] = etapaProjetoCell;
+      }
+    }
+
+    const checklistSheet = wb.Sheets.Checklist;
+
+    if (checklistSheet && wb.Sheets.Etapas) {
+      const etapasSheetName = 'Etapas';
+
+      for (let r = 1; r <= maxRows; r += 1) {
+        const excelRow = r + 1;
+
+        // projetoNome na Checklist (A) = projetoNome em Etapas (A)
+        const chkProjetoCellRef = XLSX.utils.encode_cell({ r, c: 0 });
+        const chkProjetoCell: any = {
+          t: 'n',
+          f: `${etapasSheetName}!A${excelRow}`,
+          s: bodyCellStyle,
+        };
+        checklistSheet[chkProjetoCellRef] = chkProjetoCell;
+
+        // etapaNome na Checklist (B) = nome da etapa em Etapas (B)
+        const chkEtapaCellRef = XLSX.utils.encode_cell({ r, c: 1 });
+        const chkEtapaCell: any = {
+          t: 'n',
+          f: `${etapasSheetName}!B${excelRow}`,
+          s: bodyCellStyle,
+        };
+        checklistSheet[chkEtapaCellRef] = chkEtapaCell;
+      }
+    }
 
     return wb;
   };

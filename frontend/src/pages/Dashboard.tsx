@@ -109,9 +109,9 @@ export default function Dashboard() {
 
         if (hasProjectsAccess) {
           // Usuários com acesso a "Projetos" veem todos os projetos
-          const { data } = await api.get<Projeto[]>('/projects');
+        const { data } = await api.get<Projeto[]>('/projects');
           setAllProjects(data);
-          setProjects(data);
+        setProjects(data);
         } else {
           // Usuários SEM acesso a "Projetos" veem apenas projetos em que estão inseridos
           const { data } = await api.get<MyTasksResponse>('/tasks/my');
@@ -434,12 +434,12 @@ export default function Dashboard() {
               </div>
             </div>
             <p className="text-3xl font-bold text-amber-100">
-              {projects.reduce((acc, project) => acc + (project.valorTotal ?? 0), 0).toLocaleString('pt-BR', {
-                style: 'currency',
-                currency: 'BRL',
-              })}
-            </p>
-          </div>
+            {projects.reduce((acc, project) => acc + (project.valorTotal ?? 0), 0).toLocaleString('pt-BR', {
+              style: 'currency',
+              currency: 'BRL',
+            })}
+          </p>
+        </div>
         )}
       </div>
 
@@ -509,12 +509,12 @@ export default function Dashboard() {
                         }`}
                         style={{ width: `${project.progress}%` }}
                       />
-                    </div>
+              </div>
                   )}
 
                   <div className="flex items-center justify-between text-xs text-white/60">
                     <span>
-                      {project.supervisor ? `Supervisor: ${project.supervisor.nome}` : 'Sem supervisor'}
+                {project.supervisor ? `Supervisor: ${project.supervisor.nome}` : 'Sem supervisor'}
                     </span>
                     <button
                       type="button"
@@ -572,9 +572,9 @@ export default function Dashboard() {
                                 <div className="w-2 h-2 rounded-full bg-blue-400"></div>
                                 <span className="text-blue-300">
                                   {resp.usuario.nome}
-                                </span>
-                              </div>
-                            ))}
+              </span>
+            </div>
+          ))}
                             {!project.supervisor && responsaveis.length === 0 && (
                               <p className="text-xs text-white/50">Nenhum integrante cadastrado</p>
                             )}

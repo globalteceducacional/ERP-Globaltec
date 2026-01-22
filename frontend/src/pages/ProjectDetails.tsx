@@ -1043,7 +1043,7 @@ export default function ProjectDetails() {
                         {etapa.integrantes
                           .filter((i) => i.usuario)
                           .map((i, idx, arr) => (
-                            <span key={i.usuario?.id || `integrante-${idx}`}>
+                            <span key ={i.usuario?.id || `integrante-${idx}`}>
                               {i.usuario?.nome}
                               {idx < arr.length - 1 ? ', ' : ''}
                             </span>
@@ -1159,7 +1159,7 @@ export default function ProjectDetails() {
 
                   {etapa.checklistJson && Array.isArray(etapa.checklistJson) && etapa.checklistJson.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-white/10">
-                      <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center justify-between mb-3">
                         <label className="text-xs text-white/70 block font-medium">
                           Checklist de Objetos ({etapa.checklistJson.length})
                           {isExecutor && (
@@ -1172,6 +1172,16 @@ export default function ProjectDetails() {
                           </span>
                         )}
                       </div>
+
+                      {/* Cabeçalho de colunas (desktop) */}
+                      <div className="hidden md:flex items-center text-[11px] uppercase tracking-wide text-white/70 bg-slate-900/80 border border-white/15 rounded-md px-3 py-2 mb-1">
+                        <div className="w-6" />
+                        <div className="flex-1 pl-3">Item</div>
+                        <div className="w-28 text-center">Status</div>
+                        <div className="w-28 text-center">Entrega</div>
+                        <div className="w-32 text-right pr-1">Ações</div>
+                      </div>
+
                       <div className="space-y-2">
                         {etapa.checklistJson.map((item: ChecklistItem, index: number) => {
                           // Entrega do item principal (ignorar entregas de subitens)
@@ -1192,7 +1202,7 @@ export default function ProjectDetails() {
                               <div
                                 className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
                                   isExecutor ? 'hover:bg-white/10 hover:scale-[1.01]' : ''
-                                } ${getChecklistItemStyle(item.concluido || false)}`}
+                                } ${getChecklistItemStyle(statusItem)}`}
                               >
                                 <div
                                   className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
