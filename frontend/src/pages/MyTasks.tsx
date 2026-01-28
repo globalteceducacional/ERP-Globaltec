@@ -2,8 +2,7 @@ import { useEffect, useState, useMemo, FormEvent, ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
-import { buttonStyles } from '../utils/buttonStyles';
-import { ChecklistItemEntrega, ChecklistItem, ChecklistSubItem } from '../types';
+import { ChecklistItemEntrega, ChecklistItem } from '../types';
 import { toast, formatApiError } from '../utils/toast';
 import {
   getStatusColor,

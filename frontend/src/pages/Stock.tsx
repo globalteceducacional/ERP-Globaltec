@@ -11,22 +11,17 @@ import type {
   Cotacao, 
   StockItem, 
   Purchase, 
-  Projeto, 
   Supplier, 
   Category, 
-  SimpleUser,
   CreateItemForm,
   CreatePurchaseForm,
   StockTab,
-  PurchaseSubTab,
-  SortDirection,
 } from '../types/stock';
 
 // Constantes importadas
 import { 
   STATUS_ENTREGA_OPTIONS as statusEntregaOptions,
   FORMAS_PAGAMENTO as formasPagamento,
-  INITIAL_COTACAO,
 } from '../constants/stock';
 
 // Componentes importados
@@ -41,7 +36,6 @@ import {
   updateCotacao as updateCotacaoHelper,
   addCotacao as addCotacaoHelper,
   removeCotacao as removeCotacaoHelper,
-  compressImage,
   getSupplierName as getSupplierNameHelper,
   getCategoryName as getCategoryNameHelper,
 } from '../utils/stockHelpers';
@@ -59,16 +53,9 @@ export default function Stock() {
     suppliers,
     categories,
     users,
-    loading: dataLoading,
-    error: dataError,
     load: loadData,
-    loadUsers: loadUsersData,
-    setItems,
-    setPurchases,
     setSuppliers,
     setCategories,
-    loadEtapas: loadEtapasFromHook,
-    loadAlocacoes,
   } = useStockData();
 
   const [etapas, setEtapas] = useState<any[]>([]);
@@ -127,30 +114,9 @@ export default function Stock() {
     purchaseCounts,
   } = purchaseFiltersHook;
 
-  // Aliases para compatibilidade
-  const purchaseSearchTerm = purchaseFiltersState.searchTerm;
-  const purchaseCategoryFilter = purchaseFiltersState.categoryFilter;
-  const purchaseDateCompraInicio = purchaseFiltersState.dateCompraInicio;
-  const purchaseDateCompraFim = purchaseFiltersState.dateCompraFim;
-  const purchaseDateEntregaInicio = purchaseFiltersState.dateEntregaInicio;
-  const purchaseDateEntregaFim = purchaseFiltersState.dateEntregaFim;
-  const purchaseDateSolicitacaoInicio = purchaseFiltersState.dateSolicitacaoInicio;
-  const purchaseDateSolicitacaoFim = purchaseFiltersState.dateSolicitacaoFim;
-  
-  // Funções setter para compatibilidade
-  const setPurchaseSearchTerm = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, searchTerm: value });
-  const setPurchaseCategoryFilter = (value: number | 'all') => setPurchaseFilters({ ...purchaseFiltersState, categoryFilter: value });
-  const setPurchaseDateCompraInicio = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, dateCompraInicio: value });
-  const setPurchaseDateCompraFim = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, dateCompraFim: value });
-  const setPurchaseDateEntregaInicio = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, dateEntregaInicio: value });
-  const setPurchaseDateEntregaFim = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, dateEntregaFim: value });
-  const setPurchaseDateSolicitacaoInicio = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, dateSolicitacaoInicio: value });
-  const setPurchaseDateSolicitacaoFim = (value: string) => setPurchaseFilters({ ...purchaseFiltersState, dateSolicitacaoFim: value });
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [purchaseToReject, setPurchaseToReject] = useState<Purchase | null>(null);
   const [rejectReason, setRejectReason] = useState('');
-  const [showApproveModal, setShowApproveModal] = useState(false);
-  const [purchaseToApprove, setPurchaseToApprove] = useState<Purchase | null>(null);
   const [showViewRequestModal, setShowViewRequestModal] = useState(false);
   const [purchaseToView, setPurchaseToView] = useState<Purchase | null>(null);
   const [approveCotacoes, setApproveCotacoes] = useState<Cotacao[]>([{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }]);
@@ -231,13 +197,6 @@ export default function Stock() {
   // Funções auxiliares usando helpers
   const getSupplierName = (fornecedorId?: number) => getSupplierNameHelper(fornecedorId, suppliers);
   const getCategoryName = (categoriaId?: number) => getCategoryNameHelper(categoriaId, categories);
-
-  // Função para carregar etapas (wrapper do hook)
-  async function loadEtapas(projetoId: number) {
-    const etapasData = await loadEtapasFromHook(projetoId);
-    setEtapas(etapasData);
-    return etapasData;
-  }
 
   // Função para abrir modal de categoria
   function openCategoryModal() {
@@ -1126,9 +1085,6 @@ export default function Stock() {
     }
 
     try {
-      console.log('=== INÍCIO: Criar Compra ===');
-      console.log('Form completo:', purchaseForm);
-      
       const selectedCotacao = purchaseForm.cotacoes[purchaseForm.selectedCotacaoIndex ?? 0];
       if (!selectedCotacao) {
         setError('Selecione uma cotação');
@@ -1136,10 +1092,7 @@ export default function Stock() {
         return;
       }
 
-      console.log('Cotação selecionada:', selectedCotacao);
-
       const totalPorUnidade = selectedCotacao.valorUnitario + selectedCotacao.frete + selectedCotacao.impostos - (selectedCotacao.desconto || 0);
-      console.log('Total por unidade calculado:', totalPorUnidade);
 
       // Preparar payload removendo campos undefined/vazios
       const payload: any = {
@@ -1152,8 +1105,6 @@ export default function Stock() {
       if (purchaseForm.projetoId) {
         payload.projetoId = Number(purchaseForm.projetoId);
       }
-
-      console.log('Payload base criado:', payload);
 
       // Adicionar campos opcionais apenas se tiverem valor válido (não vazio)
       if (purchaseForm.descricao && purchaseForm.descricao.trim().length > 0) {
@@ -1201,8 +1152,6 @@ export default function Stock() {
             const impostos = Number(cot.impostos) || 0;
             const desconto = Number(cot.desconto) || 0;
             
-            console.log(`Cotação ${index + 1} raw:`, { valorUnitario: cot.valorUnitario, frete: cot.frete, impostos: cot.impostos, desconto: cot.desconto });
-            
             // Só incluir se todos os valores forem válidos (maiores que 0)
             if (valorUnitario > 0 && frete >= 0 && impostos >= 0) {
               const cotacao: any = {
@@ -1237,28 +1186,11 @@ export default function Stock() {
       const cleanPayload = Object.keys(payload).reduce((acc: Record<string, any>, key) => {
         if (payload[key] !== undefined && payload[key] !== null) {
           acc[key] = payload[key];
-        } else {
-          console.log(`⚠ Removido campo ${key} com valor ${payload[key]}`);
         }
         return acc;
       }, {});
 
-      console.log('=== PAYLOAD FINAL (LIMPO) ===');
-      console.log(JSON.stringify(cleanPayload, null, 2));
-      console.log('Campos incluídos:', Object.keys(cleanPayload));
-      console.log('Tipos dos campos:', {
-        projetoId: typeof cleanPayload.projetoId,
-        item: typeof cleanPayload.item,
-        quantidade: typeof cleanPayload.quantidade,
-        valorUnitario: typeof cleanPayload.valorUnitario,
-        descricao: cleanPayload.descricao ? typeof cleanPayload.descricao : 'NÃO INCLUÍDO',
-        imagemUrl: cleanPayload.imagemUrl ? typeof cleanPayload.imagemUrl : 'NÃO INCLUÍDO',
-        cotacoes: cleanPayload.cotacoes ? typeof cleanPayload.cotacoes + ' (length: ' + cleanPayload.cotacoes.length + ')' : 'NÃO INCLUÍDO',
-      });
-
-      const response = await api.post('/stock/purchases', cleanPayload);
-      console.log('=== SUCESSO ===');
-      console.log('Resposta do servidor:', response.data);
+      await api.post('/stock/purchases', cleanPayload);
 
       setShowPurchaseModal(false);
       setPurchaseForm({
@@ -1278,30 +1210,11 @@ export default function Stock() {
       load();
       toast.success('Compra criada com sucesso!');
     } catch (err: any) {
-      console.error('=== ERRO AO CRIAR COMPRA ===');
-      console.error('Erro completo:', err);
-      console.error('Status:', err.response?.status);
-      console.error('Status Text:', err.response?.statusText);
-      console.error('Headers:', err.response?.headers);
-      console.error('Data completa:', err.response?.data);
-      
-      if (err.response?.data) {
-        console.error('Mensagem de erro:', err.response.data.message);
-        console.error('Erros de validação:', err.response.data.message);
-        if (Array.isArray(err.response.data.message)) {
-          console.error('Array de erros:', err.response.data.message);
-          err.response.data.message.forEach((msg: any, index: number) => {
-            console.error(`  Erro ${index + 1}:`, msg);
-          });
-        }
-      }
-      
       const errorMessage = formatApiError(err);
       setError(errorMessage);
       toast.error(errorMessage);
     } finally {
       setSubmitting(false);
-      console.log('=== FIM: Criar Compra ===');
     }
   }
 
@@ -1507,9 +1420,6 @@ export default function Stock() {
         return;
       }
 
-      console.log('Atualizando compra ID:', editingPurchase.id);
-      console.log('Payload enviado:', payload);
-
       await api.patch(`/stock/purchases/${editingPurchase.id}`, payload);
 
       setShowEditPurchaseModal(false);
@@ -1562,7 +1472,6 @@ export default function Stock() {
         errorMessage = err.message;
       }
       
-      console.error('Erro ao atualizar compra:', err);
       setError(errorMessage);
     } finally {
       setSubmitting(false);
@@ -2860,7 +2769,7 @@ export default function Stock() {
                     setItemForm({
                       item: '',
                       codigo: '',
-                      categoria: '',
+                      categoriaId: undefined,
                       descricao: '',
                       quantidade: 1,
                       valorUnitario: 0,

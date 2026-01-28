@@ -156,9 +156,6 @@ export default function Suppliers() {
         payload.contato = form.contato.trim();
       }
 
-      console.log('=== CRIAR FORNECEDOR ===');
-      console.log('Payload:', JSON.stringify(payload, null, 2));
-
       if (editingSupplier) {
         await api.patch(`/suppliers/${editingSupplier.id}`, payload);
         toast.success('Fornecedor atualizado com sucesso!');
@@ -170,21 +167,6 @@ export default function Suppliers() {
       await load();
       setShowModal(false);
     } catch (err: any) {
-      console.error('=== ERRO AO CRIAR/ATUALIZAR FORNECEDOR ===');
-      console.error('Erro completo:', err);
-      console.error('Status:', err.response?.status);
-      console.error('Data:', err.response?.data);
-      
-      if (err.response?.data) {
-        console.error('Mensagem de erro:', err.response.data.message);
-        if (Array.isArray(err.response.data.message)) {
-          console.error('Array de erros:', err.response.data.message);
-          err.response.data.message.forEach((msg: any, index: number) => {
-            console.error(`  Erro ${index + 1}:`, msg);
-          });
-        }
-      }
-      
       const errorMessage = formatApiError(err);
       setModalError(errorMessage);
       toast.error(errorMessage);

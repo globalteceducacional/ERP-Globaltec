@@ -2,7 +2,7 @@ import { useEffect, useState, FormEvent, useRef, ChangeEvent, useMemo } from 're
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
-import { Cargo, ChecklistItemEntrega, ChecklistItem, ChecklistSubItem } from '../types';
+import { ChecklistItemEntrega, ChecklistItem, ChecklistSubItem } from '../types';
 import { buttonStyles } from '../utils/buttonStyles';
 import { toast, formatApiError } from '../utils/toast';
 import {

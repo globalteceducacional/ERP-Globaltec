@@ -212,6 +212,165 @@ Backend (NestJS)
 PostgreSQL Database
 ```
 
+### Mapa do Backend (como o `backend/` funciona)
+
+#### Visão rápida
+- **Framework**: NestJS (arquitetura modular)
+- **Padrão**: Controller → Service → `PrismaService` → PostgreSQL
+- **Validação**: `ValidationPipe` global (whitelist + transform) em `backend/src/main.ts`
+- **Auth**: JWT + Guards (`JwtAuthGuard` + `RolesGuard`)
+- **Payload**: limite de body configurado para **20mb** em `backend/src/main.ts`
+
+#### Arquivos-chave
+- **Bootstrap**: `backend/src/main.ts`
+- **Módulo raiz**: `backend/src/app.module.ts`
+- **Prisma**:
+  - Schema: `backend/prisma/schema.prisma`
+  - Migrations: `backend/prisma/migrations/`
+  - Service: `backend/src/prisma/prisma.service.ts`
+  - Module global: `backend/src/prisma/prisma.module.ts`
+- **Guards/Decorators (RBAC)**:
+  - `backend/src/modules/auth/guards/jwt-auth.guard.ts`
+  - `backend/src/common/guards/roles.guard.ts`
+  - `backend/src/common/decorators/roles.decorator.ts`
+  - `backend/src/common/decorators/current-user.decorator.ts`
+
+#### Módulos principais
+- **Auth**: `backend/src/modules/auth/` (login/register, JWT strategy)
+- **Users**: `backend/src/modules/users/` (CRUD usuários, ativar/desativar, trocar senha, opções para selects)
+- **Cargos**: `backend/src/modules/cargos/` (CRUD cargos, páginas permitidas e permissões)
+- **Projects**: `backend/src/modules/projects/` (CRUD projetos, responsáveis, finalizar, importação Excel)
+- **Tasks**: `backend/src/modules/tasks/` (etapas, subetapas, entregas, checklist, revisão)
+- **Stock**: `backend/src/modules/stock/` (itens de estoque, compras, aprovações e alocações)
+- **Suppliers**: `backend/src/modules/suppliers/` (CRUD fornecedores, consulta CNPJ)
+- **Categories**: `backend/src/modules/categories/` (CRUD categorias de compra)
+- **Requests**: `backend/src/modules/requests/` (requerimentos enviados/recebidos, responder, tipo COMPRA)
+- **Notifications**: `backend/src/modules/notifications/` (notificações)
+- **Occurrences**: `backend/src/modules/occurrences/` (ocorrências)
+
+#### Rotas (referência rápida)
+
+**Auth** (`backend/src/modules/auth/auth.controller.ts`)
+- `POST /auth/login`
+- `POST /auth/register`
+
+**Projects** (`backend/src/modules/projects/projects.controller.ts`)
+- `GET /projects`
+- `GET /projects/:id`
+- `POST /projects`
+- `PATCH /projects/:id`
+- `PATCH /projects/:id/responsibles`
+- `PATCH /projects/:id/finalize`
+- `DELETE /projects/:id`
+- `POST /projects/import` (upload Excel)
+
+**Tasks / Etapas** (`backend/src/modules/tasks/tasks.controller.ts`)
+- `GET /tasks/my`
+- `POST /tasks`
+- `PATCH /tasks/:id`
+- `PATCH /tasks/:id/status`
+- `DELETE /tasks/:id`
+- Entregas:
+  - `POST /tasks/:id/deliver`
+  - `PATCH /tasks/:id/deliver/:entregaId`
+  - `POST /tasks/:id/approve`
+  - `POST /tasks/:id/reject`
+- Subetapas:
+  - `POST /tasks/:id/subtasks`
+  - `PATCH /tasks/:id/subtasks/:subtaskId`
+  - `DELETE /tasks/:id/subtasks/:subtaskId`
+- Checklist:
+  - `PATCH /tasks/:id/checklist`
+  - `POST /tasks/:id/checklist/:index/submit` (suporta `?subitemIndex=0..n`)
+  - `PATCH /tasks/:id/checklist/:index/review` (suporta `?subitemIndex=0..n`)
+
+**Stock** (`backend/src/modules/stock/stock.controller.ts`)
+- Itens:
+  - `GET /stock/items`
+  - `POST /stock/items`
+  - `PATCH /stock/items/:id`
+  - `DELETE /stock/items/:id`
+- Compras:
+  - `GET /stock/purchases`
+  - `POST /stock/purchases`
+  - `PATCH /stock/purchases/:id`
+  - `PATCH /stock/purchases/:id/status`
+  - `POST /stock/purchases/:id/approve`
+  - `POST /stock/purchases/:id/reject`
+  - `DELETE /stock/purchases/:id`
+- Alocações:
+  - `GET /stock/alocacoes`
+  - `POST /stock/alocacoes`
+  - `PATCH /stock/alocacoes/:id`
+  - `DELETE /stock/alocacoes/:id`
+
+**Suppliers** (`backend/src/modules/suppliers/suppliers.controller.ts`)
+- `GET /suppliers` / `GET /suppliers/all`
+- `POST /suppliers`
+- `PATCH /suppliers/:id`
+- `PATCH /suppliers/:id/toggle-active`
+- `DELETE /suppliers/:id`
+- `GET /suppliers/cnpj/:cnpj`
+
+**Categories** (`backend/src/modules/categories/categories.controller.ts`)
+- `GET /categories` / `GET /categories/all`
+- `POST /categories`
+- `PATCH /categories/:id`
+- `PATCH /categories/:id/toggle-active`
+- `DELETE /categories/:id`
+
+**Requests** (`backend/src/modules/requests/requests.controller.ts`)
+- `POST /requests`
+- `GET /requests/sent`
+- `GET /requests/received`
+- `GET /requests/:id`
+- `POST /requests/:id/respond`
+- `DELETE /requests/:id`
+
+#### Checklist/Subitens (detalhes importantes)
+- O checklist é persistido em `Etapa.checklistJson` (JSON).
+- Entregas do checklist são persistidas em `ChecklistItemEntrega` com unicidade por:
+  - **(etapaId, checklistIndex, subitemIndex)**
+- O envio de arquivos do checklist trabalha com arrays:
+  - `imagensUrls` e `documentosUrls` (JSON)
+  - reenvios **mesclam** (acrescentam) ao invés de substituir.
+
+### Mapa do Frontend (como o `frontend/` funciona)
+
+#### Visão rápida
+- **Framework**: React + Vite + TypeScript + Tailwind
+- **Páginas (rotas)**: ficam em `frontend/src/pages/`
+- **Layout**: `frontend/src/components/layout/AppLayout.tsx` (Sidebar + Header)
+- **Proteção**: `frontend/src/components/ProtectedRoute.tsx`
+- **Estado (auth)**: Zustand em `frontend/src/store/auth.ts` (persist em `localStorage`)
+- **API**: Axios em `frontend/src/services/api.ts` (interceptors com JWT)
+- **Erros/Toast**: `frontend/src/utils/toast.ts` (`formatApiError()` + `toast.*`)
+
+#### Arquivos-chave
+- **Entrypoints**:
+  - `frontend/src/main.tsx`
+  - `frontend/src/App.tsx`
+- **Rotas**:
+  - `/login` (pública)
+  - rotas internas protegidas por `<ProtectedRoute />` e renderizadas dentro do `<AppLayout />`
+- **Permissões de navegação**:
+  - `frontend/src/utils/getFirstAllowedPage.ts` (primeira página permitida por cargo)
+  - `AppLayout` também impede acesso a páginas fora de `paginasPermitidas`
+
+#### Comunicação com o backend (padrão)
+- O cliente HTTP é `frontend/src/services/api.ts`:
+  - `baseURL`: `VITE_API_URL` (fallback `http://localhost:3000`)
+  - **Request interceptor**: injeta `Authorization: Bearer <token>` a partir do `authStore`
+  - **Response interceptor**: em **401**, faz logout e redireciona para `/login`
+
+#### Onde ficam as “partes” do sistema
+- **Projetos**: `frontend/src/pages/Projects.tsx`, `frontend/src/pages/ProjectDetails.tsx`
+- **Meu Trabalho (tarefas)**: `frontend/src/pages/MyTasks.tsx`
+- **Compras & Estoque**: `frontend/src/pages/Stock.tsx` + hooks em `frontend/src/hooks/`
+  - Dados: `frontend/src/hooks/useStockData.ts`
+  - Filtros/ordenação: `frontend/src/hooks/usePurchaseFilters.ts`
+  - Componentes auxiliares: `frontend/src/components/stock/*`
+
 ### Padrões de Arquitetura
 
 - **Backend**: Arquitetura modular (NestJS Modules)
@@ -571,6 +730,8 @@ frontend/
 | POST | `/projects` | Criar projeto | DIRETOR |
 | PATCH | `/projects/:id` | Atualizar projeto | DIRETOR |
 | PATCH | `/projects/:id/finalize` | Finalizar projeto | DIRETOR |
+| PATCH | `/projects/:id/responsibles` | Atualizar responsáveis | DIRETOR |
+| POST | `/projects/import` | Importar projetos via Excel | DIRETOR |
 
 ### Tarefas/Etapas
 
@@ -580,6 +741,9 @@ frontend/
 | POST | `/tasks/:id/deliver` | Entregar tarefa | EXECUTOR+ |
 | POST | `/tasks/:id/approve` | Aprovar entrega | SUPERVISOR+ |
 | POST | `/tasks/:id/reject` | Rejeitar entrega | SUPERVISOR+ |
+| PATCH | `/tasks/:id/checklist` | Atualizar checklist da etapa | Autenticado (executor/integrante) |
+| POST | `/tasks/:id/checklist/:index/submit` | Enviar entrega de objetivo/subobjetivo | Autenticado (executor/integrante) |
+| PATCH | `/tasks/:id/checklist/:index/review` | Revisar objetivo/subobjetivo | SUPERVISOR+ |
 
 ### Estoque e Compras
 
@@ -589,9 +753,9 @@ frontend/
 | POST | `/stock/items` | Criar item | COTADOR+ |
 | GET | `/stock/purchases` | Listar compras | Autenticado |
 | POST | `/stock/purchases` | Criar compra | Autenticado |
-| POST | `/stock/allocate` | Alocar estoque | Autenticado |
-| PATCH | `/stock/purchases/:id/approve` | Aprovar compra | DIRETOR |
-| PATCH | `/stock/purchases/:id/reject` | Rejeitar compra | DIRETOR |
+| POST | `/stock/alocacoes` | Alocar estoque | Autenticado |
+| POST | `/stock/purchases/:id/approve` | Aprovar compra | DIRETOR/COTADOR/PAGADOR (conforme regras do backend) |
+| POST | `/stock/purchases/:id/reject` | Rejeitar compra | DIRETOR/COTADOR/PAGADOR (conforme regras do backend) |
 
 ### Usuários
 
@@ -733,13 +897,25 @@ POSTGRES_PORT=5432
 # Backend
 DATABASE_URL=postgresql://erp:senha123@db:5432/erpdb
 JWT_SECRET=super-segredo-alterar-em-producao
-BACKEND_PORT=3000
+BACKEND_PORT=3001
 NODE_ENV=production
 
 # Frontend
 VITE_API_URL=http://localhost:3001
 FRONTEND_PORT=5174
 ```
+
+### Docker Compose (produção vs desenvolvimento)
+
+- **Produção (arquivo `docker-compose.yml`)**
+  - Backend exposto em `http://localhost:3001`
+  - Frontend exposto em `http://localhost:5174`
+  - Use `VITE_API_URL=http://localhost:3001`
+
+- **Desenvolvimento (arquivo `docker-compose.dev.yml`)**
+  - Backend exposto em `http://localhost:3000`
+  - Frontend exposto em `http://localhost:5173`
+  - Use `VITE_API_URL=http://localhost:3000`
 
 ---
 
