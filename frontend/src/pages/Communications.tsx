@@ -72,8 +72,9 @@ export default function Communications() {
   const [itensCompra, setItensCompra] = useState<CompraItem[]>([
     { item: '', descricao: '', quantidade: 1, categoriaId: undefined, projetoId: undefined, cotacoes: [{ ...INITIAL_COTACAO }] },
   ]);
-  const [form, setForm] = useState<{ destinatarioId?: number; tipo: RequerimentoTipo }>({
+  const [form, setForm] = useState<{ destinatarioId?: number; tipo: RequerimentoTipo; texto?: string }>({
     tipo: 'OUTRO',
+    texto: '',
   });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -333,15 +334,21 @@ export default function Communications() {
           setSubmitting(false);
           return;
         }
+        const textoTrimmed = form.texto?.trim() ?? '';
+        if (!textoTrimmed) {
+          setError('Escreva a mensagem do requerimento');
+          setSubmitting(false);
+          return;
+        }
         const payload: any = {
           tipo: form.tipo,
           destinatarioId: Number(form.destinatarioId),
-          texto: '',
+          texto: textoTrimmed,
         };
         await api.post('/requests', payload);
       }
 
-      setForm({ tipo: 'OUTRO' });
+      setForm({ tipo: 'OUTRO', texto: '' });
       setItensCompra([{ item: '', descricao: '', quantidade: 1, categoriaId: undefined, projetoId: undefined, cotacoes: [{ ...INITIAL_COTACAO }] }]);
       loadRequests('sent');
       toast.success('Requerimento enviado com sucesso!');
@@ -672,19 +679,35 @@ export default function Communications() {
               </select>
             </label>
           )}
-          {form.tipo === 'COMPRA' && (
-            <label className="text-sm text-white/70">
-              Destinatário
-              <input
-                type="text"
-                value="Cargo de Compras (Automático)"
-                disabled
-                className="mt-1 w-full bg-neutral/40 border border-white/10 rounded-md px-3 py-2 text-white/60 cursor-not-allowed"
-              />
-            </label>
-          )}
         </div>
-
+        {/* Campo de mensagem para tipos que não são Compra */}
+        {form.tipo !== 'COMPRA' && (
+          <label className="text-sm text-white/70 block">
+            Mensagem *
+            <textarea
+              value={form.texto ?? ''}
+              onChange={(e) => setForm((prev) => ({ ...prev, texto: e.target.value }))}
+              className="mt-1 w-full min-h-[120px] bg-neutral/60 border border-white/10 rounded-md px-3 py-2 text-white placeholder:text-white/50 focus:border-primary focus:outline-none resize-y"
+              placeholder="Escreva o conteúdo do requerimento..."
+              required
+              maxLength={1500}
+            />
+            <span className="text-xs text-white/50 mt-1 block">
+              {(form.texto?.length ?? 0)}/1500 caracteres
+            </span>
+          </label>
+        )}
+        {form.tipo === 'COMPRA' && (
+          <label className="text-sm text-white/70 block">
+            Destinatário
+            <input
+              type="text"
+              value="Cargo de Compras (Automático)"
+              disabled
+              className="mt-1 w-full bg-neutral/40 border border-white/10 rounded-md px-3 py-2 text-white/60 cursor-not-allowed"
+            />
+          </label>
+        )}
         {/* Formulário de Itens de Compra */}
         {form.tipo === 'COMPRA' && (
           <div className="mt-4 space-y-4 border-t border-white/10 pt-4">

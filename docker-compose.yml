@@ -31,7 +31,8 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-erp}:${POSTGRES_PASSWORD:-senha123}@db:5432/${POSTGRES_DB:-erpdb}
       JWT_SECRET: ${JWT_SECRET:-super-segredo-alterar-em-producao}
-      PORT: ${BACKEND_PORT:-3000}
+      # Produção/Docker: porta 3001. Dev local usa 3000.
+      PORT: ${BACKEND_PORT:-3001}
       NODE_ENV: ${NODE_ENV:-production}
     ports:
       - "${BACKEND_PORT:-3001}:3001"

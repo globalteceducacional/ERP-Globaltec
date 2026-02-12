@@ -26,8 +26,7 @@ export function Header({ title, subtitle }: HeaderProps) {
   const [unreadCount, setUnreadCount] = useState(0);
   const notificationsRef = useRef<HTMLDivElement>(null);
 
-  function handleLogout() {
-    logout();
+  function handleLogout() { 
     navigate('/login', { replace: true });
   }
 
