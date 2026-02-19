@@ -63,8 +63,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      # VPS: no .env use VITE_API_URL= ou VITE_API_URL=/api. Local Docker: use VITE_API_URL=http://localhost:3001
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:3001}
+        VITE_API_URL: ${VITE_API_URL}
     container_name: erp-frontend
     restart: unless-stopped
     depends_on:

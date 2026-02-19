@@ -1,8 +1,17 @@
 import axios from 'axios';
 import { useAuthStore } from '../store/auth';
 
+// VPS: VITE_API_URL vazio ou '/api' = chamadas no mesmo domínio (Nginx proxy /api). Local: use URL do backend.
+const raw = import.meta.env.VITE_API_URL != null ? String(import.meta.env.VITE_API_URL).trim() : '';
+const baseURL =
+  raw === '' || raw === '/api'
+    ? import.meta.env.DEV
+      ? 'http://localhost:3000'
+      : '/api'
+    : raw;
+
 export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:3000',
+  baseURL,
 });
 
 api.interceptors.request.use((config) => {
