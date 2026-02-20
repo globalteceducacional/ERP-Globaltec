@@ -31,6 +31,10 @@ export default function Users() {
   const [userToDelete, setUserToDelete] = useState<Usuario | null>(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
   const [deleting, setDeleting] = useState(false);
+  // Filtros de busca
+  const [searchNome, setSearchNome] = useState('');
+  const [filterCargo, setFilterCargo] = useState<string>('all');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [form, setForm] = useState<CreateUserForm>({
     nome: '',
     email: '',
@@ -93,8 +97,24 @@ export default function Users() {
 
   async function load() {
     try {
-      const { data } = await api.get<Usuario[]>('/users');
+      setLoading(true);
+      const params = new URLSearchParams();
+      
+      if (searchNome.trim()) {
+        params.append('nome', searchNome.trim());
+      }
+      if (filterCargo !== 'all') {
+        params.append('cargo', filterCargo);
+      }
+      if (filterStatus !== 'all') {
+        params.append('ativo', filterStatus);
+      }
+
+      const queryString = params.toString();
+      const url = queryString ? `/users?${queryString}` : '/users';
+      const { data } = await api.get<Usuario[]>(url);
       setUsers(data);
+      setError(null);
     } catch (err: any) {
       setError(err.response?.data?.message ?? 'Erro ao carregar usuários');
     } finally {
@@ -103,9 +123,17 @@ export default function Users() {
   }
 
   useEffect(() => {
-    load();
     loadCargos();
   }, []);
+
+  useEffect(() => {
+    // Debounce da busca por nome
+    const timeoutId = setTimeout(() => {
+      load();
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchNome, filterCargo, filterStatus]);
 
   async function toggleActive(user: Usuario) {
     try {
@@ -304,6 +332,84 @@ export default function Users() {
           {error}
         </div>
       )}
+
+      {/* Filtros de Busca */}
+      <div className="bg-white/5 rounded-xl border border-white/10 p-4">
+        <div className="grid md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-white/70 mb-2">
+              Buscar por Nome
+            </label>
+            <input
+              type="text"
+              placeholder="Digite o nome do usuário..."
+              value={searchNome}
+              onChange={(e) => setSearchNome(e.target.value)}
+              className="w-full px-4 py-2 rounded-md bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-white/70 mb-2">
+              Filtrar por Cargo
+            </label>
+            <select
+              value={filterCargo}
+              onChange={(e) => setFilterCargo(e.target.value)}
+              className="w-full px-4 py-2 rounded-md bg-neutral border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent appearance-none cursor-pointer"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 1rem center',
+                paddingRight: '2.5rem'
+              }}
+            >
+              <option value="all" className="bg-neutral text-white">Todos os Cargos</option>
+              {cargos.map((cargo) => (
+                <option key={cargo.id} value={cargo.nome} className="bg-neutral text-white">
+                  {cargo.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-white/70 mb-2">
+              Filtrar por Status
+            </label>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full px-4 py-2 rounded-md bg-neutral border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent appearance-none cursor-pointer"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 1rem center',
+                paddingRight: '2.5rem'
+              }}
+            >
+              <option value="all" className="bg-neutral text-white">Todos</option>
+              <option value="true" className="bg-neutral text-white">Ativos</option>
+              <option value="false" className="bg-neutral text-white">Inativos</option>
+            </select>
+          </div>
+        </div>
+        {(searchNome || filterCargo !== 'all' || filterStatus !== 'all') && (
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              onClick={() => {
+                setSearchNome('');
+                setFilterCargo('all');
+                setFilterStatus('all');
+              }}
+              className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+            >
+              Limpar Filtros
+            </button>
+            <span className="text-xs text-white/50">
+              {users.length} {users.length === 1 ? 'usuário encontrado' : 'usuários encontrados'}
+            </span>
+          </div>
+        )}
+      </div>
 
       <div className="overflow-x-auto rounded-xl border border-white/10">
         <table className="min-w-full text-sm">

@@ -48,6 +48,10 @@ export default function Cargos() {
   const [editingCargo, setEditingCargo] = useState<Cargo | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // Filtros de busca
+  const [searchNome, setSearchNome] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [filterNivel, setFilterNivel] = useState<string>('all');
   const [form, setForm] = useState<CreateCargoForm>({
     nome: '',
     descricao: '',
@@ -125,6 +129,37 @@ export default function Cargos() {
 
     return grouped;
   }, [permissionsCatalog]);
+
+  // Filtro local dos cargos
+  const filteredCargos = useMemo(() => {
+    return cargos.filter((cargo) => {
+      // Busca por nome
+      if (searchNome.trim()) {
+        const nomeMatch = cargo.nome.toLowerCase().includes(searchNome.toLowerCase());
+        const descricaoMatch = cargo.descricao?.toLowerCase().includes(searchNome.toLowerCase());
+        if (!nomeMatch && !descricaoMatch) {
+          return false;
+        }
+      }
+
+      // Filtro por status
+      if (filterStatus !== 'all') {
+        const isAtivo = filterStatus === 'true';
+        if (cargo.ativo !== isAtivo) {
+          return false;
+        }
+      }
+
+      // Filtro por nível
+      if (filterNivel !== 'all') {
+        if (cargo.nivelAcesso !== filterNivel) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [cargos, searchNome, filterStatus, filterNivel]);
 
   async function toggleActive(cargo: Cargo) {
     try {
@@ -289,6 +324,84 @@ export default function Cargos() {
         </div>
       )}
 
+      {/* Filtros de Busca */}
+      <div className="bg-white/5 rounded-xl border border-white/10 p-4">
+        <div className="grid md:grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-white/70 mb-2">
+              Buscar por Nome ou Descrição
+            </label>
+            <input
+              type="text"
+              placeholder="Digite o nome ou descrição do cargo..."
+              value={searchNome}
+              onChange={(e) => setSearchNome(e.target.value)}
+              className="w-full px-4 py-2 rounded-md bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-white/70 mb-2">
+              Filtrar por Status
+            </label>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full px-4 py-2 rounded-md bg-neutral border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent appearance-none cursor-pointer"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 1rem center',
+                paddingRight: '2.5rem'
+              }}
+            >
+              <option value="all" className="bg-neutral text-white">Todos</option>
+              <option value="true" className="bg-neutral text-white">Ativos</option>
+              <option value="false" className="bg-neutral text-white">Inativos</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-white/70 mb-2">
+              Filtrar por Nível
+            </label>
+            <select
+              value={filterNivel}
+              onChange={(e) => setFilterNivel(e.target.value)}
+              className="w-full px-4 py-2 rounded-md bg-neutral border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent appearance-none cursor-pointer"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 1rem center',
+                paddingRight: '2.5rem'
+              }}
+            >
+              <option value="all" className="bg-neutral text-white">Todos os Níveis</option>
+              {nivelOptions.map((option) => (
+                <option key={option.value} value={option.value} className="bg-neutral text-white">
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {(searchNome || filterStatus !== 'all' || filterNivel !== 'all') && (
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              onClick={() => {
+                setSearchNome('');
+                setFilterStatus('all');
+                setFilterNivel('all');
+              }}
+              className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+            >
+              Limpar Filtros
+            </button>
+            <span className="text-xs text-white/50">
+              {filteredCargos.length} {filteredCargos.length === 1 ? 'cargo encontrado' : 'cargos encontrados'}
+            </span>
+          </div>
+        )}
+      </div>
+
       <div className="overflow-x-auto rounded-xl border border-white/10">
         <table className="min-w-full text-sm">
           <thead className="bg-white/5 text-white/70">
@@ -302,7 +415,7 @@ export default function Cargos() {
             </tr>
           </thead>
           <tbody>
-            {cargos.map((cargo) => (
+            {filteredCargos.map((cargo) => (
               <tr key={cargo.id} className="border-t border-white/5 hover:bg-white/5">
                 <td className="px-4 py-3 font-medium">{cargo.nome}</td>
                 <td className="px-4 py-3 text-white/70">
@@ -404,26 +517,6 @@ export default function Cargos() {
               </div>
 
               <div>
-                <label className="block text-sm text-white/70 mb-1">Nível de acesso</label>
-                <select
-                  value={form.nivelAcesso}
-                  onChange={(e) =>
-                    setForm((prev) => ({
-                      ...prev,
-                      nivelAcesso: e.target.value as CargoNivel,
-                    }))
-                  }
-                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary text-white"
-                >
-                  {nivelOptions.map((option) => (
-                    <option key={option.value} value={option.value} className="bg-neutral text-white">
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
                 <label className="block text-sm text-white/70 mb-1">Descrição</label>
                 <textarea
                   value={form.descricao}
@@ -495,7 +588,7 @@ export default function Cargos() {
                   ))}
                 </div>
                 <p className="text-xs text-white/50 mt-2">
-                  Defina as permissões específicas deste cargo. Se "Herda permissões" estiver ativo, as permissões do nível anterior também serão aplicadas.
+                  O acesso do cargo é definido pelas permissões marcadas acima. Marque apenas o que este cargo pode fazer.
                 </p>
               </div>
 
@@ -517,7 +610,7 @@ export default function Cargos() {
                     onChange={(e) => setForm((prev) => ({ ...prev, herdaPermissoes: e.target.checked }))}
                     className="w-4 h-4 rounded border-white/10 bg-neutral/60 text-primary focus:ring-2 focus:ring-primary"
                   />
-                  <span className="text-sm text-white/70">Herda permissões do nível inferior</span>
+                  <span className="text-sm text-white/70">Herda permissões de níveis inferiores</span>
                 </label>
               </div>
 

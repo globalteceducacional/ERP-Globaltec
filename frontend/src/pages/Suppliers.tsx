@@ -1,7 +1,8 @@
-import { useEffect, useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent, useMemo } from 'react';
 import { api } from '../services/api';
 import { toast, formatApiError } from '../utils/toast';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
+import { buttonStyles } from '../utils/buttonStyles';
 
 interface Supplier {
   id: number;
@@ -52,6 +53,9 @@ export default function Suppliers() {
   const [modalError, setModalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
+  const [searchNome, setSearchNome] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [loadingCNPJ, setLoadingCNPJ] = useState(false);
   const [form, setForm] = useState<CreateSupplierForm>({
     razaoSocial: '',
     nomeFantasia: '',
@@ -128,6 +132,35 @@ export default function Suppliers() {
     setShowModal(true);
   }
 
+  /** Busca dados do fornecedor pela API de CNPJ (mesma do sistema de compras). Só em modo criação. */
+  async function fetchCNPJData(cnpj: string) {
+    const cleaned = cnpj.replace(/\D/g, '');
+    if (cleaned.length !== 14 || editingSupplier) return;
+
+    setLoadingCNPJ(true);
+    setModalError(null);
+
+    try {
+      const { data } = await api.get<{ razaoSocial?: string; nomeFantasia?: string; endereco?: string; contato?: string }>(`/suppliers/cnpj/${cleaned}`);
+      setForm((prev) => ({
+        ...prev,
+        razaoSocial: data.razaoSocial ?? prev.razaoSocial,
+        nomeFantasia: data.nomeFantasia ?? prev.nomeFantasia,
+        endereco: data.endereco ?? prev.endereco,
+        contato: data.contato ?? prev.contato,
+      }));
+      if (data.razaoSocial) validation.handleChange('razaoSocial', data.razaoSocial);
+      if (data.nomeFantasia) validation.handleChange('nomeFantasia', data.nomeFantasia);
+      toast.success('Dados do CNPJ carregados com sucesso!');
+    } catch (err: any) {
+      const msg = err.response?.data?.message ?? err.message ?? 'Erro ao buscar dados do CNPJ';
+      setModalError(msg);
+      toast.error(msg);
+    } finally {
+      setLoadingCNPJ(false);
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
@@ -199,9 +232,27 @@ export default function Suppliers() {
     }
   }
 
-  const filteredSuppliers = showInactive
-    ? suppliers
-    : suppliers.filter((s) => s.ativo);
+  const filteredSuppliers = useMemo(() => {
+    let list = suppliers;
+    if (!showInactive) {
+      list = list.filter((s) => s.ativo);
+    }
+    if (filterStatus === 'true') {
+      list = list.filter((s) => s.ativo);
+    } else if (filterStatus === 'false') {
+      list = list.filter((s) => !s.ativo);
+    }
+    if (searchNome.trim()) {
+      const term = searchNome.toLowerCase().trim();
+      list = list.filter(
+        (s) =>
+          s.razaoSocial.toLowerCase().includes(term) ||
+          s.nomeFantasia.toLowerCase().includes(term) ||
+          (s.cnpj && s.cnpj.replace(/\D/g, '').includes(term.replace(/\D/g, '')))
+      );
+    }
+    return list;
+  }, [suppliers, showInactive, filterStatus, searchNome]);
 
   if (loading) {
     return (
@@ -212,13 +263,57 @@ export default function Suppliers() {
   }
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold mb-2">Fornecedores</h1>
-          <p className="text-white/60">Gerenciamento de fornecedores</p>
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <h3 className="text-xl font-semibold">Fornecedores</h3>
+        <button onClick={openCreateModal} className={buttonStyles.primary}>
+          + Novo Fornecedor
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-danger/20 border border-danger/50 text-danger px-4 py-3 rounded-md">
+          {error}
         </div>
-        <div className="flex gap-4">
+      )}
+
+      {/* Filtros */}
+      <div className="bg-white/5 rounded-xl border border-white/10 p-4">
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="md:col-span-2">
+            <label className="block text-sm font-medium text-white/70 mb-2">
+              Buscar por nome ou CNPJ
+            </label>
+            <input
+              type="text"
+              placeholder="Razão social, nome fantasia ou CNPJ..."
+              value={searchNome}
+              onChange={(e) => setSearchNome(e.target.value)}
+              className="w-full px-4 py-2 rounded-md bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-white/70 mb-2">
+              Status
+            </label>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full px-4 py-2 rounded-md bg-neutral border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-primary appearance-none cursor-pointer"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                backgroundRepeat: 'no-repeat',
+                backgroundPosition: 'right 1rem center',
+                paddingRight: '2.5rem'
+              }}
+            >
+              <option value="all" className="bg-neutral text-white">Todos</option>
+              <option value="true" className="bg-neutral text-white">Ativos</option>
+              <option value="false" className="bg-neutral text-white">Inativos</option>
+            </select>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -226,98 +321,110 @@ export default function Suppliers() {
               onChange={(e) => setShowInactive(e.target.checked)}
               className="w-4 h-4 rounded border-white/30 bg-white/10 text-primary focus:ring-primary"
             />
-            <span className="text-white/90">Mostrar inativos</span>
+            <span className="text-sm text-white/80">Incluir inativos na lista</span>
           </label>
-          <button
-            onClick={openCreateModal}
-            className="px-6 py-2.5 rounded-md bg-primary hover:bg-primary/80 text-white font-semibold transition-colors"
-          >
-            + Novo Fornecedor
-          </button>
+          {(searchNome || filterStatus !== 'all') && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchNome('');
+                  setFilterStatus('all');
+                }}
+                className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+              >
+                Limpar filtros
+              </button>
+              <span className="text-xs text-white/50">
+                {filteredSuppliers.length} {filteredSuppliers.length === 1 ? 'fornecedor' : 'fornecedores'}
+              </span>
+            </>
+          )}
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4 bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md">
-          {error}
-        </div>
-      )}
-
-      <div className="bg-neutral/80 border border-white/20 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-white/5 border-b border-white/10">
+      <div className="overflow-x-auto rounded-xl border border-white/10">
+        <table className="min-w-full text-sm">
+          <thead className="bg-white/5 text-white/70">
+            <tr>
+              <th className="px-4 py-3 text-left">Razão Social</th>
+              <th className="px-4 py-3 text-left">Nome Fantasia</th>
+              <th className="px-4 py-3 text-left whitespace-nowrap">CNPJ</th>
+              <th className="px-4 py-3 text-left">Endereço</th>
+              <th className="px-4 py-3 text-left">Contato</th>
+              <th className="px-4 py-3 text-left">Status</th>
+              <th className="px-4 py-3 text-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredSuppliers.length === 0 ? (
               <tr>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-white/90">Razão Social</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-white/90">Nome Fantasia</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-white/90">CNPJ</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-white/90">Endereço</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-white/90">Contato</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-white/90">Status</th>
-                <th className="px-6 py-4 text-right text-sm font-semibold text-white/90">Ações</th>
+                <td colSpan={7} className="px-4 py-8 text-center text-white/60">
+                  Nenhum fornecedor encontrado
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {filteredSuppliers.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-white/60">
-                    Nenhum fornecedor encontrado
+            ) : (
+              filteredSuppliers.map((supplier) => (
+                <tr key={supplier.id} className="border-t border-white/5 hover:bg-white/5">
+                  <td className="px-4 py-3 text-white/90 truncate" title={supplier.razaoSocial}>
+                    {supplier.razaoSocial}
                   </td>
-                </tr>
-              ) : (
-                filteredSuppliers.map((supplier) => (
-                  <tr
-                    key={supplier.id}
-                    className="border-b border-white/10 hover:bg-white/5 transition-colors"
-                  >
-                    <td className="px-6 py-4 text-white/90">{supplier.razaoSocial}</td>
-                    <td className="px-6 py-4 text-white/90">{supplier.nomeFantasia}</td>
-                    <td className="px-6 py-4 text-white/90">{formatCNPJ(supplier.cnpj)}</td>
-                    <td className="px-6 py-4 text-white/70">{supplier.endereco || '-'}</td>
-                    <td className="px-6 py-4 text-white/70">{supplier.contato || '-'}</td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-2 py-1 rounded text-xs ${
+                  <td className="px-4 py-3 text-white/90 truncate" title={supplier.nomeFantasia}>
+                    {supplier.nomeFantasia}
+                  </td>
+                  <td className="px-4 py-3 text-white/90 whitespace-nowrap">{formatCNPJ(supplier.cnpj)}</td>
+                  <td className="px-4 py-3 text-white/70">
+                    <span className="block max-w-[220px] truncate" title={supplier.endereco || undefined}>
+                      {supplier.endereco || '-'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-white/70">
+                    <span className="block max-w-[160px] truncate" title={supplier.contato || undefined}>
+                      {supplier.contato || '-'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                        supplier.ativo
+                          ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                          : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+                      }`}
+                    >
+                      {supplier.ativo ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                      <button
+                        onClick={() => openEditModal(supplier)}
+                        className={buttonStyles.edit}
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleToggleActive(supplier)}
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium ${
                           supplier.ativo
-                            ? 'bg-green-500/20 text-green-300 border border-green-500/50'
-                            : 'bg-red-500/20 text-red-300 border border-red-500/50'
+                            ? 'bg-warning/20 hover:bg-warning/30 text-warning'
+                            : 'bg-success/20 hover:bg-success/30 text-success'
                         }`}
                       >
-                        {supplier.ativo ? 'Ativo' : 'Inativo'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => openEditModal(supplier)}
-                          className="px-3 py-1.5 rounded-md bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-sm font-medium transition-colors"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => handleToggleActive(supplier)}
-                          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                            supplier.ativo
-                              ? 'bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-300'
-                              : 'bg-green-600/20 hover:bg-green-600/30 text-green-300'
-                          }`}
-                        >
-                          {supplier.ativo ? 'Desativar' : 'Ativar'}
-                        </button>
-                        <button
-                          onClick={() => handleDelete(supplier)}
-                          className="px-3 py-1.5 rounded-md bg-red-600/20 hover:bg-red-600/30 text-red-300 text-sm font-medium transition-colors"
-                        >
-                          Excluir
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                        {supplier.ativo ? 'Desativar' : 'Ativar'}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(supplier)}
+                        className={buttonStyles.danger}
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* Modal Criar/Editar Fornecedor */}
@@ -342,6 +449,56 @@ export default function Suppliers() {
             <form onSubmit={handleSubmit} className="p-8 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">
+                  CNPJ *
+                  {loadingCNPJ && (
+                    <span className="ml-2 text-xs text-primary">Buscando dados...</span>
+                  )}
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    required
+                    value={form.cnpj}
+                    onChange={(e) => {
+                      const formatted = formatCNPJ(e.target.value);
+                      setForm((prev) => ({ ...prev, cnpj: formatted }));
+                      validation.handleChange('cnpj', formatted);
+                      const cleaned = formatted.replace(/\D/g, '');
+                      if (cleaned.length === 14 && !loadingCNPJ && !editingSupplier) {
+                        fetchCNPJData(formatted);
+                      }
+                    }}
+                    onBlur={() => {
+                      validation.handleBlur('cnpj');
+                      const cleaned = form.cnpj.replace(/\D/g, '');
+                      if (cleaned.length === 14 && !loadingCNPJ && !editingSupplier && !form.razaoSocial) {
+                        fetchCNPJData(form.cnpj);
+                      }
+                    }}
+                    className="flex-1 bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                    placeholder="00.000.000/0000-00"
+                    maxLength={18}
+                    disabled={loadingCNPJ}
+                  />
+                  {!editingSupplier && (
+                    <button
+                      type="button"
+                      onClick={() => fetchCNPJData(form.cnpj)}
+                      disabled={loadingCNPJ || !validateCNPJ(form.cnpj)}
+                      className="px-4 py-2.5 rounded-md bg-primary/80 hover:bg-primary text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm whitespace-nowrap"
+                      title="Buscar dados do CNPJ"
+                    >
+                      {loadingCNPJ ? 'Buscando...' : 'Buscar'}
+                    </button>
+                  )}
+                </div>
+                {validation.errors.cnpj && (
+                  <p className="mt-1 text-sm text-red-400">{validation.errors.cnpj}</p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
                   Razão Social *
                 </label>
                 <input
@@ -349,7 +506,7 @@ export default function Suppliers() {
                   required
                   value={form.razaoSocial}
                   onChange={(e) => {
-                    setForm({ ...form, razaoSocial: e.target.value });
+                    setForm((prev) => ({ ...prev, razaoSocial: e.target.value }));
                     validation.handleChange('razaoSocial', e.target.value);
                   }}
                   onBlur={() => validation.handleBlur('razaoSocial')}
@@ -370,7 +527,7 @@ export default function Suppliers() {
                   required
                   value={form.nomeFantasia}
                   onChange={(e) => {
-                    setForm({ ...form, nomeFantasia: e.target.value });
+                    setForm((prev) => ({ ...prev, nomeFantasia: e.target.value }));
                     validation.handleChange('nomeFantasia', e.target.value);
                   }}
                   onBlur={() => validation.handleBlur('nomeFantasia')}
@@ -379,27 +536,6 @@ export default function Suppliers() {
                 />
                 {validation.errors.nomeFantasia && (
                   <p className="mt-1 text-sm text-red-400">{validation.errors.nomeFantasia}</p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">CNPJ *</label>
-                <input
-                  type="text"
-                  required
-                  value={form.cnpj}
-                  onChange={(e) => {
-                    const formatted = formatCNPJ(e.target.value);
-                    setForm({ ...form, cnpj: formatted });
-                    validation.handleChange('cnpj', formatted);
-                  }}
-                  onBlur={() => validation.handleBlur('cnpj')}
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                  placeholder="00.000.000/0000-00"
-                  maxLength={18}
-                />
-                {validation.errors.cnpj && (
-                  <p className="mt-1 text-sm text-red-400">{validation.errors.cnpj}</p>
                 )}
               </div>
 

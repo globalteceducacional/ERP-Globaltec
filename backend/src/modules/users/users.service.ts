@@ -12,6 +12,14 @@ export class UsersService {
   async findAll(filter: FilterUsersDto) {
     const where: Record<string, unknown> = {};
 
+    // Busca por nome (busca parcial, case-insensitive)
+    if (typeof filter.nome !== 'undefined' && filter.nome && filter.nome.trim().length > 0) {
+      where.nome = {
+        contains: filter.nome.trim(),
+        mode: 'insensitive',
+      };
+    }
+
     if (typeof filter.cargo !== 'undefined' && filter.cargo) {
       // Buscar cargo por nome e filtrar por cargoId
       const cargo = await this.prisma.cargo.findUnique({
