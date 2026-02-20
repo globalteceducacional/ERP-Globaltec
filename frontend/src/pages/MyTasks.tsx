@@ -773,72 +773,75 @@ export default function MyTasks() {
                               const hasDetails = item.descricao && item.descricao.trim().length > 0;
                               const hasSubitens = item.subitens && item.subitens.length > 0;
                               
+                              const statusForStyle = item.concluido ? 'APROVADO' : statusItem;
                               return (
                                 <div key={index} className="space-y-1">
-                                  {/* Item principal */}
+                                  {/* Item principal: em mobile quebra linha — linha 1: checkbox + label; linha 2: status + ações */}
                                   <div
-                                    className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
-                                      podeInteragir ? 'hover:bg-white/10 hover:scale-[1.01]' : ''
-                                    } ${getChecklistItemStyle(item.concluido ?? false ? 'true' : 'false')}`}
-                                >
-                                  <div
-                                      className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${getCheckboxStyle(item.concluido ?? false)}`}
-                                      title="Status do item"
+                                    className={`flex flex-wrap items-center gap-2 p-3 rounded-lg transition-colors sm:gap-3 ${
+                                      podeInteragir ? 'hover:bg-white/10' : ''
+                                    } ${getChecklistItemStyle(statusForStyle)}`}
                                   >
-                                    {item.concluido && (
+                                    <div
+                                      className={`w-6 h-6 shrink-0 rounded-md border-2 flex items-center justify-center transition-all ${getCheckboxStyle(item.concluido ?? false)}`}
+                                      title="Status do item"
+                                    >
+                                      {item.concluido && (
                                         <svg className="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                      </svg>
-                                    )}
-                                  </div>
-                                    <div className="flex-1">
-                                      <span className={`text-sm ${getChecklistTextStyle(item.concluido ?? false)}`}>
-                                    {item.texto}
-                                  </span>
+                                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                        </svg>
+                                      )}
                                     </div>
-                                  <span
-                                      className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${getChecklistItemStatusColor(statusItem)}`}
-                                    >
-                                      {getChecklistItemStatusLabel(statusItem)}
-                                  </span>
-                                    {(hasDetails || hasSubitens) && (
-                                      <button
-                                        type="button"
-                                        onClick={() => toggleChecklistDetails(detailsKey)}
-                                        className="px-2 py-0.5 rounded text-xs transition-colors bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/30"
-                                        title={isExpanded ? 'Ocultar detalhes' : 'Ver detalhes e subitens'}
+                                    <div className="flex-1 min-w-0">
+                                      <span className={`text-sm block truncate ${getChecklistTextStyle(item.concluido ?? false)}`}>
+                                        {item.texto}
+                                      </span>
+                                    </div>
+                                    {/* Grupo fixo: status + ações na mesma ordem para todos os itens */}
+                                    <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:flex-nowrap">
+                                      <span
+                                        className={`shrink-0 px-2.5 py-1 rounded-md text-[11px] font-semibold border whitespace-nowrap ${getChecklistItemStatusColor(statusItem)}`}
                                       >
-                                        {hasSubitens ? `(${item.subitens!.length})` : ''} {isExpanded ? '▲' : '▼'}
-                                      </button>
-                                    )}
-                                  {entregaItem && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
-                                        setShowViewEntregaModal(true);
-                                      }}
-                                        className="px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                                      title="Ver detalhes da entrega"
-                                    >
-                                        Ver entrega
-                                    </button>
-                                  )}
-                                  {podeEnviarObjetivo && (
-            <button
-                                      type="button"
-                                      onClick={() => handleOpenChecklistModal(etapa, index)}
-                                        className="px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                                      title="Enviar objetivo para análise"
-            >
-                                      Enviar
-            </button>
-                                    )}
+                                        {getChecklistItemStatusLabel(statusItem)}
+                                      </span>
+                                      {(hasDetails || hasSubitens) && (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleChecklistDetails(detailsKey)}
+                                          className="shrink-0 px-2 py-1 rounded text-xs transition-colors bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/30"
+                                          title={isExpanded ? 'Ocultar detalhes' : 'Ver detalhes e subitens'}
+                                        >
+                                          {hasSubitens ? `(${item.subitens!.length})` : ''} {isExpanded ? '▲' : '▼'}
+                                        </button>
+                                      )}
+                                      {entregaItem ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
+                                            setShowViewEntregaModal(true);
+                                          }}
+                                          className="shrink-0 px-2 py-1 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors whitespace-nowrap"
+                                          title="Ver detalhes da entrega"
+                                        >
+                                          Ver entrega
+                                        </button>
+                                      ) : podeEnviarObjetivo ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenChecklistModal(etapa, index)}
+                                          className="shrink-0 px-2 py-1 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors whitespace-nowrap"
+                                          title="Enviar objetivo para análise"
+                                        >
+                                          Enviar
+                                        </button>
+                                      ) : null}
+                                    </div>
                                   </div>
                                   
                                   {/* Detalhes expandidos (descrição + subitens) */}
                                   {isExpanded && (
-                                    <div className="ml-8 pl-4 border-l-2 border-sky-500/30 space-y-2 py-2">
+                                    <div className="ml-4 pl-4 sm:ml-8 border-l-2 border-sky-500/30 space-y-2 py-2">
                                       {/* Descrição do item */}
                                       {hasDetails && (
                                         <div className="p-3 bg-sky-500/5 rounded-lg border border-sky-500/20">
@@ -865,17 +868,17 @@ export default function MyTasks() {
                                             return (
                                               <div key={subIndex} className="space-y-1">
                                                 <div
-                                                  className={`flex items-center gap-2 p-2 rounded-md transition-all ${
+                                                  className={`flex flex-wrap items-center gap-2 p-2 rounded-md transition-all ${
                                                     subitem.concluido
                                                       ? 'bg-emerald-500/10 border border-emerald-500/20'
                                                       : 'bg-white/5 border border-white/10'
                                                   }`}
                                                 >
                                                   <div
-                                                    className={`w-4 h-4 rounded border flex items-center justify-center cursor-pointer hover:scale-110 transition-transform ${
+                                                    className={`w-4 h-4 shrink-0 rounded border flex items-center justify-center ${
                                                       subitem.concluido
                                                         ? 'bg-emerald-500/30 border-emerald-400/50'
-                                                        : 'border-slate-400/40 hover:border-slate-300'
+                                                        : 'border-slate-400/40'
                                                     }`}
                                                     title={subitem.concluido ? 'Concluído' : 'Pendente'}
                                                   >
@@ -885,46 +888,45 @@ export default function MyTasks() {
                                                       </svg>
                                                     )}
                                                   </div>
-                                                  <span className={`flex-1 text-xs ${subitem.concluido ? 'text-emerald-300/70 line-through' : 'text-white/80'}`}>
+                                                  <span className={`flex-1 min-w-0 text-xs truncate ${subitem.concluido ? 'text-emerald-300/70 line-through' : 'text-white/80'}`}>
                                                     {subitem.texto}
                                                   </span>
-                                                  <span
-                                                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${getChecklistItemStatusColor(statusSubitem)}`}
-                                                  >
-                                                    {getChecklistItemStatusLabel(statusSubitem)}
-                                                  </span>
-                                                  {entregaSubitem && (
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => {
-                                                        setSelectedViewEntrega({ etapa, index, entrega: entregaSubitem });
-                                                        setShowViewEntregaModal(true);
-                                                      }}
-                                                      className="px-1.5 py-0.5 rounded text-[10px] bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                                                      title="Ver detalhes da entrega"
-                                                    >
-                                                      Ver
-                                                    </button>
-                                                  )}
-                                                  {podeEnviarSubitem && (
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => handleOpenChecklistModal(etapa, index, subIndex)}
-                                                      className="px-1.5 py-0.5 rounded text-[10px] bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                                                      title="Enviar subitem para análise"
-                                                    >
-                                                      Enviar
-                                                    </button>
-                                                  )}
-                                                  {subHasDetails && (
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => toggleChecklistDetails(subKey)}
-                                                      className="px-1.5 py-0.5 rounded text-[10px] bg-slate-500/20 hover:bg-slate-500/30 text-slate-300 border border-slate-400/30 transition-colors"
-                                                    >
-                                                      {subExpanded ? '▲' : '▼'}
-                                                    </button>
-                                                  )}
+                                                  <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
+                                                    <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold border whitespace-nowrap ${getChecklistItemStatusColor(statusSubitem)}`}>
+                                                      {getChecklistItemStatusLabel(statusSubitem)}
+                                                    </span>
+                                                    {entregaSubitem ? (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                          setSelectedViewEntrega({ etapa, index, entrega: entregaSubitem });
+                                                          setShowViewEntregaModal(true);
+                                                        }}
+                                                        className="shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 whitespace-nowrap"
+                                                        title="Ver detalhes da entrega"
+                                                      >
+                                                        Ver
+                                                      </button>
+                                                    ) : podeEnviarSubitem ? (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => handleOpenChecklistModal(etapa, index, subIndex)}
+                                                        className="shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 whitespace-nowrap"
+                                                        title="Enviar subitem para análise"
+                                                      >
+                                                        Enviar
+                                                      </button>
+                                                    ) : null}
+                                                    {subHasDetails && (
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => toggleChecklistDetails(subKey)}
+                                                        className="shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-slate-500/20 hover:bg-slate-500/30 text-slate-300 border border-slate-400/30"
+                                                      >
+                                                        {subExpanded ? '▲' : '▼'}
+                                                      </button>
+                                                    )}
+                                                  </div>
                                                 </div>
                                                 {/* Descrição do subitem expandida */}
                                                 {subExpanded && subHasDetails && (

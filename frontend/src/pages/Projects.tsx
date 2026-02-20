@@ -258,17 +258,17 @@ export default function Projects() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xl font-semibold">Projetos</h3>
-        <div className="flex gap-3">
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h3 className="text-lg font-semibold sm:text-xl">Projetos</h3>
+        <div className="flex flex-wrap gap-2 sm:gap-3">
           <button
             onClick={() => navigate('/projects/import')}
-            className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+            className="flex-1 sm:flex-none px-3 py-2 text-sm sm:px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
           >
             Importar do Excel
           </button>
-          <button onClick={openCreateModal} className={buttonStyles.primary}>
+          <button onClick={openCreateModal} className="flex-1 sm:flex-none px-3 py-2 text-sm sm:px-4 sm:py-2 rounded-lg bg-primary hover:bg-primary/90 text-neutral font-medium transition-colors">
             Novo Projeto
           </button>
         </div>
@@ -285,7 +285,7 @@ export default function Projects() {
           <thead className="bg-white/5 text-white/70">
             <tr>
               <th className="px-4 py-3 text-left">Nome</th>
-              <th className="px-4 py-3 text-left">Status</th>
+              <th className="px-4 py-3 text-left min-w-[7rem]">Status</th>
               <th className="px-4 py-3 text-left">Progresso</th>
               <th className="px-4 py-3 text-left">Supervisor</th>
               <th className="px-4 py-3 text-left">Valor Total</th>
@@ -317,10 +317,10 @@ export default function Projects() {
                       {project.nome}
                     </td>
                     <td 
-                      className="px-4 py-3 cursor-pointer"
+                      className="px-4 py-3 cursor-pointer align-middle whitespace-nowrap min-w-[7rem]"
                       onClick={() => navigate(`/projects/${project.id}`)}
                     >
-                      <span className={`px-2 py-1 rounded text-xs ${status.className}`}>
+                      <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap min-w-[6.5rem] ${status.className}`}>
                         {status.label}
                       </span>
                     </td>

@@ -16,33 +16,8 @@ export class TasksService {
   constructor(private readonly prisma: PrismaService) {}
 
   async listMyTasks(userId: number, filter: FilterMyTasksDto) {
-    // Buscar projetos onde o usuário é responsável ou executor de etapas
-    const projetosResponsavel = await this.prisma.projeto.findMany({
-      where: {
-        responsaveis: {
-          some: {
-            usuarioId: userId,
-          },
-        },
-      },
-      include: {
-        supervisor: true,
-        responsaveis: { include: { usuario: true } },
-        etapas: {
-          select: {
-            id: true,
-            status: true,
-            valorInsumos: true,
-          },
-        },
-      },
-    });
-
-    // Buscar IDs dos projetos onde o usuário é responsável
-    const projetosIds = projetosResponsavel.map((p) => p.id);
-
-    // Buscar etapas pendentes onde o usuário é executor OU onde o projeto tem o usuário como responsável
-    const where: Record<string, unknown> = {
+    // Buscar apenas etapas em que o usuário é executor OU integrante (não todas as etapas do projeto)
+    const whereEtapas: Record<string, unknown> = {
       status: {
         in: [
           EtapaStatus.PENDENTE,
@@ -53,18 +28,16 @@ export class TasksService {
       },
       OR: [
         { executorId: userId },
-        ...(projetosIds.length > 0 ? [{ projetoId: { in: projetosIds } }] : []),
+        { integrantes: { some: { usuarioId: userId } } },
       ],
     };
 
     if (filter.projetoId) {
-      where.projetoId = filter.projetoId;
-      // Remover OR se filtro por projeto específico
-      delete where.OR;
+      whereEtapas.projetoId = filter.projetoId;
     }
 
     const etapasPendentes = await this.prisma.etapa.findMany({
-      where,
+      where: whereEtapas,
       include: {
         projeto: true,
         subetapas: true,
@@ -86,6 +59,23 @@ export class TasksService {
         },
       },
       orderBy: { dataInicio: 'asc' },
+    });
+
+    // Projetos a exibir: apenas os que têm pelo menos uma etapa onde o usuário é executor ou integrante
+    const projetosIdsComEtapas = [...new Set(etapasPendentes.map((e) => e.projetoId))];
+    const projetosResponsavel = await this.prisma.projeto.findMany({
+      where: { id: { in: projetosIdsComEtapas } },
+      include: {
+        supervisor: true,
+        responsaveis: { include: { usuario: true } },
+        etapas: {
+          select: {
+            id: true,
+            status: true,
+            valorInsumos: true,
+          },
+        },
+      },
     });
 
     // Calcular progresso para cada projeto
@@ -504,6 +494,11 @@ export class TasksService {
     const etapa = await this.prisma.etapa.findUnique({
       where: { id },
       include: {
+        projeto: {
+          include: {
+            supervisor: true,
+          },
+        },
         integrantes: {
           include: { usuario: true },
         },
@@ -514,13 +509,25 @@ export class TasksService {
       throw new NotFoundException('Etapa não encontrada');
     }
 
-    // Verificar se o usuário é executor OU integrante da etapa
-    const isExecutor = etapa.executorId === userId;
-    const isIntegrante =
-      etapa.integrantes?.some((integrante) => integrante.usuarioId === userId) || false;
+    // Buscar informações do usuário para verificar cargo
+    const user = await this.prisma.usuario.findUnique({
+      where: { id: userId },
+      include: { cargo: true },
+    });
 
-    if (!isExecutor && !isIntegrante) {
-      throw new UnauthorizedException('Somente o executor ou integrantes podem atualizar o checklist');
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+
+    // Verificar se o usuário é GM/DIRETOR
+    const isDiretor = user.cargo.nome === 'DIRETOR' || user.cargo.nome === 'GM';
+    
+    // Verificar se o usuário é supervisor do projeto (supervisor da etapa)
+    const isSupervisorProjeto = etapa.projeto?.supervisor?.id === userId;
+
+    // Usuário pode atualizar checklist se for GM/DIRETOR OU supervisor do projeto
+    if (!isDiretor && !isSupervisorProjeto) {
+      throw new UnauthorizedException('Somente o supervisor do projeto ou GM/DIRETOR podem atualizar o checklist');
     }
 
     // Normalizar valores booleanos do checklist - garantir valores explícitos

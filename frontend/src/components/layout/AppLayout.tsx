@@ -1,9 +1,10 @@
 import { Outlet, useLocation, Navigate } from 'react-router-dom';
-import { Sidebar } from './Sidebar';
+import { Sidebar, getSidebarCollapsedDefault, setSidebarCollapsed } from './Sidebar';
 import { Header } from './Header';
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback, useEffect } from 'react';
 import { useAuthStore } from '../../store/auth';
 import { getFirstAllowedPage } from '../../utils/getFirstAllowedPage';
+import { useIsDesktop } from '../../hooks/useMediaQuery';
 
 const titles: Record<string, { title: string; subtitle?: string }> = {
   '/dashboard': { title: 'Dashboard', subtitle: 'Visão geral dos projetos e indicadores' },
@@ -20,6 +21,32 @@ const titles: Record<string, { title: string; subtitle?: string }> = {
 export function AppLayout() {
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
+  const isDesktop = useIsDesktop();
+  const [sidebarCollapsed, setSidebarCollapsedState] = useState(getSidebarCollapsedDefault);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsedState((prev) => {
+      const next = !prev;
+      setSidebarCollapsed(next);
+      return next;
+    });
+  }, []);
+
+  // Fechar menu mobile ao trocar de rota
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  // Bloquear scroll do body quando menu mobile estiver aberto
+  useEffect(() => {
+    if (!isDesktop && mobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.body.style.overflow = '';
+      };
+    }
+  }, [isDesktop, mobileMenuOpen]);
 
   // Verificar se o usuário tem acesso à página atual
   const hasAccess = useMemo(() => {
@@ -75,11 +102,22 @@ export function AppLayout() {
   }, [location.pathname]);
 
   return (
-    <div className="flex min-h-screen">
-      <Sidebar />
-      <main className="flex-1 flex flex-col">
-        <Header title={header.title} subtitle={header.subtitle} />
-        <section className="flex-1 overflow-y-auto p-8 bg-neutral/70">
+    <div className="flex min-h-screen min-w-0">
+      <Sidebar
+        collapsed={sidebarCollapsed}
+        onToggle={toggleSidebar}
+        isMobile={!isDesktop}
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
+      />
+      <main className="flex-1 flex flex-col min-w-0">
+        <Header
+          title={header.title}
+          subtitle={header.subtitle}
+          isMobile={!isDesktop}
+          onOpenMobileMenu={() => setMobileMenuOpen(true)}
+        />
+        <section className="flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6 lg:p-8 bg-neutral/70">
           <Outlet />
         </section>
       </main>

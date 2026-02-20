@@ -623,7 +623,15 @@ export default function ProjectDetails() {
       await refreshProject();
     } catch (err: any) {
       console.error(`[handleChecklistUpdate] Erro:`, err);
-      setError(err.response?.data?.message ?? 'Falha ao atualizar checklist');
+      const errorMessage = err.response?.data?.message ?? 'Falha ao atualizar checklist';
+      
+      // Se for erro 401 (não autorizado), mostrar mensagem específica sem fazer logout
+      if (err.response?.status === 401) {
+        toast.warning('Você não tem permissão para atualizar este checklist. Apenas o supervisor do projeto ou GM/DIRETOR podem fazer isso.');
+      } else {
+        setError(errorMessage);
+        toast.error(errorMessage);
+      }
     } finally {
       setUpdatingChecklist(null);
     }
@@ -806,19 +814,19 @@ export default function ProjectDetails() {
   const projectStatusColor = getStatusColor(projectStatusForDisplay);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap items-center gap-2 sm:space-x-4">
           <button
             onClick={() => navigate('/projects')}
-            className="text-primary hover:text-primary/80 transition-colors"
+            className="text-primary hover:text-primary/80 transition-colors text-sm sm:text-base"
           >
             ← Voltar
           </button>
-          <div>
-            <h2 className="text-2xl font-bold">{project.nome}</h2>
-            <span className={`px-2 py-1 rounded text-xs ${projectStatusColor}`}>
+          <div className="min-w-0">
+            <h2 className="text-xl font-bold truncate sm:text-2xl">{project.nome}</h2>
+            <span className={`inline-block mt-1 px-2 py-1 rounded text-xs ${projectStatusColor}`}>
               {projectStatusLabel}
             </span>
           </div>
@@ -826,8 +834,8 @@ export default function ProjectDetails() {
       </div>
 
       {/* Informações Gerais */}
-      <div className="grid md:grid-cols-2 gap-6">
-        <div className="bg-neutral/80 border border-white/10 rounded-xl p-6 space-y-4">
+      <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
+        <div className="bg-neutral/80 border border-white/10 rounded-xl p-4 space-y-4 sm:p-6">
           <h3 className="text-lg font-semibold border-b border-white/10 pb-2">Informações Gerais</h3>
           
           <div>
@@ -869,7 +877,7 @@ export default function ProjectDetails() {
           </div>
         </div>
 
-        <div className="bg-neutral/80 border border-white/10 rounded-xl p-6 space-y-4">
+        <div className="bg-neutral/80 border border-white/10 rounded-xl p-4 space-y-4 sm:p-6">
           <h3 className="text-lg font-semibold border-b border-white/10 pb-2">Equipe</h3>
           
           <div>
@@ -917,7 +925,7 @@ export default function ProjectDetails() {
 
       {/* Progresso */}
       {totalEtapas > 0 && (
-        <div className="bg-neutral/80 border border-white/10 rounded-xl p-6">
+        <div className="bg-neutral/80 border border-white/10 rounded-xl p-4 sm:p-6">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-lg font-semibold">Progresso do Projeto</h3>
             <span className="text-sm text-white/70">
@@ -976,6 +984,12 @@ export default function ProjectDetails() {
               const executorId = etapa.executor?.id;
               const isExecutor = user?.id && executorId && Number(user.id) === Number(executorId);
               
+              // Verificar se o usuário é supervisor do projeto (supervisor da etapa)
+              const isSupervisorProjeto = user?.id && project.supervisor?.id && Number(user.id) === Number(project.supervisor.id);
+              
+              // Usuário pode atualizar checklist se for GM/DIRETOR OU supervisor do projeto
+              const podeMarcarChecklist = isDiretor || isSupervisorProjeto;
+              
               // Verificar se há itens do checklist marcados
               const checklistItems = etapa.checklistJson && Array.isArray(etapa.checklistJson) 
                 ? etapa.checklistJson 
@@ -983,9 +997,6 @@ export default function ProjectDetails() {
               const itensMarcados = checklistItems.filter((item) => item.concluido).length;
               const temItensMarcados = itensMarcados > 0;
               const totalItens = checklistItems.length;
-              
-              // Permitir marcar checklist livremente (sem restrição de executor)
-              const podeMarcarChecklist = true;
               const awaitingReview = latestEntrega?.status === 'EM_ANALISE';
               const reviewValue = reviewNotes[String(etapa.id)] ?? '';
               const isReviewing = reviewLoading[String(etapa.id)] ?? false;
@@ -1162,11 +1173,11 @@ export default function ProjectDetails() {
                       <div className="flex items-center justify-between mb-3">
                         <label className="text-xs text-white/70 block font-medium">
                           Checklist de Objetos ({etapa.checklistJson.length})
-                          {isExecutor && (
+                          {podeMarcarChecklist && (
                             <span className="text-white/50 text-xs ml-2">(Você pode marcar os itens)</span>
                           )}
                         </label>
-                        {isExecutor && totalItens > 0 && (
+                        {podeMarcarChecklist && totalItens > 0 && (
                           <span className="text-xs text-white/60">
                             {itensMarcados} de {totalItens} marcado{itensMarcados !== 1 ? 's' : ''}
                           </span>
@@ -1188,7 +1199,8 @@ export default function ProjectDetails() {
                           const entregaItem = etapa.checklistEntregas?.find(
                             (e) => e.checklistIndex === index && (e.subitemIndex === null || e.subitemIndex === undefined)
                           );
-                          const statusItem = entregaItem?.status ?? 'PENDENTE';
+                          // Item marcado como concluído no checklist exibe "Aprovado"; senão usa status da entrega ou "Pendente"
+                          const statusItem = item.concluido ? 'APROVADO' : (entregaItem?.status ?? 'PENDENTE');
                           const canApprove = canReview && statusItem === 'EM_ANALISE';
                           const itemLoading = reviewLoading[`${etapa.id}-${index}`] ?? false;
                           const detailsKey = `view-${etapa.id}-${index}`;
@@ -1200,20 +1212,24 @@ export default function ProjectDetails() {
                             <div key={`${etapa.id}-checklist-${index}`} className="space-y-1">
                               {/* Item principal */}
                               <div
-                                className={`flex items-center gap-3 p-3 rounded-lg transition-all ${
-                                  isExecutor ? 'hover:bg-white/10 hover:scale-[1.01]' : ''
+                                className={`flex flex-wrap items-center gap-2 p-3 rounded-lg transition-colors sm:gap-3 ${
+                                  podeMarcarChecklist ? 'hover:bg-white/10' : ''
                                 } ${getChecklistItemStyle(statusItem)}`}
                               >
                                 <div
-                                  className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all ${
-                                    updatingChecklist === etapa.id ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'
+                                  className={`w-6 h-6 shrink-0 rounded-md border-2 flex items-center justify-center transition-all ${
+                                    updatingChecklist === etapa.id || !podeMarcarChecklist
+                                      ? 'opacity-50 cursor-not-allowed'
+                                      : 'cursor-pointer'
                                   } ${getCheckboxStyle(item.concluido || false)}`}
                                   onClick={() => {
-                                    if (updatingChecklist !== etapa.id) {
+                                    if (updatingChecklist !== etapa.id && podeMarcarChecklist) {
                                       handleChecklistUpdate(etapa.id, index, !item.concluido);
+                                    } else if (!podeMarcarChecklist) {
+                                      toast.warning('Apenas o supervisor do projeto ou GM/DIRETOR podem atualizar o checklist');
                                     }
                                   }}
-                                  title="Status do item"
+                                  title={podeMarcarChecklist ? "Status do item" : "Apenas supervisor do projeto ou GM/DIRETOR podem atualizar"}
                                 >
                                   {item.concluido && (
                                     <svg className="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
@@ -1221,39 +1237,41 @@ export default function ProjectDetails() {
                                     </svg>
                                   )}
                                 </div>
-                                <div className="flex-1">
-                                  <span className={`text-sm ${getChecklistTextStyle(item.concluido || false)}`}>
+                                <div className="flex-1 min-w-0">
+                                  <span className={`text-sm block truncate ${getChecklistTextStyle(item.concluido || false)}`}>
                                     {item.texto}
                                   </span>
                                 </div>
-                                <span
-                                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold border ${getChecklistItemStatusColor(statusItem)}`}
-                                >
-                                  {getChecklistItemStatusLabel(statusItem)}
-                                </span>
-                                {(hasDetails || hasSubitens) && (
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleChecklistDetails(detailsKey)}
-                                    className="px-2 py-0.5 rounded text-xs transition-colors bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/30"
-                                    title={isExpanded ? 'Ocultar detalhes' : 'Ver detalhes e subitens'}
+                                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:flex-nowrap">
+                                  <span
+                                    className={`shrink-0 px-2.5 py-1 rounded-md text-[11px] font-semibold border whitespace-nowrap ${getChecklistItemStatusColor(statusItem)}`}
                                   >
-                                    {hasSubitens ? `(${item.subitens!.length})` : ''} {isExpanded ? '▲' : '▼'}
-                                  </button>
-                                )}
-                                {entregaItem && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
-                                      setShowViewEntregaModal(true);
-                                    }}
-                                    className="px-2 py-0.5 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
-                                    title="Ver detalhes da entrega"
-                                  >
-                                    Ver entrega
-                                  </button>
-                                )}
+                                    {getChecklistItemStatusLabel(statusItem)}
+                                  </span>
+                                  {(hasDetails || hasSubitens) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleChecklistDetails(detailsKey)}
+                                      className="shrink-0 px-2 py-1 rounded text-xs transition-colors bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/30"
+                                      title={isExpanded ? 'Ocultar detalhes' : 'Ver detalhes e subitens'}
+                                    >
+                                      {hasSubitens ? `(${item.subitens!.length})` : ''} {isExpanded ? '▲' : '▼'}
+                                    </button>
+                                  )}
+                                  {entregaItem && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
+                                        setShowViewEntregaModal(true);
+                                      }}
+                                      className="shrink-0 px-2 py-1 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors whitespace-nowrap"
+                                      title="Ver detalhes da entrega"
+                                    >
+                                      Ver entrega
+                                    </button>
+                                  )}
+                                </div>
                                 {canApprove && !hasSubitens && (
                                   <div className="flex flex-col gap-2">
                                     <div className="flex items-center gap-1">
@@ -1327,7 +1345,7 @@ export default function ProjectDetails() {
                               
                               {/* Detalhes expandidos (descrição + subitens) */}
                               {isExpanded && (
-                                <div className="ml-8 pl-4 border-l-2 border-sky-500/30 space-y-2 py-2">
+                                <div className="ml-4 pl-4 sm:ml-8 border-l-2 border-sky-500/30 space-y-2 py-2">
                                   {/* Descrição do item */}
                                   {hasDetails && (
                                     <div className="p-3 bg-sky-500/5 rounded-lg border border-sky-500/20">
@@ -1348,7 +1366,8 @@ export default function ProjectDetails() {
                                         const entregaSubitem = etapa.checklistEntregas?.find(
                                           (e) => e.checklistIndex === index && e.subitemIndex === subIndex
                                         );
-                                        const statusSubitem = entregaSubitem?.status ?? 'PENDENTE';
+                                        // Subitem marcado como concluído exibe "Aprovado"; senão usa status da entrega ou "Pendente"
+                                        const statusSubitem = subitem.concluido ? 'APROVADO' : (entregaSubitem?.status ?? 'PENDENTE');
                                         const canApproveSubitem = canReview && statusSubitem === 'EM_ANALISE';
                                         const subLoading = reviewLoading[`sub-${etapa.id}-${index}-${subIndex}`] ?? false;
                                         

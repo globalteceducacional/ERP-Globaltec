@@ -10,9 +10,11 @@ import { toast } from '../../utils/toast';
 interface HeaderProps {
   title: string;
   subtitle?: string;
+  isMobile?: boolean;
+  onOpenMobileMenu?: () => void;
 }
 
-export function Header({ title, subtitle }: HeaderProps) {
+export function Header({ title, subtitle, isMobile, onOpenMobileMenu }: HeaderProps) {
   const logout = useAuthStore((state) => state.logout);
   const user = useAuthStore((state) => state.user);
   const navigate = useNavigate();
@@ -102,62 +104,62 @@ export function Header({ title, subtitle }: HeaderProps) {
 
   return (
     <>
-      <header className="flex items-center justify-between border-b border-white/10 px-8 py-5 sticky top-0 bg-neutral/80 backdrop-blur supports-[backdrop-filter]:bg-neutral/60 z-20">
-        <div>
-          <h2 className="text-2xl font-bold">{title}</h2>
-          {subtitle && <p className="text-sm text-white/60 mt-1">{subtitle}</p>}
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-4 lg:px-8 lg:py-5 sticky top-0 bg-neutral/80 backdrop-blur supports-[backdrop-filter]:bg-neutral/60 z-20">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
+          {isMobile && onOpenMobileMenu && (
+            <button
+              type="button"
+              onClick={onOpenMobileMenu}
+              className="p-2 rounded-md hover:bg-white/10 text-white transition-colors shrink-0"
+              title="Abrir menu"
+              aria-label="Abrir menu"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+          )}
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold truncate sm:text-xl lg:text-2xl">{title}</h2>
+            {subtitle && <p className="text-xs text-white/60 mt-0.5 truncate sm:text-sm sm:mt-1">{subtitle}</p>}
+          </div>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           {user && (
             <>
-              {/* Botão de Notificações */}
               <div className="relative" ref={notificationsRef}>
                 <button
                   onClick={() => setShowNotifications(!showNotifications)}
-                  className="relative px-3 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                  className="relative p-2 sm:px-3 sm:py-2 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
                   title="Notificações"
                 >
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"
-                    />
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
                   {unreadCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-danger text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
+                    <span className="absolute -top-0.5 -right-0.5 bg-danger text-white text-[10px] rounded-full min-w-[1.25rem] h-5 px-1 flex items-center justify-center font-bold">
                       {unreadCount > 9 ? '9+' : unreadCount}
                     </span>
                   )}
                 </button>
                 {showNotifications && (
-                  <Notifications 
-                    onClose={() => setShowNotifications(false)}
-                    onUpdateCount={setUnreadCount}
-                  />
+                  <Notifications onClose={() => setShowNotifications(false)} onUpdateCount={setUnreadCount} />
                 )}
               </div>
-
               <button
                 onClick={() => setShowPasswordModal(true)}
-                className="px-4 py-2 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-sm border border-primary/30"
+                className="hidden sm:inline-flex px-3 py-2 sm:px-4 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-xs sm:text-sm border border-primary/30"
               >
                 Alterar Senha
               </button>
-              <span className="text-sm text-white/70">
+              <span className="max-w-[100px] sm:max-w-[180px] truncate text-xs text-white/70 sm:text-sm" title={user.email}>
                 {user.email}
               </span>
             </>
           )}
           <button
             onClick={handleLogout}
-            className="px-4 py-2 rounded-md bg-danger hover:bg-danger/80 text-white text-sm"
+            className="px-3 py-2 sm:px-4 rounded-md bg-danger hover:bg-danger/80 text-white text-xs sm:text-sm"
           >
             Sair
           </button>

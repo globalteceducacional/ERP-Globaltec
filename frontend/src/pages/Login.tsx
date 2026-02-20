@@ -46,10 +46,10 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-neutral">
-      <div className="w-full max-w-md bg-neutral/80 border border-white/10 rounded-xl p-10 shadow-xl">
-        <h1 className="text-3xl font-bold mb-2 text-center">ERP Globaltec</h1>
-        <p className="text-white/60 text-center mb-8">Acesse com suas credenciais</p>
+    <div className="min-h-screen flex items-center justify-center bg-neutral p-4 sm:p-6">
+      <div className="w-full max-w-md bg-neutral/80 border border-white/10 rounded-xl p-6 shadow-xl sm:p-10">
+        <h1 className="text-2xl font-bold mb-2 text-center sm:text-3xl">ERP Globaltec</h1>
+        <p className="text-white/60 text-center mb-6 text-sm sm:mb-8 sm:text-base">Acesse com suas credenciais</p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <label className="text-sm text-white/70">
