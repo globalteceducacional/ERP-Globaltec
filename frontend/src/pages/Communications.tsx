@@ -122,10 +122,10 @@ export default function Communications() {
 
   async function loadProjects() {
     try {
-      const { data } = await api.get<Projeto[]>('/projects');
+      const { data } = await api.get<Projeto[]>('/projects/options');
       setProjects(data);
     } catch (err) {
-      console.error(err);
+      console.error('Erro ao carregar projetos:', err);
     }
   }
 

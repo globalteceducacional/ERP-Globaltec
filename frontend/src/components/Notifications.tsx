@@ -50,20 +50,21 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
     }
   }
 
-  async function markAsRead(id: number, requerimentoId?: number | null) {
+  async function markAsRead(id: number, notification?: Notificacao) {
     try {
       await api.patch(`/notifications/${id}/read`);
-      setNotifications(prev => 
-        prev.map(n => n.id === id ? { ...n, lida: true } : n)
+      setNotifications(prev =>
+        prev.map(n => (n.id === id ? { ...n, lida: true } : n))
       );
       const newCount = Math.max(0, unreadCount - 1);
       setUnreadCount(newCount);
       onUpdateCount?.(newCount);
 
-      // Se tiver requerimento linkado, navegar para a página de requerimentos
-      if (requerimentoId) {
-        onClose?.();
-        navigate('/communications?tab=received&id=' + requerimentoId);
+      if (!notification) return;
+      onClose?.();
+      // Redirecionar para requerimento se houver
+      if (notification.requerimentoId != null) {
+        navigate('/communications?tab=received&id=' + notification.requerimentoId);
       }
     } catch (err) {
       console.error('Erro ao marcar notificação como lida:', err);
@@ -72,9 +73,8 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
 
   function handleNotificationClick(notification: Notificacao) {
     if (!notification.lida) {
-      markAsRead(notification.id, notification.requerimentoId);
-    } else if (notification.requerimentoId) {
-      // Se já está lida mas tem requerimento, navegar diretamente
+      markAsRead(notification.id, notification);
+    } else if (notification.requerimentoId != null) {
       onClose?.();
       navigate('/communications?tab=received&id=' + notification.requerimentoId);
     }
@@ -166,7 +166,7 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
                       <span className="text-xs text-white/50">
                         {formatDate(notification.dataCriacao)}
                       </span>
-                      {notification.requerimentoId && (
+                      {notification.requerimentoId != null && (
                         <span className="text-xs text-primary">
                           Ver detalhes →
                         </span>

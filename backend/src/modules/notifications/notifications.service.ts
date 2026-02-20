@@ -26,7 +26,7 @@ export class NotificationsService {
         titulo: data.titulo,
         mensagem: data.mensagem,
         tipo: data.tipo,
-        requerimentoId: data.requerimentoId, // Link para o requerimento
+        requerimentoId: data.requerimentoId,
       },
     });
   }

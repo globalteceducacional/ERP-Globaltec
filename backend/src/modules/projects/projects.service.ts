@@ -9,6 +9,16 @@ import { EtapaStatus, ProjetoStatus, NotificacaoTipo, RequerimentoTipo } from '@
 export class ProjectsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async listOptions() {
+    return this.prisma.projeto.findMany({
+      select: {
+        id: true,
+        nome: true,
+      },
+      orderBy: { nome: 'asc' },
+    });
+  }
+
   async findAll(params: { status?: ProjetoStatus; search?: string }) {
     const where: Record<string, unknown> = {};
 

@@ -8,7 +8,7 @@ import {
   IsArray,
   ValidateNested,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 export class ChecklistSubItemDto {
   @IsString()
@@ -80,5 +80,6 @@ export class CreateTaskDto {
   @IsOptional()
   @IsArray()
   @IsInt({ each: true })
+  @Transform(({ value }) => (Array.isArray(value) ? value.map((v) => Number(v)).filter((n) => !Number.isNaN(n)) : value))
   integrantesIds?: number[];
 }

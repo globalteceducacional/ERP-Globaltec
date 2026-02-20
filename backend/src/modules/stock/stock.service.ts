@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { CreateStockItemDto } from './dto/create-stock-item.dto';
@@ -10,6 +10,8 @@ import { CompraStatus, EstoqueStatus, NotificacaoTipo, RequerimentoTipo } from '
 
 @Injectable()
 export class StockService {
+  private readonly logger = new Logger(StockService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
@@ -278,7 +280,21 @@ export class StockService {
   }
 
   async updatePurchaseStatus(id: number, data: UpdatePurchaseStatusDto) {
-    await this.ensurePurchaseExists(id);
+    // Buscar a compra ANTES do update para ter o status anterior e solicitadoPorId
+    const compraAntes = await this.prisma.compra.findUnique({
+      where: { id },
+      include: {
+        solicitadoPor: true,
+        projeto: true,
+      },
+    });
+
+    if (!compraAntes) {
+      throw new NotFoundException('Compra não encontrada');
+    }
+
+    const statusAnterior = compraAntes.status;
+    const novoStatus = data.status;
 
     const updateData: any = {
       status: data.status,
@@ -315,7 +331,46 @@ export class StockService {
     const compra = await this.prisma.compra.update({
       where: { id },
       data: updateData,
+      include: {
+        solicitadoPor: true,
+        projeto: true,
+      },
     });
+
+    // Notificar o solicitante quando o status mudar para COMPRADO_ACAMINHO ou ENTREGUE
+    if (compra.solicitadoPorId && statusAnterior !== novoStatus) {
+      if (novoStatus === CompraStatus.COMPRADO_ACAMINHO) {
+        try {
+          const mensagem = compra.previsaoEntrega
+            ? `Sua compra "${compra.item}" está a caminho. Previsão de entrega: ${new Date(compra.previsaoEntrega).toLocaleDateString('pt-BR')}.`
+            : `Sua compra "${compra.item}" está a caminho.`;
+          
+          await this.notificationsService.create({
+            usuarioId: compra.solicitadoPorId,
+            titulo: 'Compra a Caminho',
+            mensagem,
+            tipo: NotificacaoTipo.INFO,
+          });
+        } catch (err) {
+          this.logger.warn(`Falha ao criar notificação para compra a caminho (compra ${id}, usuário ${compra.solicitadoPorId}): ${err}`);
+        }
+      } else if (novoStatus === CompraStatus.ENTREGUE) {
+        try {
+          const mensagem = compra.recebidoPor
+            ? `Sua compra "${compra.item}" foi entregue. Recebido por: ${compra.recebidoPor}.`
+            : `Sua compra "${compra.item}" foi entregue.`;
+          
+          await this.notificationsService.create({
+            usuarioId: compra.solicitadoPorId,
+            titulo: 'Compra Entregue',
+            mensagem,
+            tipo: NotificacaoTipo.SUCCESS,
+          });
+        } catch (err) {
+          this.logger.warn(`Falha ao criar notificação para compra entregue (compra ${id}, usuário ${compra.solicitadoPorId}): ${err}`);
+        }
+      }
+    }
 
     if (data.status === CompraStatus.ENTREGUE) {
       await this.appendToStock({

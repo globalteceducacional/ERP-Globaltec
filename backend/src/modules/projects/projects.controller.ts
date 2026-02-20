@@ -34,6 +34,11 @@ export class ProjectsController {
     private readonly projectsImportService: ProjectsImportService,
   ) {}
 
+  @Get('options')
+  listOptions() {
+    return this.projectsService.listOptions();
+  }
+
   @Get()
   @Roles('DIRETOR')
   findAll(

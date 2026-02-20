@@ -659,7 +659,10 @@ export default function MyTasks() {
                       temItensMarcados;
 
                     return (
-                      <div key={etapa.id} className="bg-gradient-to-br from-neutral/80 to-neutral/60 border border-white/15 rounded-xl p-5 shadow-md hover:shadow-lg transition-shadow">
+                      <div
+                        key={etapa.id}
+                        className="bg-gradient-to-br from-neutral/80 to-neutral/60 border border-white/15 rounded-xl p-5 shadow-md hover:shadow-lg transition-shadow"
+                      >
                         <div className="flex items-start justify-between gap-3 mb-3">
                           <div className="flex-1">
                             <h4 className="font-semibold text-white/90">{etapa.nome}</h4>

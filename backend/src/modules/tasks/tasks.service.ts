@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -10,10 +10,16 @@ import { SubmitDeliveryDto } from './dto/submit-delivery.dto';
 import { ChecklistItemStatus, EtapaEntregaStatus, EtapaStatus, ProjetoStatus, SubetapaStatus } from '@prisma/client';
 import { SubmitChecklistItemDto } from './dto/submit-checklist-item.dto';
 import { ReviewChecklistItemDto } from './dto/review-checklist-item.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class TasksService {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(TasksService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async listMyTasks(userId: number, filter: FilterMyTasksDto) {
     // Buscar apenas etapas em que o usuário é executor OU integrante (não todas as etapas do projeto)
@@ -218,6 +224,26 @@ export class TasksService {
 
     await this.updateProjetoStatus(created.projetoId);
 
+    // Notificar cada integrante (não falhar a criação da etapa se a notificação falhar)
+    if (data.integrantesIds && data.integrantesIds.length > 0 && created.projeto) {
+      const projetoNome = created.projeto.nome ?? 'Projeto';
+      const etapaNome = created.nome ?? 'Etapa';
+      const mensagem = `Você foi adicionado como integrante da etapa "${etapaNome}" do projeto "${projetoNome}".`;
+      const ids = data.integrantesIds.map((id) => Number(id)).filter((id) => !Number.isNaN(id) && id > 0);
+      for (const usuarioId of ids) {
+        try {
+          await this.notificationsService.create({
+            usuarioId,
+            titulo: 'Você foi adicionado a uma etapa',
+            mensagem,
+            tipo: 'INFO',
+          });
+        } catch (err) {
+          this.logger.warn(`Falha ao criar notificação para integrante ${usuarioId} (etapa ${created.id}): ${err}`);
+        }
+      }
+    }
+
     return created;
   }
 
@@ -270,6 +296,12 @@ export class TasksService {
       }
     }
 
+    const etapaAntes = await this.prisma.etapa.findUnique({
+      where: { id },
+      include: { integrantes: true, projeto: true },
+    });
+    const idsAntigos = etapaAntes?.integrantes?.map((i) => i.usuarioId) ?? [];
+
     // Tratar integrantes
     if (data.integrantesIds !== undefined) {
       if (Array.isArray(data.integrantesIds) && data.integrantesIds.length > 0) {
@@ -307,6 +339,26 @@ export class TasksService {
     });
 
     await this.updateProjetoStatus(updated.projetoId);
+
+    const novosIntegrantesIds = Array.isArray(data.integrantesIds) ? data.integrantesIds.map((id) => Number(id)).filter((id) => !Number.isNaN(id) && id > 0) : [];
+    const idsNovos = novosIntegrantesIds.filter((uid: number) => !idsAntigos.includes(uid));
+    if (idsNovos.length > 0 && updated.projeto) {
+      const projetoNome = updated.projeto.nome ?? 'Projeto';
+      const etapaNome = updated.nome ?? 'Etapa';
+      const mensagem = `Você foi adicionado como integrante da etapa "${etapaNome}" do projeto "${projetoNome}".`;
+      for (const usuarioId of idsNovos) {
+        try {
+          await this.notificationsService.create({
+            usuarioId,
+            titulo: 'Você foi adicionado a uma etapa',
+            mensagem,
+            tipo: 'INFO',
+          });
+        } catch (err) {
+          this.logger.warn(`Falha ao criar notificação para integrante ${usuarioId} (etapa ${id}): ${err}`);
+        }
+      }
+    }
 
     return updated;
   }

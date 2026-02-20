@@ -3,10 +3,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateRequestDto } from './dto/create-request.dto';
 import { RespondRequestDto } from './dto/respond-request.dto';
 import { CompraStatus } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class RequestsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly notificationsService: NotificationsService,
+  ) {}
 
   async create(usuarioId: number, data: CreateRequestDto) {
     if (data.etapaId) {
@@ -70,6 +74,16 @@ export class RequestsService {
         },
       });
 
+      if (destinatarioId) {
+        await this.notificationsService.create({
+          usuarioId: destinatarioId,
+          titulo: 'Novo requerimento de compra',
+          mensagem: 'Você recebeu um requerimento de compra para análise.',
+          tipo: 'INFO',
+          requerimentoId: requerimento.id,
+        });
+      }
+
       // Criar as compras para cada item
       const compras = await Promise.all(
         data.itensCompra.map((item) => {
@@ -109,7 +123,7 @@ export class RequestsService {
     }
 
     // Para outros tipos, criar apenas o requerimento
-    return this.prisma.requerimento.create({
+    const requerimento = await this.prisma.requerimento.create({
       data: {
         usuarioId,
         destinatarioId: destinatarioId,
@@ -119,6 +133,16 @@ export class RequestsService {
         anexo: data.anexo,
       },
     });
+
+    await this.notificationsService.create({
+      usuarioId: destinatarioId,
+      titulo: 'Novo requerimento',
+      mensagem: 'Você recebeu um novo requerimento. Acesse Requerimentos para visualizar.',
+      tipo: 'INFO',
+      requerimentoId: requerimento.id,
+    });
+
+    return requerimento;
   }
 
   listSent(usuarioId: number) {

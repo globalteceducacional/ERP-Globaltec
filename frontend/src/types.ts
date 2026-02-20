@@ -94,7 +94,7 @@ export interface Notificacao {
   tipo: 'INFO' | 'SUCCESS' | 'WARNING' | 'ERROR';
   lida: boolean;
   dataCriacao: string;
-  requerimentoId?: number | null; // Link para o requerimento com detalhes completos
+  requerimentoId?: number | null;
 }
 
 // Checklist com suporte a subitens e descrição

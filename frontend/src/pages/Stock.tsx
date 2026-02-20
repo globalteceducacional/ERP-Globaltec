@@ -1873,13 +1873,13 @@ export default function Stock() {
                       />
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex items-center space-x-3">
+                      <div className="flex items-center space-x-3 min-w-0">
                         {purchase.imagemUrl && (
                           (purchase.imagemUrl.startsWith('data:image/') || purchase.imagemUrl.startsWith('http://') || purchase.imagemUrl.startsWith('https://')) ? (
                             <img
                               src={purchase.imagemUrl}
                               alt={purchase.item || 'Item'}
-                              className="w-10 h-10 object-cover rounded"
+                              className="w-10 h-10 object-cover rounded flex-shrink-0"
                               onError={(e) => {
                                 // Se a imagem falhar ao carregar, ocultar ou mostrar placeholder
                                 e.currentTarget.style.display = 'none';
@@ -1887,13 +1887,15 @@ export default function Stock() {
                             />
                           ) : null
                         )}
-                        <div>
-                          <div className="font-medium">{purchase.item || 'Sem nome'}</div>
-                          {purchase.descricao && <div className="text-xs text-white/60">{purchase.descricao}</div>}
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium truncate">{purchase.item || 'Sem nome'}</div>
+                          {purchase.descricao && <div className="text-xs text-white/60 truncate">{purchase.descricao}</div>}
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3">{purchase.quantidade || 0}</td>
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="font-medium">{purchase.quantidade || 0}</span>
+                    </td>
                     <td className="px-4 py-3">
                       {cotacoes.length > 0 ? (
                         <div className="space-y-1">
@@ -1954,16 +1956,16 @@ export default function Stock() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-col gap-1 text-xs">
+                      <div className="flex flex-col gap-1 text-xs min-w-0">
                         {purchase.status === 'COMPRADO_ACAMINHO' && purchase.previsaoEntrega && (
-                          <span className="text-blue-300">
+                          <span className="text-blue-300 whitespace-nowrap">
                             📅 Previsão: {new Date(purchase.previsaoEntrega).toLocaleDateString('pt-BR')}
                           </span>
                         )}
                         {purchase.status === 'ENTREGUE' ? (
                           <>
                             {purchase.dataEntrega && (
-                              <span className="text-white/90">
+                              <span className="text-white/90 whitespace-nowrap">
                                 📅 {new Date(purchase.dataEntrega).toLocaleDateString('pt-BR')}
                               </span>
                             )}
@@ -1973,7 +1975,7 @@ export default function Stock() {
                               </span>
                             )}
                             {purchase.recebidoPor && (
-                              <span className="text-white/70">👤 {purchase.recebidoPor}</span>
+                              <span className="text-white/70 whitespace-nowrap">👤 {purchase.recebidoPor}</span>
                             )}
                             {purchase.observacao && (
                               <span className="text-white/60 truncate max-w-[150px]" title={purchase.observacao}>
@@ -1984,18 +1986,18 @@ export default function Stock() {
                         ) : (
                           <>
                             {purchase.dataEntrega ? (
-                              <span className="text-white/90">
+                              <span className="text-white/90 whitespace-nowrap">
                                 📅 {new Date(purchase.dataEntrega).toLocaleDateString('pt-BR')}
                               </span>
                             ) : purchase.dataCompra ? (
-                              <span className="text-white/50">
+                              <span className="text-white/50 whitespace-nowrap">
                                 📅 Compra: {new Date(purchase.dataCompra).toLocaleDateString('pt-BR')}
                               </span>
                             ) : (
                               <span className="text-white/50">-</span>
                             )}
                             {purchase.recebidoPor && (
-                              <span className="text-white/70">👤 {purchase.recebidoPor}</span>
+                              <span className="text-white/70 whitespace-nowrap">👤 {purchase.recebidoPor}</span>
                             )}
                             {purchase.observacao && (
                               <span className="text-white/60 truncate max-w-[150px]" title={purchase.observacao}>
@@ -5125,9 +5127,15 @@ export default function Stock() {
                             </span>
                           </div>
                           <div>
-                            <span className="text-white/70">Total: </span>
-                            <span className="text-primary font-semibold">
+                            <span className="text-white/70">Total por unidade: </span>
+                            <span className="text-white/90">
                               {((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </span>
+                          </div>
+                          <div className="col-span-2">
+                            <span className="text-white/70 font-medium">Total ({purchaseToView.quantidade} unidades): </span>
+                            <span className="text-primary font-semibold text-lg">
+                              {(((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0)) * purchaseToView.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </span>
                           </div>
                           {cotacao.link && (
