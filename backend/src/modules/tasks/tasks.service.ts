@@ -195,7 +195,14 @@ export class TasksService {
     await this.ensureProjectExists(data.projetoId);
     await this.ensureUserExists(data.executorId);
 
+    const maxOrdem = await this.prisma.etapa.aggregate({
+      where: { projetoId: data.projetoId },
+      _max: { ordem: true },
+    });
+    const proximaOrdem = (maxOrdem._max?.ordem ?? -1) + 1;
+
     const createData: any = {
+        ordem: proximaOrdem,
         nome: data.nome,
         descricao: data.descricao,
         projeto: { connect: { id: data.projetoId } },
@@ -316,7 +323,11 @@ export class TasksService {
 
     const etapaAntes = await this.prisma.etapa.findUnique({
       where: { id },
-      include: { integrantes: true, projeto: true },
+      select: {
+        checklistJson: true,
+        integrantes: { select: { usuarioId: true } },
+        projetoId: true,
+      },
     });
     const idsAntigos = etapaAntes?.integrantes?.map((i) => i.usuarioId) ?? [];
 
@@ -355,6 +366,33 @@ export class TasksService {
       data: payload,
       include: { executor: true, responsavel: true, projeto: true, integrantes: { include: { usuario: true } } },
     });
+
+    // Se a ordem do checklist mudou, reindexar ChecklistItemEntrega (checklistIndex)
+    if (data.checklist !== undefined && Array.isArray(data.checklist) && data.checklist.length > 0 && etapaAntes?.checklistJson && Array.isArray(etapaAntes.checklistJson)) {
+      const oldList = etapaAntes.checklistJson as Array<{ texto?: string; descricao?: string; subitens?: unknown[] }>;
+      const newList = data.checklist as Array<{ texto?: string; descricao?: string; subitens?: unknown[] }>;
+      const oldToNew: Record<number, number> = {};
+      for (let newIdx = 0; newIdx < newList.length; newIdx++) {
+        const newItem = newList[newIdx];
+        const oldIdx = oldList.findIndex(
+          (o) => o.texto === newItem.texto && (o.descricao ?? '') === (newItem.descricao ?? '') && (o.subitens?.length ?? 0) === (newItem.subitens?.length ?? 0)
+        );
+        if (oldIdx >= 0) oldToNew[oldIdx] = newIdx;
+      }
+      const entregas = await this.prisma.checklistItemEntrega.findMany({
+        where: { etapaId: id },
+        select: { id: true, checklistIndex: true },
+      });
+      for (const entrega of entregas) {
+        const newIndex = oldToNew[entrega.checklistIndex];
+        if (newIndex !== undefined && newIndex !== entrega.checklistIndex) {
+          await this.prisma.checklistItemEntrega.update({
+            where: { id: entrega.id },
+            data: { checklistIndex: newIndex },
+          });
+        }
+      }
+    }
 
     await this.updateProjetoStatus(updated.projetoId);
 

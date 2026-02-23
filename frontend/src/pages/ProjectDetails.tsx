@@ -138,6 +138,26 @@ export default function ProjectDetails() {
   }, [user]);
 
   const canReview = isDiretor || isSupervisor || permissionKeys.has('trabalhos:avaliar');
+  const canEditProject = isDiretor || permissionKeys.has('projetos:editar');
+  const [reorderingEtapas, setReorderingEtapas] = useState(false);
+  /** IDs das etapas expandidas (conteúdo visível). Inicializado com todas ao carregar o projeto. */
+  const [expandedEtapas, setExpandedEtapas] = useState<Set<number>>(new Set());
+
+  useEffect(() => {
+    if (project?.etapas?.length) {
+      setExpandedEtapas(new Set(project.etapas.map((e) => e.id)));
+    }
+  }, [project?.id, project?.etapas?.length]);
+
+  function toggleEtapa(etapaId: number) {
+    setExpandedEtapas((prev) => {
+      const next = new Set(prev);
+      if (next.has(etapaId)) next.delete(etapaId);
+      else next.add(etapaId);
+      return next;
+    });
+  }
+
   const [etapaForm, setEtapaForm] = useState({
     nome: '',
     descricao: '',
@@ -558,6 +578,31 @@ export default function ProjectDetails() {
       toast.error(errorMessage);
     } finally {
       setDeletingEtapa(false);
+    }
+  }
+
+  async function handleReorderEtapas(direction: 'up' | 'down', currentIndex: number) {
+    if (!project) return;
+    const etapas = project.etapas;
+    const newIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex < 0 || newIndex >= etapas.length) return;
+
+    const newOrder = [...etapas];
+    [newOrder[currentIndex], newOrder[newIndex]] = [newOrder[newIndex], newOrder[currentIndex]];
+    const etapaIds = newOrder.map((e) => e.id);
+
+    try {
+      setReorderingEtapas(true);
+      setError(null);
+      await api.patch(`/projects/${project.id}/etapas/reorder`, { etapaIds });
+      toast.success('Ordem das etapas atualizada.');
+      await refreshProject(false);
+    } catch (err: any) {
+      const msg = err.response?.data?.message ?? 'Falha ao reordenar etapas';
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setReorderingEtapas(false);
     }
   }
 
@@ -1017,7 +1062,7 @@ export default function ProjectDetails() {
           <p className="text-white/50 text-center py-8">Nenhuma etapa cadastrada</p>
         ) : (
           <div className="space-y-4">
-            {project.etapas.map((etapa) => {
+            {project.etapas.map((etapa, etapaIndex) => {
               const latestEntrega = etapa.entregas && etapa.entregas.length > 0 ? etapa.entregas[0] : null;
               // Comparar convertendo ambos para número para evitar problemas de tipo
               const executorId = etapa.executor?.id;
@@ -1043,14 +1088,55 @@ export default function ProjectDetails() {
               return (
                 <div key={etapa.id} className="bg-neutral/60 border border-white/10 rounded-lg p-4">
                   <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-white/90">{etapa.nome}</h4>
-                      {etapa.descricao && (
-                        <p className="text-sm text-white/70 mt-1">{etapa.descricao}</p>
-                      )}
+                    <div
+                      className="flex-1 flex items-start gap-2 cursor-pointer min-w-0"
+                      onClick={() => toggleEtapa(etapa.id)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => e.key === 'Enter' && toggleEtapa(etapa.id)}
+                      aria-expanded={expandedEtapas.has(etapa.id)}
+                      aria-label={expandedEtapas.has(etapa.id) ? 'Retrair etapa' : 'Expandir etapa'}
+                    >
+                      <span
+                        className="shrink-0 text-white/70 mt-0.5 inline-flex transition-transform duration-300 ease-out"
+                        style={{ transform: expandedEtapas.has(etapa.id) ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+                        aria-hidden
+                      >
+                        ▼
+                      </span>
+                      <div className="min-w-0">
+                        <h4 className="font-semibold text-white/90">{etapa.nome}</h4>
+                        {etapa.descricao && (
+                          <p className={`text-sm mt-1 ${expandedEtapas.has(etapa.id) ? 'text-white/70' : 'text-white/50 line-clamp-1'}`}>
+                            {etapa.descricao}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex flex-col items-start md:items-end gap-2">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-col items-start md:items-end gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {canEditProject && (
+                          <span className="flex items-center gap-0.5 mr-1" title="Ordem da etapa">
+                            <button
+                              type="button"
+                              onClick={() => handleReorderEtapas('up', etapaIndex)}
+                              disabled={reorderingEtapas || etapaIndex === 0}
+                              className="p-1.5 rounded border border-white/20 bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white/80"
+                              aria-label="Subir etapa"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleReorderEtapas('down', etapaIndex)}
+                              disabled={reorderingEtapas || etapaIndex === project.etapas.length - 1}
+                              className="p-1.5 rounded border border-white/20 bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white/80"
+                              aria-label="Descer etapa"
+                            >
+                              ↓
+                            </button>
+                          </span>
+                        )}
                         <span className={`px-2 py-1 rounded text-xs ${getStatusColor(etapa.status)}`}>
                           {getStatusLabel(etapa.status)}
                         </span>
@@ -1081,6 +1167,15 @@ export default function ProjectDetails() {
                     </div>
                   </div>
 
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateRows: expandedEtapas.has(etapa.id) ? '1fr' : '0fr',
+                      transition: 'grid-template-rows 0.35s ease-out',
+                    }}
+                    className="min-h-0"
+                  >
+                    <div className="overflow-hidden min-h-0">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-sm text-white/70">
                     {etapa.executor && (
                       <div>
@@ -1224,12 +1319,12 @@ export default function ProjectDetails() {
                       </div>
 
                       {/* Cabeçalho de colunas (desktop) */}
-                      <div className="hidden md:flex items-center text-[11px] uppercase tracking-wide text-white/70 bg-slate-900/80 border border-white/15 rounded-md px-3 py-2 mb-1">
+                      <div className="hidden md:grid md:grid-cols-[auto_1fr_7rem_7rem_8rem] md:items-center gap-2 text-[11px] uppercase tracking-wide text-white/70 bg-slate-900/80 border border-white/15 rounded-md px-3 py-2 mb-1">
                         <div className="w-6" />
-                        <div className="flex-1 pl-3">Item</div>
-                        <div className="w-28 text-center">Status</div>
-                        <div className="w-28 text-center">Entrega</div>
-                        <div className="w-32 text-right pr-1">Ações</div>
+                        <div className="pl-1">Item</div>
+                        <div className="text-center">Status</div>
+                        <div className="text-center">Entrega</div>
+                        <div className="text-right pr-1">Ações</div>
                       </div>
 
                       <div className="space-y-2">
@@ -1249,9 +1344,135 @@ export default function ProjectDetails() {
                           
                           return (
                             <div key={`${etapa.id}-checklist-${index}`} className="space-y-1">
-                              {/* Item principal */}
+                              {/* Item principal — desktop: grid alinhado ao cabeçalho */}
                               <div
-                                className={`flex flex-wrap items-center gap-2 p-3 rounded-lg transition-colors sm:gap-3 ${
+                                className={`hidden md:grid md:grid-cols-[auto_1fr_7rem_7rem_8rem] md:items-center md:gap-2 md:p-3 md:rounded-lg md:transition-colors ${
+                                  podeMarcarChecklist ? 'hover:bg-white/10' : ''
+                                } ${getChecklistItemStyle(statusItem)}`}
+                              >
+                                <div
+                                  className={`w-6 h-6 shrink-0 rounded-md border-2 flex items-center justify-center transition-all ${
+                                    updatingChecklist === etapa.id || !podeMarcarChecklist
+                                      ? 'opacity-50 cursor-not-allowed'
+                                      : 'cursor-pointer'
+                                  } ${getCheckboxStyle(item.concluido || false)}`}
+                                  onClick={() => {
+                                    if (updatingChecklist !== etapa.id && podeMarcarChecklist) {
+                                      handleChecklistUpdate(etapa.id, index, !item.concluido);
+                                    } else if (!podeMarcarChecklist) {
+                                      toast.warning('Apenas o supervisor do projeto ou GM/DIRETOR podem atualizar o checklist');
+                                    }
+                                  }}
+                                  title={podeMarcarChecklist ? "Status do item" : "Apenas supervisor do projeto ou GM/DIRETOR podem atualizar"}
+                                >
+                                  {item.concluido && (
+                                    <svg className="w-4 h-4 text-white drop-shadow" fill="currentColor" viewBox="0 0 20 20">
+                                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                    </svg>
+                                  )}
+                                </div>
+                                <div className="min-w-0 pl-1">
+                                  <span className={`text-sm block truncate ${getChecklistTextStyle(item.concluido || false)}`}>
+                                    {item.texto}
+                                  </span>
+                                </div>
+                                <div className="flex justify-center">
+                                  <span
+                                    className={`shrink-0 px-2.5 py-1 rounded-md text-[11px] font-semibold border whitespace-nowrap ${getChecklistItemStatusColor(statusItem)}`}
+                                  >
+                                    {getChecklistItemStatusLabel(statusItem)}
+                                  </span>
+                                </div>
+                                <div className="text-center text-xs text-white/70">
+                                  {entregaItem?.dataEnvio
+                                    ? new Date(entregaItem.dataEnvio).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                                    : '—'}
+                                </div>
+                                <div className="flex flex-wrap items-center justify-end gap-1">
+                                  {(hasDetails || hasSubitens) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleChecklistDetails(detailsKey)}
+                                      className={`${btn.editSm} shrink-0`}
+                                      title={isExpanded ? 'Ocultar detalhes' : 'Ver detalhes e subitens'}
+                                    >
+                                      {hasSubitens ? `(${item.subitens!.length})` : ''} {isExpanded ? '▲' : '▼'}
+                                    </button>
+                                  )}
+                                  {entregaItem && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
+                                        setShowViewEntregaModal(true);
+                                      }}
+                                      className={`${btn.primarySoft} shrink-0 whitespace-nowrap`}
+                                      title="Ver detalhes da entrega"
+                                    >
+                                      Ver entrega
+                                    </button>
+                                  )}
+                                  {canApprove && !hasSubitens && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={async (e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          try {
+                                            setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: true }));
+                                            setError(null);
+                                            await api.patch(`/tasks/${etapa.id}/checklist/${index}/review`, {
+                                              status: 'APROVADO',
+                                              comentario: reviewNotes[`${etapa.id}-${index}`]?.trim() || undefined,
+                                            });
+                                            setReviewNotes((prev) => ({ ...prev, [`${etapa.id}-${index}`]: '' }));
+                                            await refreshProject(false);
+                                          } catch (err: any) {
+                                            const message = err.response?.data?.message ?? 'Falha ao aprovar objetivo';
+                                            setError(message);
+                                          } finally {
+                                            setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: false }));
+                                          }
+                                        }}
+                                        className={btn.successSm}
+                                        disabled={itemLoading}
+                                      >
+                                        Aprovar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={async (e) => {
+                                          e.preventDefault();
+                                          e.stopPropagation();
+                                          try {
+                                            setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: true }));
+                                            setError(null);
+                                            await api.patch(`/tasks/${etapa.id}/checklist/${index}/review`, {
+                                              status: 'REPROVADO',
+                                              comentario: reviewNotes[`${etapa.id}-${index}`]?.trim() || undefined,
+                                            });
+                                            await refreshProject(false);
+                                          } catch (err: any) {
+                                            const message = err.response?.data?.message ?? 'Falha ao recusar objetivo';
+                                            setError(message);
+                                          } finally {
+                                            setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: false }));
+                                          }
+                                        }}
+                                        className={btn.dangerSm}
+                                        disabled={itemLoading}
+                                      >
+                                        Recusar
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Item principal — mobile: layout em bloco */}
+                              <div
+                                className={`md:hidden flex flex-wrap items-center gap-2 p-3 rounded-lg transition-colors ${
                                   podeMarcarChecklist ? 'hover:bg-white/10' : ''
                                 } ${getChecklistItemStyle(statusItem)}`}
                               >
@@ -1635,6 +1856,8 @@ export default function ProjectDetails() {
                         )}
                       </div>
                     )}
+                  </div>
+                    </div>
                   </div>
                 </div>
               );
@@ -2428,6 +2651,36 @@ export default function ProjectDetails() {
                             className="flex-1 bg-white/10 border border-white/30 rounded-md px-4 py-2 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                             placeholder={`Objeto ${index + 1}`}
                           />
+                          {etapaForm.checklist.length > 1 && (
+                            <span className="flex items-center gap-0.5" title="Ordem do item">
+                              <button
+                                type="button"
+                                disabled={index === 0}
+                                onClick={() => {
+                                  const newChecklist = [...etapaForm.checklist];
+                                  [newChecklist[index - 1], newChecklist[index]] = [newChecklist[index], newChecklist[index - 1]];
+                                  setEtapaForm({ ...etapaForm, checklist: newChecklist });
+                                }}
+                                className="p-1.5 rounded border border-white/20 bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white/80"
+                                aria-label="Subir item"
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                disabled={index === etapaForm.checklist.length - 1}
+                                onClick={() => {
+                                  const newChecklist = [...etapaForm.checklist];
+                                  [newChecklist[index], newChecklist[index + 1]] = [newChecklist[index + 1], newChecklist[index]];
+                                  setEtapaForm({ ...etapaForm, checklist: newChecklist });
+                                }}
+                                className="p-1.5 rounded border border-white/20 bg-white/5 hover:bg-white/10 disabled:opacity-40 disabled:cursor-not-allowed text-white/80"
+                                aria-label="Descer item"
+                              >
+                                ↓
+                              </button>
+                            </span>
+                          )}
                           <button
                             type="button"
                             onClick={() => toggleChecklistDetails(formItemKey)}
@@ -2494,6 +2747,36 @@ export default function ProjectDetails() {
                                           className="flex-1 bg-white/10 border border-white/20 rounded px-3 py-1.5 text-sm text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-primary"
                                           placeholder={`Subitem ${subIndex + 1}`}
                                         />
+                                        {(item.subitens?.length ?? 0) > 1 && (
+                                          <span className="flex items-center gap-0.5">
+                                            <button
+                                              type="button"
+                                              disabled={subIndex === 0}
+                                              onClick={() => {
+                                                const newChecklist = [...etapaForm.checklist];
+                                                const newSubitens = [...(newChecklist[index].subitens || [])];
+                                                [newSubitens[subIndex - 1], newSubitens[subIndex]] = [newSubitens[subIndex], newSubitens[subIndex - 1]];
+                                                newChecklist[index] = { ...newChecklist[index], subitens: newSubitens };
+                                                setEtapaForm({ ...etapaForm, checklist: newChecklist });
+                                              }}
+                                              className="p-1 rounded border border-white/20 bg-white/5 hover:bg-white/10 disabled:opacity-40 text-white/80 text-xs"
+                                              aria-label="Subir subitem"
+                                            >↑</button>
+                                            <button
+                                              type="button"
+                                              disabled={subIndex === (item.subitens?.length ?? 0) - 1}
+                                              onClick={() => {
+                                                const newChecklist = [...etapaForm.checklist];
+                                                const newSubitens = [...(newChecklist[index].subitens || [])];
+                                                [newSubitens[subIndex], newSubitens[subIndex + 1]] = [newSubitens[subIndex + 1], newSubitens[subIndex]];
+                                                newChecklist[index] = { ...newChecklist[index], subitens: newSubitens };
+                                                setEtapaForm({ ...etapaForm, checklist: newChecklist });
+                                              }}
+                                              className="p-1 rounded border border-white/20 bg-white/5 hover:bg-white/10 disabled:opacity-40 text-white/80 text-xs"
+                                              aria-label="Descer subitem"
+                                            >↓</button>
+                                          </span>
+                                        )}
                                         <button
                                           type="button"
                                           onClick={() => toggleChecklistDetails(subFormKey)}

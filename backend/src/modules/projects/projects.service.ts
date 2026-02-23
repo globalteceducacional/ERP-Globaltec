@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UpdateResponsiblesDto } from './dto/update-responsibles.dto';
+import { ReorderEtapasDto } from './dto/reorder-etapas.dto';
 import { EtapaStatus, ProjetoStatus, NotificacaoTipo, RequerimentoTipo, Prisma } from '@prisma/client';
 
 @Injectable()
@@ -40,19 +41,21 @@ export class ProjectsService {
         supervisor: { include: { cargo: true } },
         responsaveis: { include: { usuario: { include: { cargo: true } } } },
         _count: { select: { etapas: true } },
-        etapas: { 
-          select: { 
+        etapas: {
+          orderBy: { ordem: 'asc' } as any,
+          select: {
             id: true,
             status: true,
             valorInsumos: true,
-          } 
+          },
         },
       },
     });
 
     // Atualizar status do projeto no banco se necessário e calcular progresso
     const updatedProjects = await Promise.all(
-      projects.map(async ({ etapas, ...project }) => {
+      projects.map(async (row) => {
+        const { etapas, ...project } = row as typeof row & { etapas: Array<{ id: number; status: string; valorInsumos: number }> };
         const totalEtapas = etapas.length;
         
         // Buscar etapas completas com checklist para verificar se estão concluídas
@@ -155,7 +158,7 @@ export class ProjectsService {
         supervisor: { include: { cargo: true } },
         responsaveis: { include: { usuario: { include: { cargo: true } } } },
         etapas: {
-          orderBy: { id: 'asc' }, // Ordenar por ID (ordem de criação: primeira etapa criada, segunda, terceira...)
+          orderBy: [{ ordem: 'asc' }, { id: 'asc' }],
           include: {
             executor: true,
             responsavel: true,
@@ -489,5 +492,34 @@ export class ProjectsService {
     await this.findOne(id);
 
     await this.prisma.projeto.delete({ where: { id } });
+  }
+
+  /** Reordena as etapas do projeto conforme o array etapaIds (índice = ordem). */
+  async reorderEtapas(projetoId: number, dto: ReorderEtapasDto) {
+    await this.findOne(projetoId);
+
+    const etapasDoProjeto = (await this.prisma.etapa.findMany({
+      where: { projetoId },
+      select: { id: true, ordem: true } as any,
+    })) as unknown as { id: number; ordem: number }[];
+    const idsExistentes = new Set<number>(etapasDoProjeto.map((e) => e.id));
+
+    const idsRecebidos = dto.etapaIds.filter((id) => idsExistentes.has(id));
+    if (idsRecebidos.length !== idsExistentes.size) {
+      throw new BadRequestException(
+        'A lista de etapas deve conter exatamente os IDs das etapas deste projeto, na nova ordem.',
+      );
+    }
+
+    await this.prisma.$transaction(
+      idsRecebidos.map((etapaId, index) =>
+        this.prisma.etapa.update({
+          where: { id: etapaId },
+          data: { ordem: index } as any,
+        }),
+      ),
+    );
+
+    return this.findOne(projetoId);
   }
 }

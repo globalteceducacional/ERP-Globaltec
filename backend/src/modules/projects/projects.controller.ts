@@ -20,6 +20,7 @@ import { ProjectsImportService } from './projects-import.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UpdateResponsiblesDto } from './dto/update-responsibles.dto';
+import { ReorderEtapasDto } from './dto/reorder-etapas.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -72,6 +73,15 @@ export class ProjectsController {
     @Body() body: UpdateResponsiblesDto,
   ) {
     return this.projectsService.updateResponsibles(id, body);
+  }
+
+  @Patch(':id/etapas/reorder')
+  @Permissions('projetos:editar')
+  reorderEtapas(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: ReorderEtapasDto,
+  ) {
+    return this.projectsService.reorderEtapas(id, body);
   }
 
   @Patch(':id/finalize')

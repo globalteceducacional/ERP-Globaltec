@@ -164,6 +164,7 @@ model EtapaIntegrante {
 
 model Etapa {
   id                Int                    @id @default(autoincrement())
+  ordem             Int                    @default(0) // Ordem de exibição no projeto
   nome              String
   descricao         String?
   status            EtapaStatus            @default(PENDENTE)
