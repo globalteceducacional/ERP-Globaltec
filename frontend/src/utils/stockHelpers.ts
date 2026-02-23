@@ -33,13 +33,27 @@ export function getCategoryName(categoriaId: number | undefined, categories: Cat
   return category ? category.nome : '-';
 }
 
-// Função para calcular valor total de uma cotação
+// Função para calcular valor total de uma cotação (desconto em R$ por unidade ou % sobre o total)
 export function calculateCotacaoTotal(cotacao: Cotacao, quantidade: number): number {
-  const valorTotal = cotacao.valorUnitario * quantidade;
+  const valorUnitario = cotacao.valorUnitario || 0;
   const frete = cotacao.frete || 0;
   const impostos = cotacao.impostos || 0;
-  const desconto = cotacao.desconto || 0;
-  return valorTotal + frete + impostos - desconto;
+  const basePorUnidade = valorUnitario + frete + impostos;
+  const baseTotal = basePorUnidade * quantidade;
+  const tipo = cotacao.descontoTipo || 'valor';
+  const descontoVal = cotacao.desconto || 0;
+  const desconto = tipo === 'porcentagem'
+    ? baseTotal * (descontoVal / 100)
+    : descontoVal * quantidade;
+  return baseTotal - desconto;
+}
+
+/** Retorna o valor do desconto por unidade (para exibição/cálculo inline). */
+export function getCotacaoDescontoPerUnit(cotacao: Cotacao): number {
+  const base = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0);
+  const tipo = cotacao.descontoTipo || 'valor';
+  const v = cotacao.desconto || 0;
+  return tipo === 'porcentagem' ? base * (v / 100) : v;
 }
 
 // Função para formatar valor em BRL
@@ -120,7 +134,7 @@ export function addCotacao<T extends { cotacoes: Cotacao[] }>(
     ...form,
     cotacoes: [
       ...form.cotacoes,
-      { valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' },
+      { valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' },
     ],
   });
 }

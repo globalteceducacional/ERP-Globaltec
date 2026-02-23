@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsOptional, IsString, MaxLength, IsArray, ValidateNested, ValidateIf, IsPositive, IsNumber, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, MaxLength, IsArray, ValidateNested, ValidateIf, IsPositive, IsNumber, Min, IsIn } from 'class-validator';
 import { Type } from 'class-transformer';
 import { RequerimentoTipo } from '@prisma/client';
 
@@ -19,6 +19,10 @@ export class CotacaoItemDto {
   @IsNumber()
   @Min(0)
   desconto?: number;
+
+  @IsOptional()
+  @IsIn(['valor', 'porcentagem'])
+  descontoTipo?: 'valor' | 'porcentagem';
 
   @IsOptional()
   @IsString()

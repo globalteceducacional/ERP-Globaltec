@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { toast, formatApiError } from '../utils/toast';
-import { compressImage } from '../utils/stockHelpers';
+import { compressImage, calculateCotacaoTotal, getCotacaoDescontoPerUnit } from '../utils/stockHelpers';
 import { FORMAS_PAGAMENTO, INITIAL_COTACAO } from '../constants/stock';
 import type { Cotacao, Supplier, Projeto } from '../types/stock';
 import { DataTable, DataTableColumn } from '../components/DataTable';
@@ -285,7 +285,7 @@ export default function Communications() {
   }
 
   function calculateTotal(cotacao: Cotacao, quantidade: number): number {
-    return (cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)) * quantidade;
+    return calculateCotacaoTotal(cotacao, quantidade);
   }
 
   function getSupplierName(fornecedorId?: number): string {
@@ -495,10 +495,9 @@ export default function Communications() {
                               <div>
                                 <span className="text-white/60">Desconto:</span>
                                 <p className="text-white">
-                                  {Number(cotacao.desconto || 0).toLocaleString('pt-BR', {
-                                    style: 'currency',
-                                    currency: 'BRL',
-                                  })}
+                                  {(cotacao.descontoTipo || 'valor') === 'porcentagem'
+                                    ? `${cotacao.desconto ?? 0}%`
+                                    : Number(cotacao.desconto || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                                 </p>
                               </div>
                               {cotacao.link && (
@@ -529,13 +528,7 @@ export default function Communications() {
                                 Total ({compra.quantidade} unidades):{' '}
                               </span>
                               <span className="font-semibold text-primary">
-                                {(
-                                  (Number(cotacao.valorUnitario || 0) +
-                                    Number(cotacao.frete || 0) +
-                                    Number(cotacao.impostos || 0) -
-                                    Number(cotacao.desconto || 0)) *
-                                    compra.quantidade
-                                ).toLocaleString('pt-BR', {
+                                {calculateTotal(cotacao, compra.quantidade).toLocaleString('pt-BR', {
                                   style: 'currency',
                                   currency: 'BRL',
                                 })}
@@ -899,15 +892,37 @@ export default function Communications() {
                           />
                         </label>
                         <label className="text-xs text-white/70">
-                          Desconto (R$)
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={cotacao.desconto || 0}
-                            onChange={(e) => updateCotacaoItem(index, cotacaoIndex, 'desconto', Number(e.target.value))}
-                            className="mt-1 w-full bg-neutral/80 border border-white/10 rounded-md px-2 py-1.5 text-white text-sm"
-                          />
+                          Desconto
+                          <div className="flex items-center gap-2 flex-wrap mt-1">
+                            <label className="flex items-center gap-1 text-white/80 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`descontoTipo-${index}-${cotacaoIndex}`}
+                                checked={(cotacao.descontoTipo || 'valor') === 'valor'}
+                                onChange={() => updateCotacaoItem(index, cotacaoIndex, 'descontoTipo', 'valor')}
+                                className="rounded"
+                              />
+                              R$
+                            </label>
+                            <label className="flex items-center gap-1 text-white/80 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`descontoTipo-${index}-${cotacaoIndex}`}
+                                checked={(cotacao.descontoTipo || 'valor') === 'porcentagem'}
+                                onChange={() => updateCotacaoItem(index, cotacaoIndex, 'descontoTipo', 'porcentagem')}
+                                className="rounded"
+                              />
+                              %
+                            </label>
+                            <input
+                              type="number"
+                              step={(cotacao.descontoTipo || 'valor') === 'porcentagem' ? 0.1 : 0.01}
+                              min="0"
+                              value={cotacao.desconto ?? ''}
+                              onChange={(e) => updateCotacaoItem(index, cotacaoIndex, 'desconto', Number(e.target.value) || 0)}
+                              className="w-20 bg-neutral/80 border border-white/10 rounded-md px-2 py-1.5 text-white text-sm"
+                            />
+                          </div>
                         </label>
                         <label className="text-xs text-white/70">
                           Link
@@ -958,7 +973,7 @@ export default function Communications() {
                         <div>
                           Total por unidade:{' '}
                           <span className="font-semibold text-white">
-                            {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)).toLocaleString('pt-BR', {
+                            {((cotacao.valorUnitario + cotacao.frete + cotacao.impostos - getCotacaoDescontoPerUnit(cotacao))).toLocaleString('pt-BR', {
                               style: 'currency',
                               currency: 'BRL',
                             })}

@@ -6,6 +6,7 @@ import { UpdateStockItemDto } from './dto/update-stock-item.dto';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
+import { BatchPurchaseToAcaminhoDto } from './dto/batch-purchase-to-acaminho.dto';
 import { CompraStatus, EstoqueStatus, NotificacaoTipo, RequerimentoTipo } from '@prisma/client';
 
 @Injectable()
@@ -386,6 +387,89 @@ export class StockService {
     }
 
     return compra;
+  }
+
+  /** Marca várias compras (PENDENTE) como COMPRADO_ACAMINHO em lote, com dados comuns (NF, forma pagamento, desconto, etc.). */
+  async batchPurchaseToAcaminho(dto: BatchPurchaseToAcaminhoDto) {
+    const compras = await this.prisma.compra.findMany({
+      where: { id: { in: dto.purchaseIds } },
+      include: { solicitadoPor: true, projeto: true },
+    });
+
+    if (compras.length !== dto.purchaseIds.length) {
+      throw new BadRequestException('Um ou mais IDs de compra não foram encontrados.');
+    }
+
+    const naoPendentes = compras.filter((c) => c.status !== CompraStatus.PENDENTE);
+    if (naoPendentes.length > 0) {
+      throw new BadRequestException(
+        `Apenas compras com status Pendente podem ser processadas em lote. Itens inválidos: ${naoPendentes.map((c) => c.id).join(', ')}.`
+      );
+    }
+
+    let observacaoLote = dto.observacao?.trim() || '';
+    if (dto.descontoTipo && dto.descontoValor != null && dto.descontoValor > 0) {
+      const desc =
+        dto.descontoTipo === 'porcentagem'
+          ? `${dto.descontoValor}%`
+          : `R$ ${dto.descontoValor.toFixed(2)}`;
+      observacaoLote = observacaoLote
+        ? `${observacaoLote} | Compra em lote. Desconto: ${desc}.`
+        : `Compra em lote. Desconto: ${desc}.`;
+    } else if (compras.length > 1) {
+      observacaoLote = observacaoLote
+        ? `${observacaoLote} | Compra em lote (${compras.length} itens).`
+        : `Compra em lote (${compras.length} itens).`;
+    }
+
+    const updateData: any = {
+      status: CompraStatus.COMPRADO_ACAMINHO,
+      dataConfirmacao: new Date(),
+    };
+    if (dto.formaPagamento !== undefined) updateData.formaPagamento = dto.formaPagamento || null;
+    if (dto.nfUrl !== undefined) updateData.nfUrl = dto.nfUrl || null;
+    if (dto.comprovantePagamentoUrl !== undefined)
+      updateData.comprovantePagamentoUrl = dto.comprovantePagamentoUrl || null;
+    if (dto.dataCompra) updateData.dataCompra = new Date(dto.dataCompra);
+    if (dto.previsaoEntrega !== undefined)
+      updateData.previsaoEntrega = dto.previsaoEntrega ? new Date(dto.previsaoEntrega) : null;
+    if (dto.statusEntrega !== undefined) updateData.statusEntrega = dto.statusEntrega;
+    if (dto.enderecoEntrega !== undefined) updateData.enderecoEntrega = dto.enderecoEntrega || null;
+    if (observacaoLote) {
+      updateData.observacao = observacaoLote;
+    }
+
+    const updated = await this.prisma.compra.updateMany({
+      where: { id: { in: dto.purchaseIds } },
+      data: updateData,
+    });
+
+    const comprasAtualizadas = await this.prisma.compra.findMany({
+      where: { id: { in: dto.purchaseIds } },
+      include: { solicitadoPor: true, projeto: true },
+    });
+
+    for (const compra of comprasAtualizadas) {
+      if (compra.solicitadoPorId) {
+        try {
+          const msg = compra.previsaoEntrega
+            ? `Sua compra "${compra.item}" está a caminho. Previsão de entrega: ${new Date(compra.previsaoEntrega).toLocaleDateString('pt-BR')}.`
+            : `Sua compra "${compra.item}" está a caminho.`;
+          await this.notificationsService.create({
+            usuarioId: compra.solicitadoPorId,
+            titulo: 'Compra a Caminho',
+            mensagem: msg,
+            tipo: NotificacaoTipo.INFO,
+          });
+        } catch (err) {
+          this.logger.warn(
+            `Falha ao notificar compra em lote (compra ${compra.id}, usuário ${compra.solicitadoPorId}): ${err}`
+          );
+        }
+      }
+    }
+
+    return { count: updated.count, compras: comprasAtualizadas };
   }
 
   async updatePurchase(id: number, data: UpdatePurchaseDto) {

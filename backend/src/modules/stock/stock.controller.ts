@@ -22,6 +22,7 @@ import { UpdateStockItemDto } from './dto/update-stock-item.dto';
 import { CreatePurchaseDto } from './dto/create-purchase.dto';
 import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
+import { BatchPurchaseToAcaminhoDto } from './dto/batch-purchase-to-acaminho.dto';
 import { ApprovePurchaseDto } from './dto/approve-purchase.dto';
 import { RejectPurchaseDto } from './dto/reject-purchase.dto';
 import { CreateAlocacaoDto } from './dto/create-alocacao.dto';
@@ -95,6 +96,12 @@ export class StockController {
     @Body() body: UpdatePurchaseStatusDto,
   ) {
     return this.stockService.updatePurchaseStatus(id, body);
+  }
+
+  @Patch('purchases/batch-acaminho')
+  @Permissions('compras:aprovar')
+  batchPurchaseToAcaminho(@Body() body: BatchPurchaseToAcaminhoDto) {
+    return this.stockService.batchPurchaseToAcaminho(body);
   }
 
   @Patch('purchases/:id')

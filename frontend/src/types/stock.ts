@@ -5,6 +5,8 @@ export interface Cotacao {
   frete: number;
   impostos: number;
   desconto?: number;
+  /** 'valor' = desconto em R$; 'porcentagem' = desconto em % sobre (valorUnitario+frete+impostos) */
+  descontoTipo?: 'valor' | 'porcentagem';
   link?: string;
   fornecedorId?: number;
   formaPagamento?: string;

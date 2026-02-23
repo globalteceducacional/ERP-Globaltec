@@ -39,6 +39,8 @@ import {
   removeCotacao as removeCotacaoHelper,
   getSupplierName as getSupplierNameHelper,
   getCategoryName as getCategoryNameHelper,
+  calculateCotacaoTotal as calculateCotacaoTotalHelper,
+  getCotacaoDescontoPerUnit,
 } from '../utils/stockHelpers';
 
 // Hooks importados
@@ -88,6 +90,20 @@ export default function Stock() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedPurchases, setSelectedPurchases] = useState<number[]>([]);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showBatchAcaminhoModal, setShowBatchAcaminhoModal] = useState(false);
+  const [batchAcaminhoSubmitting, setBatchAcaminhoSubmitting] = useState(false);
+  const [batchAcaminhoForm, setBatchAcaminhoForm] = useState({
+    formaPagamento: '',
+    nfUrl: '',
+    comprovantePagamentoUrl: '',
+    dataCompra: '',
+    previsaoEntrega: '',
+    statusEntrega: 'NAO_ENTREGUE' as string,
+    enderecoEntrega: '',
+    observacao: '',
+    descontoTipo: 'valor' as 'valor' | 'porcentagem',
+    descontoValor: 0,
+  });
   const [activeTab, setActiveTab] = useState<StockTab>('estoque');
   
   // Hook para filtros de compras
@@ -121,7 +137,7 @@ export default function Stock() {
   const [rejectReason, setRejectReason] = useState('');
   const [showViewRequestModal, setShowViewRequestModal] = useState(false);
   const [purchaseToView, setPurchaseToView] = useState<Purchase | null>(null);
-  const [approveCotacoes, setApproveCotacoes] = useState<Cotacao[]>([{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }]);
+  const [approveCotacoes, setApproveCotacoes] = useState<Cotacao[]>([{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }]);
   const [selectedCotacaoIndex, setSelectedCotacaoIndex] = useState<number>(0);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
   const [showAlocacaoModal, setShowAlocacaoModal] = useState(false);
@@ -157,7 +173,7 @@ export default function Stock() {
     imagemUrl: '',
     nfUrl: '',
     comprovantePagamentoUrl: '',
-    cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
+    cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }],
     projetoId: 0,
     selectedCotacaoIndex: 0,
     dataCompra: '',
@@ -271,12 +287,10 @@ export default function Stock() {
         const cotacoesA = a.cotacoesJson && Array.isArray(a.cotacoesJson) ? a.cotacoesJson : [];
         const cotacoesB = b.cotacoesJson && Array.isArray(b.cotacoesJson) ? b.cotacoesJson : [];
         const totalA = cotacoesA.reduce((sum: number, cot: any) => {
-          const total = (cot.valorUnitario || 0) + (cot.frete || 0) + (cot.impostos || 0) - (cot.desconto || 0);
-          return sum + (total * (a.quantidade || 1));
+          return sum + calculateCotacaoTotalHelper({ ...cot, descontoTipo: cot.descontoTipo || 'valor' }, a.quantidade || 1);
         }, 0);
         const totalB = cotacoesB.reduce((sum: number, cot: any) => {
-          const total = (cot.valorUnitario || 0) + (cot.frete || 0) + (cot.impostos || 0) - (cot.desconto || 0);
-          return sum + (total * (b.quantidade || 1));
+          return sum + calculateCotacaoTotalHelper({ ...cot, descontoTipo: cot.descontoTipo || 'valor' }, b.quantidade || 1);
         }, 0);
         if (totalA < totalB) return sortDirection === 'asc' ? -1 : 1;
         if (totalA > totalB) return sortDirection === 'asc' ? 1 : -1;
@@ -393,7 +407,7 @@ export default function Stock() {
   }
 
   function calculateTotal(cotacao: Cotacao, quantidade: number): number {
-    return (cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)) * quantidade;
+    return calculateCotacaoTotalHelper(cotacao, quantidade);
   }
 
   // Usar helpers importados
@@ -420,6 +434,34 @@ export default function Stock() {
   function getSelectedPurchasesData() {
     return purchases.filter((p) => selectedPurchases.includes(p.id));
   }
+
+  /** Total de uma compra usando melhor cotação ou valorUnitário * quantidade */
+  function getPurchaseTotal(p: Purchase): number {
+    const cotacoes = p.cotacoesJson && Array.isArray(p.cotacoesJson) ? p.cotacoesJson : [];
+    const qty = p.quantidade || 1;
+    if (cotacoes.length > 0) {
+      const best = cotacoes.reduce((best: any, c: any) => {
+        const totalC = calculateCotacaoTotalHelper(
+          { ...c, descontoTipo: c.descontoTipo || 'valor' },
+          qty
+        );
+        const totalBest = calculateCotacaoTotalHelper(
+          { ...best, descontoTipo: best.descontoTipo || 'valor' },
+          qty
+        );
+        return totalC < totalBest ? c : best;
+      });
+      return calculateCotacaoTotalHelper(
+        { ...best, descontoTipo: best.descontoTipo || 'valor' },
+        qty
+      );
+    }
+    return (p.valorUnitario || 0) * qty;
+  }
+
+  const selectedPurchasesPendente = useMemo(() => {
+    return getSelectedPurchasesData().filter((p) => p.status === 'PENDENTE');
+  }, [purchases, selectedPurchases]);
 
   function calculateReportTotals() {
     const selected = getSelectedPurchasesData();
@@ -1094,7 +1136,7 @@ export default function Stock() {
         return;
       }
 
-      const totalPorUnidade = selectedCotacao.valorUnitario + selectedCotacao.frete + selectedCotacao.impostos - (selectedCotacao.desconto || 0);
+      const totalPorUnidade = selectedCotacao.valorUnitario + selectedCotacao.frete + selectedCotacao.impostos - getCotacaoDescontoPerUnit(selectedCotacao);
 
       // Preparar payload removendo campos undefined/vazios
       const payload: any = {
@@ -1163,6 +1205,7 @@ export default function Stock() {
               };
               if (desconto > 0) {
                 cotacao.desconto = desconto;
+                cotacao.descontoTipo = cot.descontoTipo || 'valor';
               }
               if (cot.link && cot.link.trim().length > 0) {
                 cotacao.link = cot.link.trim();
@@ -1202,7 +1245,7 @@ export default function Stock() {
         imagemUrl: '',
         nfUrl: '',
         comprovantePagamentoUrl: '',
-        cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
+        cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }],
         projetoId: 0,
         selectedCotacaoIndex: 0,
         dataCompra: '',
@@ -1297,6 +1340,54 @@ export default function Stock() {
     }
   }
 
+  async function handleBatchAcaminhoSubmit() {
+    if (selectedPurchasesPendente.length === 0) return;
+    setError(null);
+    setBatchAcaminhoSubmitting(true);
+    try {
+      const payload: any = {
+        purchaseIds: selectedPurchasesPendente.map((p) => p.id),
+        formaPagamento: batchAcaminhoForm.formaPagamento?.trim() || undefined,
+        dataCompra: batchAcaminhoForm.dataCompra || undefined,
+        previsaoEntrega: batchAcaminhoForm.previsaoEntrega || undefined,
+        statusEntrega: batchAcaminhoForm.statusEntrega || undefined,
+        enderecoEntrega: batchAcaminhoForm.enderecoEntrega?.trim() || undefined,
+        observacao: batchAcaminhoForm.observacao?.trim() || undefined,
+        descontoTipo: batchAcaminhoForm.descontoTipo,
+        descontoValor: batchAcaminhoForm.descontoValor ?? 0,
+      };
+      if (batchAcaminhoForm.nfUrl?.trim()) {
+        payload.nfUrl = await processImageUrl(batchAcaminhoForm.nfUrl.trim());
+      }
+      if (batchAcaminhoForm.comprovantePagamentoUrl?.trim()) {
+        payload.comprovantePagamentoUrl = await processImageUrl(batchAcaminhoForm.comprovantePagamentoUrl.trim());
+      }
+      await api.patch('/stock/purchases/batch-acaminho', payload);
+      load();
+      setShowBatchAcaminhoModal(false);
+      setSelectedPurchases((prev) => prev.filter((id) => !selectedPurchasesPendente.some((p) => p.id === id)));
+      setBatchAcaminhoForm({
+        formaPagamento: '',
+        nfUrl: '',
+        comprovantePagamentoUrl: '',
+        dataCompra: '',
+        previsaoEntrega: '',
+        statusEntrega: 'NAO_ENTREGUE',
+        enderecoEntrega: '',
+        observacao: '',
+        descontoTipo: 'valor',
+        descontoValor: 0,
+      });
+      toast.success(`Compra em lote concluída: ${selectedPurchasesPendente.length} item(ns) enviado(s) para A Caminho.`);
+    } catch (err: any) {
+      const errorMessage = formatApiError(err);
+      setError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setBatchAcaminhoSubmitting(false);
+    }
+  }
+
   async function handleUpdatePurchase(event: FormEvent) {
     event.preventDefault();
     if (!editingPurchase) return;
@@ -1323,11 +1414,7 @@ export default function Stock() {
       if (purchaseForm.cotacoes.length > 0) {
         const selectedCotacao = purchaseForm.cotacoes[purchaseForm.selectedCotacaoIndex ?? 0];
         if (selectedCotacao) {
-          const valorUnitario = Number(selectedCotacao.valorUnitario) || 0;
-          const frete = Number(selectedCotacao.frete) || 0;
-          const impostos = Number(selectedCotacao.impostos) || 0;
-          const desconto = Number(selectedCotacao.desconto) || 0;
-          const totalPorUnidade = valorUnitario + frete + impostos - desconto;
+          const totalPorUnidade = selectedCotacao.valorUnitario + selectedCotacao.frete + selectedCotacao.impostos - getCotacaoDescontoPerUnit(selectedCotacao);
           
           // Só atualizar valorUnitario se o total for maior que zero
           // Caso contrário, manter o valor existente
@@ -1393,6 +1480,7 @@ export default function Stock() {
               };
               if (desconto > 0) {
                 cotacao.desconto = desconto;
+                cotacao.descontoTipo = cot.descontoTipo || 'valor';
               }
               if (cot.link && cot.link.trim().length > 0) {
                 cotacao.link = cot.link.trim();
@@ -1433,7 +1521,7 @@ export default function Stock() {
         imagemUrl: '',
         nfUrl: '',
         comprovantePagamentoUrl: '',
-        cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
+        cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }],
         projetoId: 0,
         selectedCotacaoIndex: 0,
         dataCompra: '',
@@ -1774,6 +1862,14 @@ export default function Stock() {
                   Gerar Relatório ({selectedPurchases.length})
                 </button>
               )}
+              {selectedPurchasesPendente.length > 0 && (
+                <button
+                  onClick={() => setShowBatchAcaminhoModal(true)}
+                  className={btn.primary}
+                >
+                  Compra em lote ({selectedPurchasesPendente.length})
+                </button>
+              )}
           <button
             onClick={() => setShowPurchaseModal(true)}
             className={btn.primary}
@@ -1865,12 +1961,12 @@ export default function Stock() {
             finalSortedPurchases.map((purchase) => {
               const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
               const melhorCotacao = cotacoes.length > 0 ? cotacoes.reduce((best: any, c: any) => {
-                const totalC = ((c.valorUnitario || 0) + (c.frete || 0) + (c.impostos || 0) - (c.desconto || 0)) * (purchase.quantidade || 1);
-                const totalBest = ((best.valorUnitario || 0) + (best.frete || 0) + (best.impostos || 0) - (best.desconto || 0)) * (purchase.quantidade || 1);
+                const totalC = calculateCotacaoTotalHelper({ ...c, descontoTipo: c.descontoTipo || 'valor' }, purchase.quantidade || 1);
+                const totalBest = calculateCotacaoTotalHelper({ ...best, descontoTipo: best.descontoTipo || 'valor' }, purchase.quantidade || 1);
                 return totalC < totalBest ? c : best;
               }) : null;
               const valorMelhor = melhorCotacao
-                ? (((melhorCotacao.valorUnitario || 0) + (melhorCotacao.frete || 0) + (melhorCotacao.impostos || 0) - (melhorCotacao.desconto || 0)) * (purchase.quantidade || 1))
+                ? calculateCotacaoTotalHelper({ ...melhorCotacao, descontoTipo: melhorCotacao.descontoTipo || 'valor' }, purchase.quantidade || 1)
                 : null;
               return (
                 <div
@@ -1954,8 +2050,8 @@ export default function Stock() {
                           quantidade: purchase.quantidade || 1, imagemUrl: purchase.imagemUrl || '',
                           nfUrl: purchase.nfUrl || '', comprovantePagamentoUrl: purchase.comprovantePagamentoUrl || '',
                           cotacoes: purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson)
-                            ? purchase.cotacoesJson.map((cot: any) => ({ valorUnitario: cot.valorUnitario || 0, frete: cot.frete || 0, impostos: cot.impostos || 0, desconto: cot.desconto || 0, link: cot.link || '', fornecedorId: cot.fornecedorId, formaPagamento: cot.formaPagamento || '' }))
-                            : [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
+                            ? purchase.cotacoesJson.map((cot: any) => ({ valorUnitario: cot.valorUnitario || 0, frete: cot.frete || 0, impostos: cot.impostos || 0, desconto: cot.desconto || 0, descontoTipo: cot.descontoTipo || 'valor', link: cot.link || '', fornecedorId: cot.fornecedorId, formaPagamento: cot.formaPagamento || '' }))
+                            : [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }],
                           projetoId: purchase.projetoId, selectedCotacaoIndex: 0,
                           dataCompra: purchase.dataCompra ? new Date(purchase.dataCompra).toISOString().split('T')[0] : '',
                           categoriaId: (purchase as any).categoriaId || undefined, observacao: purchase.observacao || '',
@@ -2056,7 +2152,7 @@ export default function Stock() {
                       {cotacoes.length > 0 ? (
                         <div className="space-y-1">
                           {cotacoes.map((cotacao: Cotacao, index: number) => {
-                            const total = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0);
+                            const total = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - getCotacaoDescontoPerUnit(cotacao);
                             const totalComQuantidade = total * (purchase.quantidade || 1);
                             return (
                               <div key={index} className="text-sm">
@@ -2214,11 +2310,12 @@ export default function Stock() {
                                     frete: cot.frete || 0, 
                                     impostos: cot.impostos || 0, 
                                     desconto: cot.desconto || 0,
+                                    descontoTipo: cot.descontoTipo || 'valor',
                                     link: cot.link || '', 
                                     fornecedorId: cot.fornecedorId,
                                     formaPagamento: cot.formaPagamento || ''
                                   }))
-                                : [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
+                                : [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }],
                               projetoId: purchase.projetoId,
                               selectedCotacaoIndex: 0,
                               dataCompra: purchase.dataCompra ? new Date(purchase.dataCompra).toISOString().split('T')[0] : '',
@@ -3337,17 +3434,39 @@ export default function Stock() {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-white/90 mb-2">Desconto (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={cotacao.desconto || 0}
-                            onChange={(e) =>
-                              updateCotacao(purchaseForm, setPurchaseForm, index, 'desconto', Number(e.target.value))
-                            }
-                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          />
+                          <label className="block text-xs font-medium text-white/90 mb-2">Desconto</label>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <label className="flex items-center gap-1.5 text-sm text-white/90 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`descontoTipo-${index}`}
+                                checked={(cotacao.descontoTipo || 'valor') === 'valor'}
+                                onChange={() => updateCotacao(purchaseForm, setPurchaseForm, index, 'descontoTipo', 'valor')}
+                                className="rounded"
+                              />
+                              R$
+                            </label>
+                            <label className="flex items-center gap-1.5 text-sm text-white/90 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`descontoTipo-${index}`}
+                                checked={(cotacao.descontoTipo || 'valor') === 'porcentagem'}
+                                onChange={() => updateCotacao(purchaseForm, setPurchaseForm, index, 'descontoTipo', 'porcentagem')}
+                                className="rounded"
+                              />
+                              %
+                            </label>
+                            <input
+                              type="number"
+                              step={(cotacao.descontoTipo || 'valor') === 'porcentagem' ? 0.1 : 0.01}
+                              min="0"
+                              value={cotacao.desconto ?? ''}
+                              onChange={(e) =>
+                                updateCotacao(purchaseForm, setPurchaseForm, index, 'desconto', Number(e.target.value) || 0)
+                              }
+                              className="w-24 bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                          </div>
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-white/90 mb-2">Link</label>
@@ -3441,14 +3560,14 @@ export default function Stock() {
                               rel="noopener noreferrer"
                               className="font-semibold text-white hover:text-primary underline cursor-pointer"
                             >
-                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)).toLocaleString('pt-BR', {
+                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - getCotacaoDescontoPerUnit(cotacao)).toLocaleString('pt-BR', {
                                 style: 'currency',
                                 currency: 'BRL',
                               })}
                             </a>
                           ) : (
                             <span className="font-semibold text-white">
-                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)).toLocaleString('pt-BR', {
+                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - getCotacaoDescontoPerUnit(cotacao)).toLocaleString('pt-BR', {
                                 style: 'currency',
                                 currency: 'BRL',
                               })}
@@ -3532,7 +3651,7 @@ export default function Stock() {
                     imagemUrl: '',
                     nfUrl: '',
                     comprovantePagamentoUrl: '',
-                    cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
+                    cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }],
                     projetoId: 0,
                     selectedCotacaoIndex: 0,
                     dataCompra: '',
@@ -3815,17 +3934,39 @@ export default function Stock() {
                           />
                         </div>
                         <div>
-                          <label className="block text-xs font-medium text-white/90 mb-2">Desconto (R$)</label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0"
-                            value={cotacao.desconto || 0}
-                            onChange={(e) =>
-                              updateCotacao(purchaseForm, setPurchaseForm, index, 'desconto', Number(e.target.value))
-                            }
-                            className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                          />
+                          <label className="block text-xs font-medium text-white/90 mb-2">Desconto</label>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <label className="flex items-center gap-1.5 text-sm text-white/90 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`descontoTipo-${index}`}
+                                checked={(cotacao.descontoTipo || 'valor') === 'valor'}
+                                onChange={() => updateCotacao(purchaseForm, setPurchaseForm, index, 'descontoTipo', 'valor')}
+                                className="rounded"
+                              />
+                              R$
+                            </label>
+                            <label className="flex items-center gap-1.5 text-sm text-white/90 cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`descontoTipo-${index}`}
+                                checked={(cotacao.descontoTipo || 'valor') === 'porcentagem'}
+                                onChange={() => updateCotacao(purchaseForm, setPurchaseForm, index, 'descontoTipo', 'porcentagem')}
+                                className="rounded"
+                              />
+                              %
+                            </label>
+                            <input
+                              type="number"
+                              step={(cotacao.descontoTipo || 'valor') === 'porcentagem' ? 0.1 : 0.01}
+                              min="0"
+                              value={cotacao.desconto ?? ''}
+                              onChange={(e) =>
+                                updateCotacao(purchaseForm, setPurchaseForm, index, 'desconto', Number(e.target.value) || 0)
+                              }
+                              className="w-24 bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                            />
+                          </div>
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-white/90 mb-2">Link</label>
@@ -3919,14 +4060,14 @@ export default function Stock() {
                               rel="noopener noreferrer"
                               className="font-semibold text-white hover:text-primary underline cursor-pointer"
                             >
-                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)).toLocaleString('pt-BR', {
+                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - getCotacaoDescontoPerUnit(cotacao)).toLocaleString('pt-BR', {
                                 style: 'currency',
                                 currency: 'BRL',
                               })}
                             </a>
                           ) : (
                             <span className="font-semibold text-white">
-                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0)).toLocaleString('pt-BR', {
+                              {(cotacao.valorUnitario + cotacao.frete + cotacao.impostos - getCotacaoDescontoPerUnit(cotacao)).toLocaleString('pt-BR', {
                                 style: 'currency',
                                 currency: 'BRL',
                               })}
@@ -4003,7 +4144,7 @@ export default function Stock() {
                       imagemUrl: '',
                       nfUrl: '',
                       comprovantePagamentoUrl: '',
-                      cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
+                      cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }],
                       projetoId: 0,
                       selectedCotacaoIndex: 0,
                       dataCompra: '',
@@ -4274,6 +4415,296 @@ export default function Stock() {
                   disabled={submitting || !newStatus}
                 >
                   {submitting ? 'Atualizando...' : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Compra em lote (Pendente → A Caminho) */}
+      {showBatchAcaminhoModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/20 px-6 py-4 flex items-center justify-between z-10">
+              <h2 className="text-xl font-bold text-white">Compra em lote</h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowBatchAcaminhoModal(false);
+                  setError(null);
+                  setBatchAcaminhoForm({
+                    formaPagamento: '',
+                    nfUrl: '',
+                    comprovantePagamentoUrl: '',
+                    dataCompra: '',
+                    previsaoEntrega: '',
+                    statusEntrega: 'NAO_ENTREGUE',
+                    enderecoEntrega: '',
+                    observacao: '',
+                    descontoTipo: 'valor',
+                    descontoValor: 0,
+                  });
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl leading-none p-1"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              {/* Resumo do lote */}
+              <div className="rounded-lg border border-white/20 bg-white/5 overflow-hidden">
+                <div className="px-4 py-3 border-b border-white/10 bg-white/5">
+                  <h3 className="text-sm font-semibold text-white">Resumo do lote</h3>
+                  <p className="text-xs text-white/70 mt-0.5">
+                    {selectedPurchasesPendente.length} compra(s) pendente(s) → status <strong>A Caminho</strong>
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-white/80 border-b border-white/20 bg-white/10">
+                        <th className="px-4 py-2.5 font-medium">Item</th>
+                        <th className="px-4 py-2.5 font-medium w-20 text-center">Qtd</th>
+                        <th className="px-4 py-2.5 font-medium text-right">Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedPurchasesPendente.map((p, idx) => (
+                        <tr
+                          key={p.id}
+                          className={`border-b border-white/10 ${idx % 2 === 0 ? 'bg-white/[0.06]' : 'bg-white/[0.02]'}`}
+                        >
+                          <td className="px-4 py-2.5 text-white">{p.item || p.descricao || 'Item'}</td>
+                          <td className="px-4 py-2.5 text-center text-white">{p.quantidade || 1}</td>
+                          <td className="px-4 py-2.5 text-right font-semibold text-white">
+                            R$ {getPurchaseTotal(p).toFixed(2).replace('.', ',')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {(() => {
+                  const totalBruto = selectedPurchasesPendente.reduce((s, p) => s + getPurchaseTotal(p), 0);
+                  const desc = batchAcaminhoForm.descontoTipo === 'porcentagem'
+                    ? totalBruto * (batchAcaminhoForm.descontoValor || 0) / 100
+                    : (batchAcaminhoForm.descontoValor || 0);
+                  const totalFinal = Math.max(0, totalBruto - desc);
+                  return (
+                    <div className="px-4 py-4 border-t border-white/10 bg-white/5 space-y-3">
+                      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                        <div>
+                          <span className="text-xs text-white/60">Total bruto</span>
+                          <p className="text-base font-semibold text-white">R$ {totalBruto.toFixed(2).replace('.', ',')}</p>
+                        </div>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <span className="text-xs text-white/60">Desconto</span>
+                          <label className="flex items-center gap-1.5 text-sm text-white/90 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="batchDescontoTipo"
+                              checked={batchAcaminhoForm.descontoTipo === 'valor'}
+                              onChange={() => setBatchAcaminhoForm((f) => ({ ...f, descontoTipo: 'valor' }))}
+                              className="rounded"
+                            />
+                            R$
+                          </label>
+                          <label className="flex items-center gap-1.5 text-sm text-white/90 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="batchDescontoTipo"
+                              checked={batchAcaminhoForm.descontoTipo === 'porcentagem'}
+                              onChange={() => setBatchAcaminhoForm((f) => ({ ...f, descontoTipo: 'porcentagem' }))}
+                              className="rounded"
+                            />
+                            %
+                          </label>
+                          <input
+                            type="number"
+                            min={0}
+                            step={batchAcaminhoForm.descontoTipo === 'porcentagem' ? 0.1 : 0.01}
+                            value={batchAcaminhoForm.descontoValor || ''}
+                            onChange={(e) => setBatchAcaminhoForm((f) => ({ ...f, descontoValor: Number(e.target.value) || 0 }))}
+                            className="w-28 bg-white/10 border border-white/30 rounded-md px-3 py-1.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                          />
+                        </div>
+                        <div className="ml-auto">
+                          <span className="text-xs text-white/60 block">Total após desconto</span>
+                          <p className="text-xl font-bold text-primary">R$ {totalFinal.toFixed(2).replace('.', ',')}</p>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Dados da compra */}
+              <div>
+                <h3 className="text-sm font-semibold text-white mb-3 pb-2 border-b border-white/10">Dados da compra</h3>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-white/90 mb-1.5">Forma de pagamento</label>
+                    <select
+                      value={batchAcaminhoForm.formaPagamento}
+                      onChange={(e) => setBatchAcaminhoForm((f) => ({ ...f, formaPagamento: e.target.value }))}
+                      className="w-full bg-neutral border border-white/25 rounded-md px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary [&>option]:bg-neutral [&>option]:text-white"
+                    >
+                      <option value="">Selecione</option>
+                      {formasPagamento.map((fp) => (
+                        <option key={fp} value={fp}>{fp}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-white/90 mb-1.5">NF (imagem ou URL)</label>
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => setBatchAcaminhoForm((f) => ({ ...f, nfUrl: reader.result as string }));
+                          reader.readAsDataURL(file);
+                        }}
+                        className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white/90 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:bg-primary file:text-white"
+                      />
+                      <input
+                        type="text"
+                        value={batchAcaminhoForm.nfUrl.startsWith('data:') ? '' : batchAcaminhoForm.nfUrl}
+                        onChange={(e) => setBatchAcaminhoForm((f) => ({ ...f, nfUrl: e.target.value }))}
+                        placeholder="Ou cole URL da NF"
+                        className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                      {batchAcaminhoForm.nfUrl && batchAcaminhoForm.nfUrl.startsWith('data:image/') && (
+                        <img src={batchAcaminhoForm.nfUrl} alt="Preview NF" className="w-28 h-28 object-cover rounded border border-white/20" />
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-white/90 mb-1.5">Comprovante de pagamento (opcional)</label>
+                    <div className="flex flex-col gap-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const reader = new FileReader();
+                          reader.onload = () => setBatchAcaminhoForm((f) => ({ ...f, comprovantePagamentoUrl: reader.result as string }));
+                          reader.readAsDataURL(file);
+                        }}
+                        className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white/90 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:bg-primary file:text-white"
+                      />
+                      <input
+                        type="text"
+                        value={batchAcaminhoForm.comprovantePagamentoUrl.startsWith('data:') ? '' : batchAcaminhoForm.comprovantePagamentoUrl}
+                        onChange={(e) => setBatchAcaminhoForm((f) => ({ ...f, comprovantePagamentoUrl: e.target.value }))}
+                        placeholder="Ou cole URL do comprovante"
+                        className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-white/90 mb-1.5">Data da compra</label>
+                      <input
+                        type="date"
+                        value={batchAcaminhoForm.dataCompra}
+                        onChange={(e) => setBatchAcaminhoForm((f) => ({ ...f, dataCompra: e.target.value }))}
+                        className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-white/90 mb-1.5">Previsão de entrega</label>
+                      <input
+                        type="date"
+                        value={batchAcaminhoForm.previsaoEntrega}
+                        onChange={(e) => setBatchAcaminhoForm((f) => ({ ...f, previsaoEntrega: e.target.value }))}
+                        className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-white/90 mb-1.5">Status de entrega</label>
+                    <select
+                      value={batchAcaminhoForm.statusEntrega}
+                      onChange={(e) => setBatchAcaminhoForm((f) => ({ ...f, statusEntrega: e.target.value }))}
+                      className="w-full bg-neutral border border-white/25 rounded-md px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary [&>option]:bg-neutral [&>option]:text-white"
+                    >
+                      {statusEntregaOptions.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-white/90 mb-1.5">Endereço de entrega</label>
+                    <input
+                      type="text"
+                      value={batchAcaminhoForm.enderecoEntrega}
+                      onChange={(e) => setBatchAcaminhoForm((f) => ({ ...f, enderecoEntrega: e.target.value }))}
+                      placeholder="Opcional"
+                      className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-white/90 mb-1.5">Observação</label>
+                    <textarea
+                      value={batchAcaminhoForm.observacao}
+                      onChange={(e) => setBatchAcaminhoForm((f) => ({ ...f, observacao: e.target.value }))}
+                      placeholder="Opcional"
+                      rows={2}
+                      className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-primary resize-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {error && (
+                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-3 py-2 rounded-md text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowBatchAcaminhoModal(false);
+                    setError(null);
+                    setBatchAcaminhoForm({
+                      formaPagamento: '',
+                      nfUrl: '',
+                      comprovantePagamentoUrl: '',
+                      dataCompra: '',
+                      previsaoEntrega: '',
+                      statusEntrega: 'NAO_ENTREGUE',
+                      enderecoEntrega: '',
+                      observacao: '',
+                      descontoTipo: 'valor',
+                      descontoValor: 0,
+                    });
+                  }}
+                  className="px-4 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold text-sm"
+                  disabled={batchAcaminhoSubmitting}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBatchAcaminhoSubmit}
+                  className="px-5 py-2.5 rounded-md bg-primary hover:opacity-90 text-white font-semibold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={batchAcaminhoSubmitting}
+                >
+                  {batchAcaminhoSubmitting ? 'Enviando...' : 'Confirmar compra em lote'}
                 </button>
               </div>
             </div>
@@ -4996,7 +5427,7 @@ export default function Stock() {
                                 
                                 cotacoes.forEach((cotacao, cotIdx) => {
                                   checkPageBreak(8);
-                                  const cotacaoTotal = cotacao.valorUnitario + cotacao.frete + cotacao.impostos - (cotacao.desconto || 0);
+                                  const cotacaoTotal = cotacao.valorUnitario + cotacao.frete + cotacao.impostos - getCotacaoDescontoPerUnit(cotacao);
                                   const cotacaoTotalComQuantidade = cotacaoTotal * (purchase.quantidade || 0);
                                   
                                   let cotacaoText = `     Cotação ${cotIdx + 1}:`;
@@ -5019,11 +5450,11 @@ export default function Stock() {
                                       currency: 'BRL',
                                     })}`;
                                   }
-                                  if (cotacao.desconto && cotacao.desconto > 0) {
-                                    cotacaoText += ` | Desconto: ${cotacao.desconto.toLocaleString('pt-BR', {
-                                      style: 'currency',
-                                      currency: 'BRL',
-                                    })}`;
+                                  if (cotacao.desconto != null && cotacao.desconto > 0) {
+                                    const tipo = cotacao.descontoTipo || 'valor';
+                                    cotacaoText += tipo === 'porcentagem'
+                                      ? ` | Desconto: ${cotacao.desconto}%`
+                                      : ` | Desconto: ${cotacao.desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`;
                                   }
                                   cotacaoText += ` | Total/unidade: ${cotacaoTotal.toLocaleString('pt-BR', {
                                     style: 'currency',
@@ -5138,7 +5569,7 @@ export default function Stock() {
                   setShowViewRequestModal(false);
                   setPurchaseToView(null);
                   setError(null);
-                  setApproveCotacoes([{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }]);
+                  setApproveCotacoes([{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }]);
                   setSelectedCotacaoIndex(0);
                 }}
                 className="text-white/50 hover:text-white transition-colors text-2xl"
@@ -5311,13 +5742,13 @@ export default function Stock() {
                           <div>
                             <span className="text-white/70">Total por unidade: </span>
                             <span className="text-white/90">
-                              {((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - getCotacaoDescontoPerUnit(cotacao)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </span>
                           </div>
                           <div className="col-span-2">
                             <span className="text-white/70 font-medium">Total ({purchaseToView.quantidade} unidades): </span>
                             <span className="text-primary font-semibold text-lg">
-                              {(((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0)) * purchaseToView.quantidade).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              {((((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - getCotacaoDescontoPerUnit(cotacao)) * purchaseToView.quantidade)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                             </span>
                           </div>
                           {cotacao.link && (
@@ -5418,18 +5849,48 @@ export default function Stock() {
                           </div>
                           <div>
                             <label className="block text-xs text-white/70 mb-1">Desconto</label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              min="0"
-                              value={cotacao.desconto || 0}
-                              onChange={(e) => {
-                                const newCotacoes = [...approveCotacoes];
-                                newCotacoes[index].desconto = parseFloat(e.target.value) || 0;
-                                setApproveCotacoes(newCotacoes);
-                              }}
-                              className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                            />
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <label className="flex items-center gap-1.5 text-xs text-white/80 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name={`approve-descontoTipo-${index}`}
+                                  checked={(cotacao.descontoTipo || 'valor') === 'valor'}
+                                  onChange={() => {
+                                    const newCotacoes = [...approveCotacoes];
+                                    newCotacoes[index] = { ...newCotacoes[index], descontoTipo: 'valor' };
+                                    setApproveCotacoes(newCotacoes);
+                                  }}
+                                  className="rounded"
+                                />
+                                R$
+                              </label>
+                              <label className="flex items-center gap-1.5 text-xs text-white/80 cursor-pointer">
+                                <input
+                                  type="radio"
+                                  name={`approve-descontoTipo-${index}`}
+                                  checked={(cotacao.descontoTipo || 'valor') === 'porcentagem'}
+                                  onChange={() => {
+                                    const newCotacoes = [...approveCotacoes];
+                                    newCotacoes[index] = { ...newCotacoes[index], descontoTipo: 'porcentagem' };
+                                    setApproveCotacoes(newCotacoes);
+                                  }}
+                                  className="rounded"
+                                />
+                                %
+                              </label>
+                              <input
+                                type="number"
+                                step={(cotacao.descontoTipo || 'valor') === 'porcentagem' ? 0.1 : 0.01}
+                                min="0"
+                                value={cotacao.desconto ?? ''}
+                                onChange={(e) => {
+                                  const newCotacoes = [...approveCotacoes];
+                                  newCotacoes[index].desconto = parseFloat(e.target.value) || 0;
+                                  setApproveCotacoes(newCotacoes);
+                                }}
+                                className="w-24 bg-white/10 border border-white/30 rounded-md px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                              />
+                            </div>
                           </div>
                           <div>
                             <label className="block text-xs text-white/70 mb-1">Link (opcional)</label>
@@ -5521,14 +5982,14 @@ export default function Stock() {
                         <div className="mt-2">
                           <span className="text-xs text-white/70">Total: </span>
                           <span className="text-primary font-semibold text-sm">
-                            {((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            {((cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - getCotacaoDescontoPerUnit(cotacao)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                           </span>
                         </div>
                       </div>
                     ))}
                     <button
                       type="button"
-                      onClick={() => setApproveCotacoes([...approveCotacoes, { valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }])}
+                      onClick={() => setApproveCotacoes([...approveCotacoes, { valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }])}
                       className="w-full py-2 px-4 bg-white/10 hover:bg-white/20 border border-white/30 rounded-md text-white text-sm transition-colors"
                     >
                       + Adicionar Outra Cotação
@@ -5606,7 +6067,7 @@ export default function Stock() {
                       setError(null);
                       setShowViewRequestModal(false);
                       setPurchaseToView(null);
-                      setApproveCotacoes([{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }]);
+                      setApproveCotacoes([{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }]);
                       setSelectedCotacaoIndex(0);
                       toast.success('Solicitação de compra aprovada com sucesso!');
                     } catch (err: any) {
@@ -5862,7 +6323,7 @@ export default function Stock() {
                   <label className="block text-sm font-medium text-white/60 mb-2">Cotações</label>
                   <div className="space-y-2">
                     {itemToView.cotacoesJson.map((cotacao: Cotacao, index: number) => {
-                      const total = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0);
+                      const total = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - getCotacaoDescontoPerUnit(cotacao);
                       const totalComQuantidade = total * (itemToView.quantidade || 1);
                       return (
                         <div key={index} className="bg-white/5 border border-white/10 rounded-lg p-3">
@@ -5879,7 +6340,13 @@ export default function Stock() {
                             <div>Valor Unitário: {cotacao.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
                             <div>Frete: {cotacao.frete.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
                             <div>Impostos: {cotacao.impostos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-                            {cotacao.desconto && <div>Desconto: {cotacao.desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>}
+                            {cotacao.desconto != null && cotacao.desconto > 0 && (
+                              <div>
+                                Desconto: {(cotacao.descontoTipo || 'valor') === 'porcentagem'
+                                  ? `${cotacao.desconto}%`
+                                  : cotacao.desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </div>
+                            )}
                             {cotacao.formaPagamento && <div>Forma de Pagamento: {cotacao.formaPagamento}</div>}
                             {cotacao.fornecedorId && (
                               <div>Fornecedor: {getSupplierName(cotacao.fornecedorId)}</div>
@@ -6088,7 +6555,7 @@ export default function Stock() {
                   <label className="block text-sm font-medium text-white/60 mb-2">Cotações</label>
                   <div className="space-y-2">
                     {purchaseToViewDetails.cotacoesJson.map((cotacao: Cotacao, index: number) => {
-                      const total = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - (cotacao.desconto || 0);
+                      const total = (cotacao.valorUnitario || 0) + (cotacao.frete || 0) + (cotacao.impostos || 0) - getCotacaoDescontoPerUnit(cotacao);
                       const totalComQuantidade = total * (purchaseToViewDetails.quantidade || 1);
                       return (
                         <div key={index} className="bg-white/5 border border-white/10 rounded-lg p-3">
@@ -6105,7 +6572,13 @@ export default function Stock() {
                             <div>Valor Unitário: {cotacao.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
                             <div>Frete: {cotacao.frete.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
                             <div>Impostos: {cotacao.impostos.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>
-                            {cotacao.desconto && <div>Desconto: {cotacao.desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</div>}
+                            {cotacao.desconto != null && cotacao.desconto > 0 && (
+                              <div>
+                                Desconto: {(cotacao.descontoTipo || 'valor') === 'porcentagem'
+                                  ? `${cotacao.desconto}%`
+                                  : cotacao.desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                              </div>
+                            )}
                             {cotacao.formaPagamento && <div>Forma de Pagamento: {cotacao.formaPagamento}</div>}
                             {cotacao.fornecedorId && (
                               <div>Fornecedor: {getSupplierName(cotacao.fornecedorId)}</div>

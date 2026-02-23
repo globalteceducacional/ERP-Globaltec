@@ -35,6 +35,7 @@ export const INITIAL_COTACAO = {
   frete: 0,
   impostos: 0,
   desconto: 0,
+  descontoTipo: 'valor' as const,
   link: '',
   fornecedorId: undefined,
   formaPagamento: '',
