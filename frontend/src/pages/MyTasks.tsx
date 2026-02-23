@@ -535,24 +535,26 @@ export default function MyTasks() {
 
               return (
                 <div key={projeto.id} className="bg-neutral/80 border border-white/10 rounded-xl overflow-hidden">
-                  {/* Cabeçalho do Projeto */}
+                  {/* Cabeçalho do Projeto — mobile: coluna; desktop: linha */}
                   <div
-                    className={`p-5 ${
+                    className={`p-4 sm:p-5 ${
                       hasProjectsAccess && hasEtapas
                         ? 'cursor-pointer hover:bg-white/5 transition-colors'
                         : ''
-                }`}
+                    }`}
                     onClick={hasProjectsAccess && hasEtapas ? () => toggleProject(projeto.id) : undefined}
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3 mb-2">
-                          <h3 className="text-lg font-semibold">{projeto.nome}</h3>
-                          <span className={`px-2 py-1 rounded text-xs ${getStatusColor(projeto.status)}`}>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                      <div className="flex-1 min-w-0">
+                        {/* Título em destaque, sempre primeiro */}
+                        <h3 className="text-base sm:text-lg font-semibold text-white mb-2">{projeto.nome}</h3>
+                        {/* Status + progresso: mobile em linha abaixo do título; desktop junto */}
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          <span className={`px-2 py-1 rounded text-xs shrink-0 ${getStatusColor(projeto.status)}`}>
                             {getStatusLabel(projeto.status)}
                           </span>
                           {projeto.progress !== undefined && (
-                            <span className="text-xs text-white/60">
+                            <span className="text-xs text-white/60 shrink-0">
                               {projeto.progress}% concluído
                             </span>
                           )}
@@ -560,37 +562,39 @@ export default function MyTasks() {
                         {projeto.resumo && (
                           <p className="text-white/60 text-sm mb-3 line-clamp-2">{projeto.resumo}</p>
                         )}
+                        {/* Etapas: total + pills por status (pendente = não iniciada; em andamento; em análise) */}
                         {hasEtapas && (
-                          <div className="flex items-center gap-4 text-xs">
-                            <span className="text-white/60">
-                              {stats.total} etapa{stats.total !== 1 ? 's' : ''} pendente{stats.total !== 1 ? 's' : ''}
+                          <div className="flex flex-wrap items-center gap-2 text-xs">
+                            <span className="text-white/50 w-full sm:w-auto">
+                              {stats.total} etapa{stats.total !== 1 ? 's' : ''} no total
                             </span>
                             {stats.pendentes > 0 && (
-                              <span className="px-2 py-0.5 rounded-md bg-amber-500/25 text-amber-200 border border-amber-400/40 font-medium">
-                                {stats.pendentes} pendente{stats.pendentes !== 1 ? 's' : ''}
+                              <span className="px-2 py-0.5 rounded-md bg-amber-500/25 text-amber-200 border border-amber-400/40 font-medium shrink-0" title="Ainda não iniciadas">
+                                {stats.pendentes} não iniciada{stats.pendentes !== 1 ? 's' : ''}
                               </span>
                             )}
                             {stats.emAndamento > 0 && (
-                              <span className="px-2 py-0.5 rounded-md bg-sky-500/25 text-sky-200 border border-sky-400/40 font-medium">
+                              <span className="px-2 py-0.5 rounded-md bg-sky-500/25 text-sky-200 border border-sky-400/40 font-medium shrink-0">
                                 {stats.emAndamento} em andamento
                               </span>
                             )}
                             {stats.emAnalise > 0 && (
-                              <span className="px-2 py-0.5 rounded-md bg-violet-500/25 text-violet-200 border border-violet-400/40 font-medium">
+                              <span className="px-2 py-0.5 rounded-md bg-violet-500/25 text-violet-200 border border-violet-400/40 font-medium shrink-0">
                                 {stats.emAnalise} em análise
                               </span>
                             )}
                           </div>
                         )}
                       </div>
-                      <div className="flex items-center gap-2">
-                  {hasProjectsAccess && (
-                    <button
+                      {/* Ações: mobile full width embaixo; desktop à direita */}
+                      <div className="flex items-center gap-2 shrink-0 sm:flex-nowrap">
+                        {hasProjectsAccess && (
+                          <button
                             onClick={(e) => {
                               e.stopPropagation();
                               navigate(`/projects/${projeto.id}`);
                             }}
-                            className={btn.primarySoft}
+                            className={`${btn.primarySoft} flex-1 sm:flex-none min-w-0`}
                           >
                             Ver Detalhes
                           </button>
@@ -603,7 +607,7 @@ export default function MyTasks() {
                             }}
                             className={btn.iconBtn}
                             title={isExpanded ? 'Recolher' : 'Expandir'}
-                    >
+                          >
                             <svg
                               className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                               fill="none"
@@ -612,10 +616,11 @@ export default function MyTasks() {
                             >
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                             </svg>
-                    </button>
-                  )}
+                          </button>
+                        )}
                       </div>
                     </div>
+                    {/* Barra de progresso: largura total do card */}
                     {projeto.progress !== undefined && (
                       <div className="mt-3">
                         <div className="w-full bg-white/10 rounded-full h-2">
@@ -626,7 +631,7 @@ export default function MyTasks() {
                         </div>
                       </div>
                     )}
-                </div>
+                  </div>
 
                   {/* Etapas do Projeto (Colapsável) */}
                   {hasEtapas && isExpanded && (
@@ -662,27 +667,27 @@ export default function MyTasks() {
                     return (
                       <div
                         key={etapa.id}
-                        className="bg-gradient-to-br from-neutral/80 to-neutral/60 border border-white/15 rounded-xl p-5 shadow-md hover:shadow-lg transition-shadow"
+                        className="bg-gradient-to-br from-neutral/80 to-neutral/60 border border-white/15 rounded-xl p-4 sm:p-5 shadow-md hover:shadow-lg transition-shadow"
                       >
-                        <div className="flex items-start justify-between gap-3 mb-3">
-                          <div className="flex-1">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3 mb-3">
+                          <div className="flex-1 min-w-0">
                             <h4 className="font-semibold text-white/90">{etapa.nome}</h4>
                             {etapa.descricao && (
                               <p className="text-sm text-white/70 mt-1">{etapa.descricao}</p>
                             )}
                           </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <span className={`px-2 py-1 rounded text-xs ${getStatusColor(etapa.status)}`}>
+                          <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end sm:flex-nowrap">
+                            <span className={`px-2 py-1 rounded text-xs shrink-0 ${getStatusColor(etapa.status)}`}>
                               {getStatusLabel(etapa.status)}
                             </span>
                             {podeInteragir && etapa.status === 'EM_ANALISE' && (
-                              <span className="text-xs text-white/60">Aguardando revisão</span>
+                              <span className="text-xs text-white/60 shrink-0">Aguardando revisão</span>
                             )}
                             {canEnviarEntrega && (
                               <button
                                 type="button"
                                 onClick={() => handleOpenEntregaModal(etapa)}
-                                className={btn.primarySoft}
+                                className={`${btn.primarySoft} w-full sm:w-auto shrink-0`}
                               >
                                 Enviar Entrega ({itensMarcados}/{totalItens})
                               </button>
@@ -738,32 +743,38 @@ export default function MyTasks() {
                               </p>
                             )}
                           </div>
-                        ) : (
-                          podeInteragir && (
-                            <div className="mt-3 p-3 border border-dashed border-white/20 rounded-md text-sm text-white/60">
-                              Finalize a etapa descrevendo o trabalho e anexando uma imagem de evidência.
-                            </div>
-                          )
-                        )}
+                        ) : null}
 
                       {/* Checklist */}
                       {etapa.checklistJson && Array.isArray(etapa.checklistJson) && etapa.checklistJson.length > 0 && (
                         <div className="mt-4 pt-4 border-t border-white/10">
-                          <div className="flex items-center justify-between mb-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                             <label className="text-sm font-medium text-white/90 block">
                               Checklist de Objetos
-                              {etapa.executor && (
-                                <span className="text-white/50 text-xs ml-2">
-                                  (Executor: {etapa.executor.nome})
+                              {podeInteragir && totalItens > 0 && (
+                                <span className="text-white/60 text-xs font-normal ml-2">
+                                  {itensMarcados} de {totalItens} marcado{itensMarcados !== 1 ? 's' : ''}
                                 </span>
                               )}
                             </label>
-                            {podeInteragir && totalItens > 0 && (
-                              <span className="text-xs text-white/60">
-                                {itensMarcados} de {totalItens} marcado{itensMarcados !== 1 ? 's' : ''}
-                              </span>
-                            )}
                           </div>
+                          {/* Supervisor e integrantes da etapa */}
+                          {(etapa.executor || (etapa.integrantes && etapa.integrantes.length > 0)) && (
+                            <div className="mb-3 space-y-1 text-xs text-white/70">
+                              {etapa.executor && (
+                                <p>
+                                  <span className="text-white/50 font-medium">Supervisor:</span>{' '}
+                                  {etapa.executor.nome}
+                                </p>
+                              )}
+                              {etapa.integrantes && etapa.integrantes.length > 0 && (
+                                <p>
+                                  <span className="text-white/50 font-medium">Integrantes:</span>{' '}
+                                  {etapa.integrantes.map((i) => i.usuario?.nome).filter(Boolean).join(', ') || '—'}
+                                </p>
+                              )}
+                            </div>
+                          )}
                           <div className="space-y-2">
                             {etapa.checklistJson.map((item, index) => {
                               // Entrega do item principal (ignorar entregas de subitens)
@@ -950,15 +961,6 @@ export default function MyTasks() {
                               );
                             })}
                           </div>
-                            {podeInteragir && 
-                             ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) && 
-                             !temItensMarcados && (
-                            <div className="mt-3 p-2 bg-yellow-500/10 border border-yellow-500/30 rounded-md">
-                              <p className="text-xs text-yellow-300">
-                                Marque pelo menos um item do checklist na página de Projetos para poder enviar a entrega com descrição e imagem.
-                              </p>
-                            </div>
-                          )}
                         </div>
                       )}
 

@@ -189,6 +189,7 @@ export default function ProjectDetails() {
   const [showDeleteEtapaModal, setShowDeleteEtapaModal] = useState(false);
   const [etapaToDelete, setEtapaToDelete] = useState<Etapa | null>(null);
   const [deletingEtapa, setDeletingEtapa] = useState(false);
+  const [deletingCompraId, setDeletingCompraId] = useState<number | null>(null);
   const [compraForm, setCompraForm] = useState({
     item: '',
     descricao: '',
@@ -246,6 +247,23 @@ export default function ProjectDetails() {
       if (showSpinner) {
         setLoading(false);
       }
+    }
+  }
+
+  async function handleDeleteCompra(compra: Compra) {
+    if (!window.confirm(`Excluir o item "${compra.item}" do histórico de compras?`)) return;
+    setDeletingCompraId(compra.id);
+    setError(null);
+    try {
+      await api.delete(`/stock/purchases/${compra.id}`);
+      toast.success('Item removido do histórico.');
+      await refreshProject(false);
+    } catch (err: any) {
+      const msg = formatApiError(err);
+      setError(msg);
+      toast.error(msg);
+    } finally {
+      setDeletingCompraId(null);
     }
   }
 
@@ -1055,7 +1073,7 @@ export default function ProjectDetails() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-sm text-white/70">
                     {etapa.executor && (
                       <div>
-                        <span className="font-medium">Executor:</span> {etapa.executor.nome} ({typeof etapa.executor.cargo === 'string' ? etapa.executor.cargo : (etapa.executor.cargo?.nome || 'Sem cargo')})
+                        <span className="font-medium">Supervisor:</span> {etapa.executor.nome}
                       </div>
                     )}
                     {etapa.integrantes && etapa.integrantes.length > 0 && (
@@ -1064,7 +1082,7 @@ export default function ProjectDetails() {
                         {etapa.integrantes
                           .filter((i) => i.usuario)
                           .map((i, idx, arr) => (
-                            <span key ={i.usuario?.id || `integrante-${idx}`}>
+                            <span key={i.usuario?.id || `integrante-${idx}`}>
                               {i.usuario?.nome}
                               {idx < arr.length - 1 ? ', ' : ''}
                             </span>
@@ -1730,6 +1748,18 @@ export default function ProjectDetails() {
                     </p>
                   </div>
                 </div>
+                {(isDiretor || isSupervisor) && (
+                  <div className="pt-1 border-t border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteCompra(c)}
+                      disabled={deletingCompraId === c.id}
+                      className={btn.dangerSm}
+                    >
+                      {deletingCompraId === c.id ? 'Excluindo...' : 'Excluir'}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
             columns={[
@@ -1781,6 +1811,27 @@ export default function ProjectDetails() {
                   </span>
                 ),
               },
+              ...((isDiretor || isSupervisor)
+                ? [
+                    {
+                      key: 'acoes' as const,
+                      label: 'Ações' as const,
+                      stopRowClick: true,
+                      render: (c: Compra) => (
+                        <div className="flex items-center gap-1.5 flex-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCompra(c)}
+                            disabled={deletingCompraId === c.id}
+                            className={btn.dangerSm}
+                          >
+                            {deletingCompraId === c.id ? 'Excluindo...' : 'Excluir'}
+                          </button>
+                        </div>
+                      ),
+                    },
+                  ]
+                : []),
             ] satisfies DataTableColumn<Compra>[]}
           />
         ) : (
