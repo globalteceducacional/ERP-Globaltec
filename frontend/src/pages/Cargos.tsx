@@ -407,6 +407,46 @@ export default function Cargos() {
         data={filteredCargos}
         keyExtractor={(c) => c.id}
         emptyMessage="Nenhum cargo encontrado"
+        renderMobileCard={(c) => (
+          <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-3">
+            {/* Cabeçalho: nome + status */}
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-semibold text-white truncate flex-1">{c.nome}</p>
+              <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${
+                c.ativo
+                  ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                  : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+              }`}>
+                {c.ativo ? 'Ativo' : 'Inativo'}
+              </span>
+            </div>
+            {/* Descrição */}
+            {c.descricao && (
+              <p className="text-xs text-white/60 line-clamp-2">{c.descricao}</p>
+            )}
+            {/* Info: nível + usuários */}
+            <div className="grid grid-cols-2 gap-2 bg-white/5 rounded-lg p-3 text-sm">
+              <div>
+                <p className="text-xs text-white/50 mb-0.5">Nível</p>
+                <p className="text-white/80 text-xs">{nivelLabels[c.nivelAcesso] || c.nivelAcesso}</p>
+              </div>
+              <div>
+                <p className="text-xs text-white/50 mb-0.5">Usuários</p>
+                <p className="text-white/80 font-semibold">{c._count?.usuarios || 0}</p>
+              </div>
+            </div>
+            {/* Ações */}
+            <div className="flex items-center gap-2 pt-1 border-t border-white/10">
+              <button onClick={() => openEditModal(c)} className={btn.editSm}>Editar</button>
+              <button onClick={() => toggleActive(c)} className={c.ativo ? btn.warningSm : btn.successSm}>
+                {c.ativo ? 'Desativar' : 'Ativar'}
+              </button>
+              {c._count?.usuarios === 0 && (
+                <button onClick={() => handleDelete(c)} className={btn.dangerSm}>Excluir</button>
+              )}
+            </div>
+          </div>
+        )}
         columns={[
           {
             key: 'nome',

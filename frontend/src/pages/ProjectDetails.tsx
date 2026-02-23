@@ -1694,6 +1694,44 @@ export default function ProjectDetails() {
             keyExtractor={(c) => c.id}
             emptyMessage="Nenhuma compra relacionada a este projeto"
             rowClassName={(c) => c.status === 'REPROVADO' ? 'bg-red-500/10' : ''}
+            renderMobileCard={(c) => (
+              <div className={`border rounded-xl p-4 space-y-3 ${c.status === 'REPROVADO' ? 'bg-red-500/10 border-red-500/30' : 'bg-neutral/60 border-white/10'}`}>
+                {/* Cabeçalho: nome do item + status */}
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-semibold text-white truncate flex-1">{c.item}</p>
+                  <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${getStatusColor(c.status)}`}>
+                    {getStatusLabel(c.status)}
+                  </span>
+                </div>
+                {/* Motivo de rejeição */}
+                {c.status === 'REPROVADO' && c.motivoRejeicao && (
+                  <p className="text-xs text-red-300">Motivo: {c.motivoRejeicao}</p>
+                )}
+                {/* Grid: Qtd / Valor Unitário / Total */}
+                <div className="grid grid-cols-3 gap-2 bg-white/5 rounded-lg p-3">
+                  <div className="text-center">
+                    <p className="text-xs text-white/50 mb-0.5">Qtd</p>
+                    <p className="text-sm font-bold text-white">{c.quantidade}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-white/50 mb-0.5">Unitário</p>
+                    <p className="text-xs font-medium text-white/80">
+                      {c.valorUnitario
+                        ? c.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                        : '—'}
+                    </p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-white/50 mb-0.5">Total</p>
+                    <p className="text-xs font-semibold text-white">
+                      {c.valorUnitario
+                        ? (c.quantidade * c.valorUnitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                        : 'Aguardando'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             columns={[
               {
                 key: 'item',

@@ -205,6 +205,33 @@ export default function Categories() {
         data={filteredCategories}
         keyExtractor={(c) => c.id}
         emptyMessage="Nenhuma categoria encontrada"
+        renderMobileCard={(c) => (
+          <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-3">
+            {/* Cabeçalho: nome + status */}
+            <div className="flex items-start justify-between gap-2">
+              <p className="font-semibold text-white truncate flex-1">{c.nome}</p>
+              <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${
+                c.ativo
+                  ? 'bg-success/20 text-success border border-success/40'
+                  : 'bg-danger/20 text-danger border border-danger/40'
+              }`}>
+                {c.ativo ? 'Ativa' : 'Inativa'}
+              </span>
+            </div>
+            {/* Descrição */}
+            {c.descricao && (
+              <p className="text-sm text-white/60 line-clamp-2">{c.descricao}</p>
+            )}
+            {/* Ações */}
+            <div className="flex items-center gap-2 pt-1 border-t border-white/10">
+              <button onClick={() => openEditModal(c)} className={btn.editSm}>Editar</button>
+              <button onClick={() => handleToggleActive(c)} className={c.ativo ? btn.warningSm : btn.successSm}>
+                {c.ativo ? 'Desativar' : 'Ativar'}
+              </button>
+              <button onClick={() => handleDelete(c)} className={btn.dangerSm}>Excluir</button>
+            </div>
+          </div>
+        )}
         columns={[
           {
             key: 'nome',

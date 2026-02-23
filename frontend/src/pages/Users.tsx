@@ -416,6 +416,50 @@ export default function Users() {
         data={users}
         keyExtractor={(u) => u.id}
         emptyMessage="Nenhum usuário encontrado"
+        renderMobileCard={(u) => (
+          <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-3">
+            {/* Cabeçalho: nome + status */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-white truncate">{u.nome}</p>
+                <p className="text-xs text-white/50 truncate mt-0.5">{u.email}</p>
+              </div>
+              <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${
+                u.ativo
+                  ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                  : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+              }`}>
+                {u.ativo ? 'Ativo' : 'Pendente'}
+              </span>
+            </div>
+            {/* Cargo */}
+            <div className="bg-white/5 rounded-lg px-3 py-2 text-sm">
+              <span className="text-xs text-white/50">Cargo: </span>
+              <span className="text-white/90">{u?.cargo?.nome || 'Sem cargo'}</span>
+            </div>
+            {/* Ações (apenas para DIRETOR) */}
+            {isDiretor && (
+              <div className="space-y-2 pt-1 border-t border-white/10">
+                <select
+                  value={u.cargo.id}
+                  onChange={(e) => changeRole(u, Number(e.target.value))}
+                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-1.5 text-xs text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  {cargos.map((cargo) => (
+                    <option key={cargo.id} value={cargo.id}>{cargo.nome}</option>
+                  ))}
+                </select>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => openEditModal(u)} className={btn.editSm}>Editar</button>
+                  <button onClick={() => toggleActive(u)} className={u.ativo ? btn.warningSm : btn.successSm}>
+                    {u.ativo ? 'Desativar' : 'Ativar'}
+                  </button>
+                  <button onClick={() => openDeleteModal(u)} className={btn.dangerSm}>Excluir</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         columns={[
           {
             key: 'nome',

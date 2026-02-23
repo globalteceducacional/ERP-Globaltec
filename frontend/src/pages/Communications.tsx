@@ -1010,6 +1010,58 @@ export default function Communications() {
             loading={loading}
             emptyMessage="Nenhum requerimento encontrado"
             onRowClick={(r) => handleRequestClick(r)}
+            renderMobileCard={(r) => (
+              <div
+                className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-3 cursor-pointer active:bg-white/5"
+                onClick={() => handleRequestClick(r)}
+              >
+                {/* Cabeçalho: tipo + status resposta */}
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-xs px-2 py-0.5 rounded font-medium bg-primary/20 text-primary border border-primary/30 shrink-0">
+                    {tipoLabels[r.tipo] || r.tipo}
+                  </span>
+                  {r.resposta ? (
+                    <span className="text-xs text-primary font-medium">Respondido</span>
+                  ) : (
+                    <span className="text-xs text-white/40">Pendente</span>
+                  )}
+                </div>
+                {/* Mensagem / título */}
+                <div>
+                  <p className="font-medium text-white/90 line-clamp-2">
+                    {r.tipo === 'COMPRA' ? 'Solicitação de Compra' : r.texto || '—'}
+                  </p>
+                  <p className="text-xs text-white/50 mt-1">
+                    {new Date(r.dataCriacao).toLocaleString('pt-BR')}
+                  </p>
+                </div>
+                {/* Info: usuário + status */}
+                <div className="grid grid-cols-2 gap-2 bg-white/5 rounded-lg p-3 text-sm">
+                  <div>
+                    <p className="text-xs text-white/50 mb-0.5">
+                      {subTab === 'sent' ? 'Destinatário' : 'Usuário'}
+                    </p>
+                    <p className="text-white/80 text-xs truncate">
+                      {subTab === 'sent' ? r.destinatario?.nome ?? '—' : r.usuario?.nome ?? '—'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-white/50 mb-0.5">Status</p>
+                    <p className="text-white/60 text-xs">{r.status}</p>
+                  </div>
+                </div>
+                {/* Ação excluir */}
+                <div className="flex justify-end pt-1 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    onClick={() => handleDeleteRequest(r)}
+                    disabled={deletingRequestId === r.id}
+                    className={btn.dangerSm}
+                  >
+                    {deletingRequestId === r.id ? 'Excluindo...' : 'Excluir'}
+                  </button>
+                </div>
+              </div>
+            )}
             columns={[
               {
                 key: 'tipo',

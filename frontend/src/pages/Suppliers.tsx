@@ -348,6 +348,51 @@ export default function Suppliers() {
         data={filteredSuppliers}
         keyExtractor={(s) => s.id}
         emptyMessage="Nenhum fornecedor encontrado"
+        renderMobileCard={(s) => (
+          <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-3">
+            {/* Cabeçalho: nome fantasia + status */}
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-white truncate">{s.nomeFantasia || s.razaoSocial}</p>
+                {s.nomeFantasia && s.razaoSocial !== s.nomeFantasia && (
+                  <p className="text-xs text-white/50 truncate mt-0.5">{s.razaoSocial}</p>
+                )}
+              </div>
+              <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${
+                s.ativo
+                  ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                  : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+              }`}>
+                {s.ativo ? 'Ativo' : 'Inativo'}
+              </span>
+            </div>
+            {/* Info */}
+            <div className="grid grid-cols-2 gap-2 bg-white/5 rounded-lg p-3 text-sm">
+              <div>
+                <p className="text-xs text-white/50 mb-0.5">CNPJ</p>
+                <p className="text-white/80 text-xs font-mono">{formatCNPJ(s.cnpj)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-white/50 mb-0.5">Contato</p>
+                <p className="text-white/80 text-xs truncate">{s.contato || '—'}</p>
+              </div>
+              {s.endereco && (
+                <div className="col-span-2">
+                  <p className="text-xs text-white/50 mb-0.5">Endereço</p>
+                  <p className="text-white/80 text-xs truncate">{s.endereco}</p>
+                </div>
+              )}
+            </div>
+            {/* Ações */}
+            <div className="flex items-center gap-2 pt-1 border-t border-white/10">
+              <button onClick={() => openEditModal(s)} className={btn.editSm}>Editar</button>
+              <button onClick={() => handleToggleActive(s)} className={s.ativo ? btn.warningSm : btn.successSm}>
+                {s.ativo ? 'Desativar' : 'Ativar'}
+              </button>
+              <button onClick={() => handleDelete(s)} className={btn.dangerSm}>Excluir</button>
+            </div>
+          </div>
+        )}
         columns={[
           {
             key: 'razaoSocial',

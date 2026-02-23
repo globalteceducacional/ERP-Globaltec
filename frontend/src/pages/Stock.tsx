@@ -1584,6 +1584,75 @@ export default function Stock() {
           emptyMessage={items.length === 0 ? 'Nenhum item no estoque' : 'Nenhum item encontrado com os filtros aplicados'}
           tableClassName="table-fixed sm:table-auto"
           onRowClick={(item) => { setItemToView(item); setShowItemDetailsModal(true); }}
+          renderMobileCard={(item) => {
+            const alocada = item.quantidadeAlocada ?? 0;
+            const disponivel = item.quantidadeDisponivel ?? item.quantidade ?? 0;
+            return (
+              <div
+                className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-3 cursor-pointer active:bg-white/5"
+                onClick={() => { setItemToView(item); setShowItemDetailsModal(true); }}
+              >
+                {/* Cabeçalho */}
+                <div className="flex items-start gap-3">
+                  {item.imagemUrl && (item.imagemUrl.startsWith('data:image/') || item.imagemUrl.startsWith('http://') || item.imagemUrl.startsWith('https://')) && (
+                    <img src={item.imagemUrl} alt={item.item || 'Item'} className="w-12 h-12 object-cover rounded-lg shrink-0"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-white truncate">{item.item || 'Sem nome'}</p>
+                    {item.descricao && <p className="text-xs text-white/60 mt-0.5 truncate">{item.descricao}</p>}
+                  </div>
+                </div>
+                {/* Grid de quantidades */}
+                <div className="grid grid-cols-3 gap-2 bg-white/5 rounded-lg p-3">
+                  <div className="text-center">
+                    <p className="text-xs text-white/50 mb-1">Total</p>
+                    <p className="text-sm font-bold text-white">{item.quantidade || 0}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-white/50 mb-1">Alocada</p>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded ${alocada > 0 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-white/10 text-white/50'}`}>
+                      {alocada}
+                    </span>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-white/50 mb-1">Disponível</p>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded ${disponivel > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                      {disponivel}
+                    </span>
+                  </div>
+                </div>
+                {/* Ações */}
+                <div className="flex items-center gap-2 pt-1 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => openAlocacaoModal(item)} className={btn.editSm}>Alocar</button>
+                  <button onClick={async () => {
+                    setEditingItem(item);
+                    let etapasData: any[] = [];
+                    if (item.projetoId) {
+                      try {
+                        const r = await api.get(`/projects/${item.projetoId}`);
+                        etapasData = r.data?.etapas || [];
+                        setEtapas(etapasData);
+                      } catch { setEtapas([]); }
+                    } else { setEtapas([]); }
+                    setItemForm({
+                      item: item.item || '',
+                      codigo: (item as any).codigo || '',
+                      categoriaId: (item as any).categoriaId || undefined,
+                      descricao: item.descricao || '',
+                      quantidade: item.quantidade || 1,
+                      valorUnitario: item.valorUnitario || 0,
+                      unidadeMedida: (item as any).unidadeMedida || 'UN',
+                      localizacao: (item as any).localizacao || '',
+                      imagemUrl: item.imagemUrl || '',
+                    });
+                    setShowEditModal(true);
+                  }} className={btn.editSm}>Editar</button>
+                  <button onClick={() => { setItemToDelete(item); setShowDeleteModal(true); }} className={btn.dangerSm}>Remover</button>
+                </div>
+              </div>
+            );
+          }}
           columns={[
             {
               key: 'item',
@@ -1786,7 +1855,125 @@ export default function Stock() {
           categories={categories}
         />
         
-        <div className="overflow-x-auto rounded-xl border border-white/10">
+        {/* Cards mobile para aba Compras */}
+        <div className="sm:hidden space-y-3">
+          {finalSortedPurchases.length === 0 ? (
+            <div className="py-8 text-center text-white/50">
+              {purchases.length === 0 ? 'Nenhuma compra cadastrada' : 'Nenhuma compra encontrada com os filtros aplicados'}
+            </div>
+          ) : (
+            finalSortedPurchases.map((purchase) => {
+              const cotacoes = purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson) ? purchase.cotacoesJson : [];
+              const melhorCotacao = cotacoes.length > 0 ? cotacoes.reduce((best: any, c: any) => {
+                const totalC = ((c.valorUnitario || 0) + (c.frete || 0) + (c.impostos || 0) - (c.desconto || 0)) * (purchase.quantidade || 1);
+                const totalBest = ((best.valorUnitario || 0) + (best.frete || 0) + (best.impostos || 0) - (best.desconto || 0)) * (purchase.quantidade || 1);
+                return totalC < totalBest ? c : best;
+              }) : null;
+              const valorMelhor = melhorCotacao
+                ? (((melhorCotacao.valorUnitario || 0) + (melhorCotacao.frete || 0) + (melhorCotacao.impostos || 0) - (melhorCotacao.desconto || 0)) * (purchase.quantidade || 1))
+                : null;
+              return (
+                <div
+                  key={purchase.id}
+                  className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-3 cursor-pointer active:bg-white/5"
+                  onClick={() => { setPurchaseToViewDetails(purchase); setShowPurchaseDetailsModal(true); }}
+                >
+                  {/* Cabeçalho: imagem + nome + status */}
+                  <div className="flex items-start gap-3">
+                    {purchase.imagemUrl && (purchase.imagemUrl.startsWith('data:image/') || purchase.imagemUrl.startsWith('http://') || purchase.imagemUrl.startsWith('https://')) && (
+                      <img src={purchase.imagemUrl} alt={purchase.item || 'Item'} className="w-12 h-12 object-cover rounded-lg shrink-0"
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-white truncate">{purchase.item || 'Sem nome'}</p>
+                      {purchase.descricao && <p className="text-xs text-white/60 truncate mt-0.5">{purchase.descricao}</p>}
+                    </div>
+                    <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${getStatusColor(purchase.status)}`}>
+                      {getStatusLabel(purchase.status)}
+                    </span>
+                  </div>
+                  {/* Status de entrega (se a caminho) */}
+                  {purchase.status === 'COMPRADO_ACAMINHO' && purchase.statusEntrega && (
+                    <span className={`inline-block text-xs px-2 py-0.5 rounded font-medium ${getStatusEntregaColor(purchase.statusEntrega)}`}>
+                      {getStatusEntregaLabel(purchase.statusEntrega)}
+                    </span>
+                  )}
+                  {/* Grid: Qtd / Valor / Categoria */}
+                  <div className="grid grid-cols-3 gap-2 bg-white/5 rounded-lg p-3">
+                    <div className="text-center">
+                      <p className="text-xs text-white/50 mb-0.5">Qtd</p>
+                      <p className="text-sm font-bold text-white">{purchase.quantidade || 0}</p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-white/50 mb-0.5">Cotação</p>
+                      <p className="text-xs font-semibold text-primary">
+                        {valorMelhor != null
+                          ? valorMelhor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                          : '—'}
+                      </p>
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-white/50 mb-0.5">Categoria</p>
+                      <p className="text-xs text-white/80 truncate">{getCategoryName((purchase as any).categoriaId)}</p>
+                    </div>
+                  </div>
+                  {/* Solicitado por + data */}
+                  <div className="flex items-center justify-between text-xs text-white/50">
+                    <span>{purchase.solicitadoPor?.nome ? `Por: ${purchase.solicitadoPor.nome}` : ''}</span>
+                    {purchase.dataEntrega && (
+                      <span>📅 {new Date(purchase.dataEntrega).toLocaleDateString('pt-BR')}</span>
+                    )}
+                  </div>
+                  {/* Ações */}
+                  <div className="flex items-center gap-2 pt-1 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
+                    <button
+                      onClick={() => {
+                        setPurchaseToUpdateStatus(purchase);
+                        setNewStatus(purchase.status);
+                        if (purchase.status === 'COMPRADO_ACAMINHO') {
+                          setNewStatusEntrega(purchase.statusEntrega || 'NAO_ENTREGUE');
+                          setNewPrevisaoEntrega(purchase.previsaoEntrega ? new Date(purchase.previsaoEntrega).toISOString().split('T')[0] : '');
+                          setNewDataEntrega(''); setNewEnderecoEntrega(''); setNewRecebidoPor('');
+                        } else if (purchase.status === 'ENTREGUE') {
+                          setNewStatusEntrega('');
+                          setNewDataEntrega(purchase.dataEntrega ? new Date(purchase.dataEntrega).toISOString().split('T')[0] : '');
+                          setNewEnderecoEntrega(purchase.enderecoEntrega || ''); setNewRecebidoPor(purchase.recebidoPor || '');
+                        } else {
+                          setNewStatusEntrega(''); setNewDataEntrega(''); setNewEnderecoEntrega(''); setNewRecebidoPor('');
+                        }
+                        setNewObservacao(purchase.observacao || '');
+                        setShowStatusModal(true);
+                      }}
+                      className={btn.successSm}
+                    >Status</button>
+                    <button
+                      onClick={() => {
+                        setEditingPurchase(purchase);
+                        setPurchaseForm({
+                          item: purchase.item || '', descricao: purchase.descricao || '',
+                          quantidade: purchase.quantidade || 1, imagemUrl: purchase.imagemUrl || '',
+                          nfUrl: purchase.nfUrl || '', comprovantePagamentoUrl: purchase.comprovantePagamentoUrl || '',
+                          cotacoes: purchase.cotacoesJson && Array.isArray(purchase.cotacoesJson)
+                            ? purchase.cotacoesJson.map((cot: any) => ({ valorUnitario: cot.valorUnitario || 0, frete: cot.frete || 0, impostos: cot.impostos || 0, desconto: cot.desconto || 0, link: cot.link || '', fornecedorId: cot.fornecedorId, formaPagamento: cot.formaPagamento || '' }))
+                            : [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, link: '', fornecedorId: undefined, formaPagamento: '' }],
+                          projetoId: purchase.projetoId, selectedCotacaoIndex: 0,
+                          dataCompra: purchase.dataCompra ? new Date(purchase.dataCompra).toISOString().split('T')[0] : '',
+                          categoriaId: (purchase as any).categoriaId || undefined, observacao: purchase.observacao || '',
+                        });
+                        setShowEditPurchaseModal(true);
+                      }}
+                      className={btn.editSm}
+                    >Editar</button>
+                    <button onClick={() => { setPurchaseToDelete(purchase); setShowDeletePurchaseModal(true); }} className={btn.dangerSm}>Remover</button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Tabela desktop */}
+        <div className="hidden sm:block overflow-x-auto rounded-xl border border-white/10">
           <table className="min-w-full text-sm">
             <thead className="bg-white/5 text-white/70">
               <tr>
@@ -2078,6 +2265,53 @@ export default function Stock() {
           keyExtractor={(p) => p.id}
           emptyMessage="Nenhuma solicitação pendente"
           rowClassName={() => 'bg-yellow-500/10'}
+          renderMobileCard={(p) => {
+            const sol = (p as any).solicitadoPor;
+            const cargo = sol?.cargo ? (typeof sol.cargo === 'string' ? sol.cargo : sol.cargo.nome || 'Sem cargo') : null;
+            return (
+              <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-4 space-y-3">
+                {/* Cabeçalho: imagem + nome + badge */}
+                <div className="flex items-start gap-3">
+                  {p.imagemUrl && (p.imagemUrl.startsWith('data:image/') || p.imagemUrl.startsWith('http://') || p.imagemUrl.startsWith('https://')) && (
+                    <img src={p.imagemUrl} alt={p.item || 'Item'} className="w-12 h-12 object-cover rounded-lg shrink-0"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-white truncate">{p.item || 'Sem nome'}</p>
+                    {p.descricao && <p className="text-xs text-white/60 truncate mt-0.5">Motivo: {p.descricao}</p>}
+                  </div>
+                  <span className="shrink-0 text-xs px-2 py-0.5 rounded font-medium bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
+                    SOLICITADO
+                  </span>
+                </div>
+                {/* Grid: Qtd / Solicitante / Projeto */}
+                <div className="grid grid-cols-3 gap-2 bg-white/5 rounded-lg p-3">
+                  <div className="text-center">
+                    <p className="text-xs text-white/50 mb-0.5">Qtd</p>
+                    <p className="text-sm font-bold text-white">{p.quantidade || 0}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-white/50 mb-0.5">Solicitante</p>
+                    <p className="text-xs text-white/80 truncate">{sol?.nome ?? 'N/A'}</p>
+                    {cargo && <p className="text-xs text-white/50 truncate">{cargo}</p>}
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-white/50 mb-0.5">Projeto</p>
+                    <p className="text-xs text-white/80 truncate">{(p as any).projeto?.nome || '—'}</p>
+                  </div>
+                </div>
+                {/* Ação */}
+                <div className="pt-1 border-t border-white/10">
+                  <button
+                    onClick={() => { setPurchaseToView(p); setShowViewRequestModal(true); }}
+                    className={btn.editSm}
+                  >
+                    Ver Detalhes
+                  </button>
+                </div>
+              </div>
+            );
+          }}
           columns={[
             {
               key: 'item',

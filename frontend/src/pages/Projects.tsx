@@ -286,6 +286,67 @@ export default function Projects() {
         keyExtractor={(p) => p.id}
         emptyMessage="Nenhum projeto cadastrado"
         onRowClick={(p) => navigate(`/projects/${p.id}`)}
+        renderMobileCard={(p) => {
+          const progressValue = p.progress ?? 0;
+          const statusKey = progressValue === 100 ? 'FINALIZADO' : p.status;
+          const status = statusLabels[statusKey] ?? statusLabels.EM_ANDAMENTO;
+          return (
+            <div
+              className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-3 cursor-pointer active:bg-white/5"
+              onClick={() => navigate(`/projects/${p.id}`)}
+            >
+              {/* Cabeçalho: nome + status */}
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-semibold text-white truncate flex-1">{p.nome}</p>
+                <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${status.className}`}>
+                  {status.label}
+                </span>
+              </div>
+              {/* Barra de progresso */}
+              <div className="space-y-1">
+                <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+                  <div
+                    className={`h-2 rounded-full transition-all duration-300 ${
+                      progressValue >= 100
+                        ? 'bg-gradient-to-r from-green-500 to-emerald-400'
+                        : progressValue >= 50
+                          ? 'bg-gradient-to-r from-blue-500 to-cyan-400'
+                          : 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                    }`}
+                    style={{ width: `${progressValue}%` }}
+                  />
+                </div>
+                <span className={`text-xs font-medium ${
+                  progressValue >= 100 ? 'text-green-400' : progressValue >= 50 ? 'text-blue-400' : 'text-amber-400'
+                }`}>{progressValue}% concluído</span>
+              </div>
+              {/* Info: supervisor + valor */}
+              <div className="grid grid-cols-2 gap-2 bg-white/5 rounded-lg p-3 text-sm">
+                <div>
+                  <p className="text-xs text-white/50 mb-0.5">Supervisor</p>
+                  <p className="text-white/90 truncate">{p.supervisor?.nome ?? '—'}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-white/50 mb-0.5">Valor Total</p>
+                  <p className="text-white/90 font-medium">
+                    {p.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                  </p>
+                </div>
+              </div>
+              {/* Ações */}
+              <div className="flex items-center gap-2 pt-1 border-t border-white/10" onClick={(e) => e.stopPropagation()}>
+                <button onClick={() => openEditModal(p)} className={btn.editSm}>Editar</button>
+                <button
+                  onClick={() => handleDeleteProject(p.id)}
+                  className={btn.dangerSm}
+                  disabled={deletingId === p.id}
+                >
+                  {deletingId === p.id ? 'Excluindo...' : 'Excluir'}
+                </button>
+              </div>
+            </div>
+          );
+        }}
         columns={[
           {
             key: 'nome',
