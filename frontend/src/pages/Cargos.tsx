@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { api } from '../services/api';
-import { Cargo, CargoNivel, CargoPermission } from '../types';
+import { Cargo, CargoPermission } from '../types';
 import { btn } from '../utils/buttonStyles';
 import { useAuthStore } from '../store/auth';
 import { DataTable, DataTableColumn } from '../components/DataTable';
@@ -12,10 +12,24 @@ interface CreateCargoForm {
   descricao?: string;
   ativo: boolean;
   paginasPermitidas: string[];
-  nivelAcesso: CargoNivel;
-  herdaPermissoes: boolean;
   permissions: string[];
 }
+
+// Catálogo estático de permissões — garante que todas apareçam mesmo sem seed no banco
+const PERMISSIONS_CATALOG: CargoPermission[] = [
+  { id: 0, modulo: 'compras',   acao: 'aprovar',      chave: 'compras:aprovar',      descricao: 'Aprovar solicitações de compras' },
+  { id: 0, modulo: 'compras',   acao: 'solicitar',    chave: 'compras:solicitar',    descricao: 'Solicitar compras e orçamentos' },
+  { id: 0, modulo: 'estoque',   acao: 'movimentar',   chave: 'estoque:movimentar',   descricao: 'Registrar movimentações de estoque' },
+  { id: 0, modulo: 'estoque',   acao: 'visualizar',   chave: 'estoque:visualizar',   descricao: 'Visualizar itens de estoque' },
+  { id: 0, modulo: 'projetos',  acao: 'aprovar',      chave: 'projetos:aprovar',     descricao: 'Aprovar etapas e metas de projetos' },
+  { id: 0, modulo: 'projetos',  acao: 'editar',       chave: 'projetos:editar',      descricao: 'Criar e editar projetos' },
+  { id: 0, modulo: 'projetos',  acao: 'visualizar',   chave: 'projetos:visualizar',  descricao: 'Visualizar projetos' },
+  { id: 0, modulo: 'sistema',   acao: 'administrar',  chave: 'sistema:administrar',  descricao: 'Administrar configurações avançadas do sistema' },
+  { id: 0, modulo: 'trabalhos', acao: 'avaliar',      chave: 'trabalhos:avaliar',    descricao: 'Avaliar entregas e aprovar objetivos' },
+  { id: 0, modulo: 'trabalhos', acao: 'registrar',    chave: 'trabalhos:registrar',  descricao: 'Registrar progresso e anexos das tarefas' },
+  { id: 0, modulo: 'trabalhos', acao: 'visualizar',   chave: 'trabalhos:visualizar', descricao: 'Visualizar tarefas atribuídas' },
+  { id: 0, modulo: 'usuarios',  acao: 'gerenciar',    chave: 'usuarios:gerenciar',   descricao: 'Gerenciar usuários e cargos' },
+];
 
 // Lista de todas as páginas disponíveis no sistema
 const todasPaginas = [
@@ -30,16 +44,6 @@ const todasPaginas = [
   { value: '/cargos', label: 'Cargos' },
 ];
 
-const nivelOptions: Array<{ value: CargoNivel; label: string }> = [
-  { value: 'NIVEL_0', label: 'Nível 0 - Executor / Estagiário' },
-  { value: 'NIVEL_1', label: 'Nível 1 - Supervisor' },
-  { value: 'NIVEL_2', label: 'Nível 2 - Compras & Estoque' },
-  { value: 'NIVEL_3', label: 'Nível 3 - Administrador' },
-  { value: 'NIVEL_4', label: 'Nível 4 - Gerente Master' },
-];
-
-const nivelLabels = Object.fromEntries(nivelOptions.map((item) => [item.value, item.label]));
-
 export default function Cargos() {
   const user = useAuthStore((state) => state.user);
   const [cargos, setCargos] = useState<Cargo[]>([]);
@@ -52,14 +56,11 @@ export default function Cargos() {
   // Filtros de busca
   const [searchNome, setSearchNome] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-  const [filterNivel, setFilterNivel] = useState<string>('all');
   const [form, setForm] = useState<CreateCargoForm>({
     nome: '',
     descricao: '',
     ativo: true,
     paginasPermitidas: [],
-    nivelAcesso: 'NIVEL_0' as CargoNivel,
-    herdaPermissoes: true,
     permissions: [],
   });
   const [permissionsCatalog, setPermissionsCatalog] = useState<CargoPermission[]>([]);
@@ -98,15 +99,19 @@ export default function Cargos() {
   }
 
   async function loadPermissions() {
+    // Começa com o catálogo estático para garantir que todas as permissões apareçam
+    setPermissionsCatalog(PERMISSIONS_CATALOG);
     try {
       const { data } = await api.get<Array<{ id: number; modulo: string; acao: string; descricao?: string | null }>>('/cargos/permissions');
-      const normalized = data.map((permission) => ({
-        ...permission,
-        chave: `${permission.modulo}:${permission.acao}`,
-      }));
-      setPermissionsCatalog(normalized);
+      // Mescla: API sobrepõe id real; itens do catálogo estático não presentes na API são mantidos
+      const apiMap = new Map(data.map((p) => [`${p.modulo}:${p.acao}`, p]));
+      const merged = PERMISSIONS_CATALOG.map((item) => {
+        const fromApi = apiMap.get(item.chave);
+        return fromApi ? { ...item, id: fromApi.id, descricao: fromApi.descricao ?? item.descricao } : item;
+      });
+      setPermissionsCatalog(merged);
     } catch (err) {
-      console.error('Erro ao carregar permissões', err);
+      console.error('Erro ao carregar permissões da API, usando catálogo local', err);
     }
   }
 
@@ -151,16 +156,9 @@ export default function Cargos() {
         }
       }
 
-      // Filtro por nível
-      if (filterNivel !== 'all') {
-        if (cargo.nivelAcesso !== filterNivel) {
-          return false;
-        }
-      }
-
       return true;
     });
-  }, [cargos, searchNome, filterStatus, filterNivel]);
+  }, [cargos, searchNome, filterStatus]);
 
   async function toggleActive(cargo: Cargo) {
     try {
@@ -193,8 +191,6 @@ export default function Cargos() {
         nome: form.nome.trim(),
         ativo: form.ativo,
         paginasPermitidas: form.paginasPermitidas,
-        nivelAcesso: form.nivelAcesso,
-        herdaPermissoes: form.herdaPermissoes,
         permissions: form.permissions,
       };
 
@@ -215,8 +211,6 @@ export default function Cargos() {
         descricao: '',
         ativo: true,
         paginasPermitidas: [],
-        nivelAcesso: 'NIVEL_0' as CargoNivel,
-        herdaPermissoes: true,
         permissions: [],
       });
       validation.reset();
@@ -238,8 +232,6 @@ export default function Cargos() {
       descricao: '',
       ativo: true,
       paginasPermitidas: [],
-      nivelAcesso: 'NIVEL_0' as CargoNivel,
-      herdaPermissoes: true,
       permissions: [],
     });
     validation.reset();
@@ -254,8 +246,6 @@ export default function Cargos() {
       descricao: cargo.descricao || '',
       ativo: cargo.ativo,
       paginasPermitidas: (cargo.paginasPermitidas as string[]) || [],
-      nivelAcesso: cargo.nivelAcesso,
-      herdaPermissoes: cargo.herdaPermissoes,
       permissions: (cargo.permissions ?? []).map((perm) => perm.chave),
     });
     validation.reset();
@@ -327,7 +317,7 @@ export default function Cargos() {
 
       {/* Filtros de Busca */}
       <div className="bg-white/5 rounded-xl border border-white/10 p-4">
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-white/70 mb-2">
               Buscar por Nome ou Descrição
@@ -360,37 +350,13 @@ export default function Cargos() {
               <option value="false" className="bg-neutral text-white">Inativos</option>
             </select>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-white/70 mb-2">
-              Filtrar por Nível
-            </label>
-            <select
-              value={filterNivel}
-              onChange={(e) => setFilterNivel(e.target.value)}
-              className="w-full px-4 py-2 rounded-md bg-neutral border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent appearance-none cursor-pointer"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 1rem center',
-                paddingRight: '2.5rem'
-              }}
-            >
-              <option value="all" className="bg-neutral text-white">Todos os Níveis</option>
-              {nivelOptions.map((option) => (
-                <option key={option.value} value={option.value} className="bg-neutral text-white">
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
-        {(searchNome || filterStatus !== 'all' || filterNivel !== 'all') && (
+        {(searchNome || filterStatus !== 'all') && (
           <div className="mt-4 flex items-center gap-2">
             <button
               onClick={() => {
                 setSearchNome('');
                 setFilterStatus('all');
-                setFilterNivel('all');
               }}
               className={btn.secondary}
             >
@@ -424,16 +390,10 @@ export default function Cargos() {
             {c.descricao && (
               <p className="text-xs text-white/60 line-clamp-2">{c.descricao}</p>
             )}
-            {/* Info: nível + usuários */}
-            <div className="grid grid-cols-2 gap-2 bg-white/5 rounded-lg p-3 text-sm">
-              <div>
-                <p className="text-xs text-white/50 mb-0.5">Nível</p>
-                <p className="text-white/80 text-xs">{nivelLabels[c.nivelAcesso] || c.nivelAcesso}</p>
-              </div>
-              <div>
-                <p className="text-xs text-white/50 mb-0.5">Usuários</p>
-                <p className="text-white/80 font-semibold">{c._count?.usuarios || 0}</p>
-              </div>
+            {/* Info: usuários */}
+            <div className="bg-white/5 rounded-lg p-3 text-sm">
+              <p className="text-xs text-white/50 mb-0.5">Usuários</p>
+              <p className="text-white/80 font-semibold">{c._count?.usuarios || 0}</p>
             </div>
             {/* Ações */}
             <div className="flex items-center gap-2 pt-1 border-t border-white/10">
@@ -452,20 +412,6 @@ export default function Cargos() {
             key: 'nome',
             label: 'Nome',
             render: (c) => <span className="font-medium">{c.nome}</span>,
-          },
-          {
-            key: 'nivel',
-            label: 'Nível',
-            render: (c) => (
-              <span className="text-white/70">
-                {nivelLabels[c.nivelAcesso] || c.nivelAcesso}
-                {!c.herdaPermissoes && (
-                  <span className="ml-2 text-xs px-2 py-0.5 rounded bg-warning/20 text-warning border border-warning/30">
-                    Sem herança
-                  </span>
-                )}
-              </span>
-            ),
           },
           {
             key: 'descricao',
@@ -653,15 +599,6 @@ export default function Cargos() {
                     className="w-4 h-4 rounded border-white/10 bg-neutral/60 text-primary focus:ring-2 focus:ring-primary"
                   />
                   <span className="text-sm text-white/70">Cargo ativo</span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={form.herdaPermissoes}
-                    onChange={(e) => setForm((prev) => ({ ...prev, herdaPermissoes: e.target.checked }))}
-                    className="w-4 h-4 rounded border-white/10 bg-neutral/60 text-primary focus:ring-2 focus:ring-primary"
-                  />
-                  <span className="text-sm text-white/70">Herda permissões de níveis inferiores</span>
                 </label>
               </div>
 

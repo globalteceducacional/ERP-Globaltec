@@ -14,7 +14,7 @@ import { CreateCargoDto } from './dto/create-cargo.dto';
 import { UpdateCargoDto } from './dto/update-cargo.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 
 @Controller('cargos')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -32,7 +32,7 @@ export class CargosController {
   }
 
   @Get('permissions')
-  @Roles('DIRETOR')
+  @Permissions('usuarios:gerenciar')
   listPermissions() {
     return this.cargosService.listPermissions();
   }
@@ -43,19 +43,19 @@ export class CargosController {
   }
 
   @Post()
-  @Roles('DIRETOR')
+  @Permissions('usuarios:gerenciar')
   create(@Body() body: CreateCargoDto) {
     return this.cargosService.create(body);
   }
 
   @Patch(':id')
-  @Roles('DIRETOR')
+  @Permissions('usuarios:gerenciar')
   update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateCargoDto) {
     return this.cargosService.update(id, body);
   }
 
   @Delete(':id')
-  @Roles('DIRETOR')
+  @Permissions('usuarios:gerenciar')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.cargosService.remove(id);
   }

@@ -89,8 +89,6 @@ export class CargosService {
         descricao: data.descricao,
         ativo: data.ativo ?? true,
         paginasPermitidas: data.paginasPermitidas || [],
-        nivelAcesso: data.nivelAcesso,
-        herdaPermissoes: typeof data.herdaPermissoes === 'boolean' ? data.herdaPermissoes : true,
         permissions: permissions.length
           ? {
               create: permissions.map((permission) => ({ permissionId: permission.id })),
@@ -135,14 +133,6 @@ export class CargosService {
 
     if (typeof data.paginasPermitidas !== 'undefined') {
       payload.paginasPermitidas = data.paginasPermitidas;
-    }
-
-    if (typeof data.nivelAcesso !== 'undefined') {
-      payload.nivelAcesso = data.nivelAcesso;
-    }
-
-    if (typeof data.herdaPermissoes !== 'undefined') {
-      payload.herdaPermissoes = data.herdaPermissoes;
     }
 
     let permissions: Awaited<ReturnType<typeof this.resolvePermissionKeys>> | null = null;

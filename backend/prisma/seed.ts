@@ -40,19 +40,17 @@ async function main() {
     permissionMap.set(`${created.modulo}:${created.acao}`, created.id);
   }
 
-  // Configurações de cargos com níveis e permissões
+  // Configurações de cargos e permissões
   const cargosSeed = [
     {
       nome: 'EXECUTOR',
       descricao: 'Executor de tarefas',
-      nivelAcesso: 'NIVEL_0' as const,
       paginasPermitidas: ['/tasks/my', '/occurrences', '/requests'],
       permissions: ['projetos:visualizar', 'trabalhos:visualizar', 'trabalhos:registrar'],
     },
     {
       nome: 'SUPERVISOR',
       descricao: 'Supervisor de projetos',
-      nivelAcesso: 'NIVEL_1' as const,
       paginasPermitidas: ['/projects', '/tasks/my', '/occurrences', '/requests'],
       permissions: [
         'projetos:visualizar',
@@ -66,7 +64,6 @@ async function main() {
     {
       nome: 'COMPRADOR',
       descricao: 'Responsável por compras e estoque',
-      nivelAcesso: 'NIVEL_2' as const,
       paginasPermitidas: ['/tasks/my', '/stock', '/requests'],
       permissions: [
         'projetos:visualizar',
@@ -79,14 +76,12 @@ async function main() {
     {
       nome: 'DIRETOR',
       descricao: 'Diretor com acesso total ao sistema',
-      nivelAcesso: 'NIVEL_3' as const,
       paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/stock', '/occurrences', '/requests', '/users', '/cargos'],
       permissions: Array.from(permissionMap.keys()),
     },
     {
       nome: 'GM',
       descricao: 'Gerente Master com controle total do ERP',
-      nivelAcesso: 'NIVEL_4' as const,
       paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/stock', '/occurrences', '/requests', '/users', '/cargos'],
       permissions: Array.from(permissionMap.keys()),
     },
@@ -109,7 +104,6 @@ async function main() {
         descricao: cargoSeed.descricao,
         ativo: true,
         paginasPermitidas: cargoSeed.paginasPermitidas,
-        nivelAcesso: cargoSeed.nivelAcesso,
         permissions: {
           deleteMany: {},
           create: permissionIds.map((permissionId) => ({ permissionId })),
@@ -120,7 +114,6 @@ async function main() {
         descricao: cargoSeed.descricao,
         ativo: true,
         paginasPermitidas: cargoSeed.paginasPermitidas,
-        nivelAcesso: cargoSeed.nivelAcesso,
         permissions: {
           create: permissionIds.map((permissionId) => ({ permissionId })),
         },

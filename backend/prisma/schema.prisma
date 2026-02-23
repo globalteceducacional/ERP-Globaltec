@@ -15,13 +15,11 @@ model Cargo {
   nome              String            @unique
   descricao         String?
   ativo             Boolean           @default(true)
-  nivelAcesso       CargoNivel        @default(NIVEL_0)
-  herdaPermissoes   Boolean           @default(true)
   paginasPermitidas Json? // Array de strings com as rotas permitidas: ["/dashboard", "/projects", ...]
   dataCriacao       DateTime          @default(now())
   usuarios          Usuario[]
   permissions       CargoPermission[]
-  
+
   @@map("Cargo")
 }
 
@@ -49,14 +47,6 @@ enum ChecklistItemStatus {
   EM_ANALISE
   APROVADO
   REPROVADO
-}
-
-enum CargoNivel {
-  NIVEL_0
-  NIVEL_1
-  NIVEL_2
-  NIVEL_3
-  NIVEL_4
 }
 
 enum SubetapaStatus {

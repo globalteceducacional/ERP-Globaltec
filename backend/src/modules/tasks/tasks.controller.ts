@@ -15,7 +15,7 @@ import {
 import { TasksService } from './tasks.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -41,19 +41,19 @@ export class TasksController {
   }
 
   @Post()
-  @Roles('DIRETOR', 'SUPERVISOR')
+  @Permissions('projetos:editar')
   create(@Body() body: CreateTaskDto) {
     return this.tasksService.create(body);
   }
 
   @Patch(':id')
-  @Roles('DIRETOR', 'SUPERVISOR')
+  @Permissions('projetos:editar')
   update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateTaskDto) {
     return this.tasksService.update(id, body);
   }
 
   @Patch(':id/status')
-  @Roles('DIRETOR', 'SUPERVISOR')
+  @Permissions('projetos:editar', 'projetos:aprovar')
   changeStatus(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: ChangeTaskStatusDto,
@@ -62,7 +62,7 @@ export class TasksController {
   }
 
   @Post(':id/deliver')
-  @Roles('EXECUTOR', 'SUPERVISOR', 'DIRETOR')
+  @Permissions('trabalhos:registrar', 'trabalhos:avaliar')
   deliver(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: { userId: number },
@@ -72,7 +72,7 @@ export class TasksController {
   }
 
   @Patch(':id/deliver/:entregaId')
-  @Roles('EXECUTOR', 'SUPERVISOR', 'DIRETOR')
+  @Permissions('trabalhos:registrar', 'trabalhos:avaliar')
   updateDelivery(
     @Param('id', ParseIntPipe) etapaId: number,
     @Param('entregaId', ParseIntPipe) entregaId: number,
@@ -83,7 +83,7 @@ export class TasksController {
   }
 
   @Post(':id/approve')
-  @Roles('DIRETOR', 'SUPERVISOR', 'EXECUTOR')
+  @Permissions('trabalhos:avaliar', 'projetos:aprovar')
   approve(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: { userId: number },
@@ -93,7 +93,7 @@ export class TasksController {
   }
 
   @Post(':id/reject')
-  @Roles('DIRETOR', 'SUPERVISOR', 'EXECUTOR')
+  @Permissions('trabalhos:avaliar', 'projetos:aprovar')
   reject(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: { userId: number },
@@ -103,7 +103,7 @@ export class TasksController {
   }
 
   @Post(':id/subtasks')
-  @Roles('EXECUTOR', 'SUPERVISOR', 'DIRETOR')
+  @Permissions('trabalhos:registrar', 'projetos:editar')
   createSubtask(
     @Param('id', ParseIntPipe) etapaId: number,
     @Body() body: CreateSubtaskDto,
@@ -112,7 +112,7 @@ export class TasksController {
   }
 
   @Patch(':id/subtasks/:subtaskId')
-  @Roles('EXECUTOR', 'SUPERVISOR', 'DIRETOR')
+  @Permissions('trabalhos:registrar', 'projetos:editar')
   updateSubtask(
     @Param('subtaskId', ParseIntPipe) subtaskId: number,
     @Body() body: UpdateSubtaskDto,
@@ -121,7 +121,6 @@ export class TasksController {
   }
 
   @Patch(':id/checklist')
-  // Sem restrição de @Roles - a validação é feita no service verificando se é executor ou integrante
   updateChecklist(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: { userId: number },
@@ -131,7 +130,6 @@ export class TasksController {
   }
 
   @Post(':id/checklist/:index/submit')
-  // Sem restrição de @Roles - a validação é feita no service
   submitChecklistItem(
     @Param('id', ParseIntPipe) etapaId: number,
     @Param('index', ParseIntPipe) checklistIndex: number,
@@ -144,7 +142,7 @@ export class TasksController {
   }
 
   @Patch(':id/checklist/:index/review')
-  @Roles('DIRETOR', 'SUPERVISOR', 'GM', 'EXECUTOR')
+  @Permissions('trabalhos:avaliar', 'projetos:aprovar')
   reviewChecklistItem(
     @Param('id', ParseIntPipe) etapaId: number,
     @Param('index', ParseIntPipe) checklistIndex: number,
@@ -156,17 +154,15 @@ export class TasksController {
     return this.tasksService.reviewChecklistItem(etapaId, checklistIndex, user.userId, body, subitemIndexNum);
   }
 
-  // Rotas mais específicas devem vir ANTES das genéricas
   @Delete(':id/subtasks/:subtaskId')
-  @Roles('EXECUTOR', 'SUPERVISOR', 'DIRETOR')
+  @Permissions('trabalhos:registrar', 'projetos:editar')
   deleteSubtask(@Param('subtaskId', ParseIntPipe) subtaskId: number) {
     return this.tasksService.deleteSubtask(subtaskId);
   }
 
-  // Rota genérica de deletar etapa - deve vir DEPOIS das rotas específicas
   @Delete(':id')
   @HttpCode(HttpStatus.OK)
-  @Roles('DIRETOR', 'SUPERVISOR')
+  @Permissions('projetos:editar')
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.tasksService.remove(id);
   }

@@ -53,7 +53,12 @@ export class AuthService {
       },
     });
     const mappedUser = this.mapCargoPermissions(userWithCargo);
-    const token = this.jwtService.sign({ sub: user.id, role: mappedUser?.cargo?.nome || 'EXECUTOR' });
+    const permissionKeys = mappedUser?.cargo?.permissions?.map((p: any) => p.chave) ?? [];
+    const token = this.jwtService.sign({
+      sub: user.id,
+      role: mappedUser?.cargo?.nome || 'EXECUTOR',
+      permissions: permissionKeys,
+    });
     return { token, user: mappedUser };
   }
 

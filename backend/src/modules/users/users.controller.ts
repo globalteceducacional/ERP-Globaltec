@@ -17,7 +17,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -28,7 +28,7 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
-  @Roles('DIRETOR')
+  @Permissions('usuarios:gerenciar')
   findAll(@Query() filter: FilterUsersDto) {
     return this.usersService.findAll(filter);
   }
@@ -39,7 +39,7 @@ export class UsersController {
   }
 
   @Post()
-  @Roles('DIRETOR')
+  @Permissions('usuarios:gerenciar')
   create(@Body() body: CreateUserDto) {
     return this.usersService.create(body);
   }
@@ -50,25 +50,25 @@ export class UsersController {
   }
 
   @Patch(':id')
-  @Roles('DIRETOR')
+  @Permissions('usuarios:gerenciar')
   update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateUserDto) {
     return this.usersService.update(id, body);
   }
 
   @Patch(':id/activate')
-  @Roles('DIRETOR')
+  @Permissions('usuarios:gerenciar')
   activate(@Param('id', ParseIntPipe) id: number) {
     return this.usersService.activate(id);
   }
 
   @Patch(':id/deactivate')
-  @Roles('DIRETOR')
+  @Permissions('usuarios:gerenciar')
   deactivate(@Param('id', ParseIntPipe) id: number) {
     return this.usersService.deactivate(id);
   }
 
   @Patch(':id/role')
-  @Roles('DIRETOR')
+  @Permissions('usuarios:gerenciar')
   assignRole(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateRoleDto,
@@ -77,7 +77,7 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @Roles('DIRETOR')
+  @Permissions('usuarios:gerenciar')
   @HttpCode(204)
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.usersService.remove(id);

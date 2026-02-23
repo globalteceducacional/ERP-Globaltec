@@ -1,5 +1,3 @@
-export type CargoNivel = 'NIVEL_0' | 'NIVEL_1' | 'NIVEL_2' | 'NIVEL_3' | 'NIVEL_4';
-
 export interface CargoPermission {
   id: number;
   modulo: string;
@@ -15,8 +13,6 @@ export interface Cargo {
   ativo: boolean;
   paginasPermitidas?: string[];
   dataCriacao: string;
-  nivelAcesso: CargoNivel;
-  herdaPermissoes: boolean;
   permissions?: CargoPermission[];
   _count?: {
     usuarios: number;

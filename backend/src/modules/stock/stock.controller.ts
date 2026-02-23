@@ -14,7 +14,7 @@ import {
 import { StockService } from './stock.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { CompraStatus } from '@prisma/client';
 import { CreateStockItemDto } from './dto/create-stock-item.dto';
@@ -29,25 +29,25 @@ import { UpdateAlocacaoDto } from './dto/update-alocacao.dto';
 
 @Controller('stock')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('DIRETOR', 'COTADOR', 'PAGADOR')
 export class StockController {
   constructor(private readonly stockService: StockService) {}
 
+  // ── Estoque ──────────────────────────────────────────────────────────────
+
   @Get('items')
-  listItems(
-    @Query('search') search?: string,
-  ) {
-    return this.stockService.listItems({ 
-      search,
-    });
+  @Permissions('estoque:visualizar', 'estoque:movimentar')
+  listItems(@Query('search') search?: string) {
+    return this.stockService.listItems({ search });
   }
 
   @Post('items')
+  @Permissions('estoque:movimentar')
   createItem(@Body() body: CreateStockItemDto) {
     return this.stockService.createItem(body);
   }
 
   @Patch('items/:id')
+  @Permissions('estoque:movimentar')
   updateItem(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateStockItemDto,
@@ -56,19 +56,23 @@ export class StockController {
   }
 
   @Delete('items/:id')
+  @Permissions('estoque:movimentar')
   deleteItem(@Param('id', ParseIntPipe) id: number) {
     return this.stockService.deleteItem(id);
   }
 
+  // ── Compras ───────────────────────────────────────────────────────────────
+
   @Get('purchases')
+  @Permissions('compras:solicitar', 'compras:aprovar')
   listPurchases(
     @Query('status') status?: CompraStatus,
     @Query('projetoId') projetoId?: string,
     @Query('etapaId') etapaId?: string,
     @Query('excludeSolicitado') excludeSolicitado?: string,
   ) {
-    return this.stockService.listPurchases({ 
-      status, 
+    return this.stockService.listPurchases({
+      status,
       projetoId: projetoId ? Number(projetoId) : undefined,
       etapaId: etapaId ? Number(etapaId) : undefined,
       excludeSolicitado: excludeSolicitado === 'true',
@@ -76,11 +80,16 @@ export class StockController {
   }
 
   @Post('purchases')
-  createPurchase(@CurrentUser() user: { userId: number }, @Body() body: CreatePurchaseDto) {
+  @Permissions('compras:solicitar', 'compras:aprovar')
+  createPurchase(
+    @CurrentUser() user: { userId: number },
+    @Body() body: CreatePurchaseDto,
+  ) {
     return this.stockService.createPurchase(body, user.userId);
   }
 
   @Patch('purchases/:id/status')
+  @Permissions('compras:aprovar')
   updatePurchaseStatus(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdatePurchaseStatusDto,
@@ -89,6 +98,7 @@ export class StockController {
   }
 
   @Patch('purchases/:id')
+  @Permissions('compras:solicitar', 'compras:aprovar')
   updatePurchase(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdatePurchaseDto,
@@ -97,11 +107,13 @@ export class StockController {
   }
 
   @Delete('purchases/:id')
+  @Permissions('compras:solicitar', 'compras:aprovar')
   deletePurchase(@Param('id', ParseIntPipe) id: number) {
     return this.stockService.deletePurchase(id);
   }
 
   @Post('purchases/:id/approve')
+  @Permissions('compras:aprovar')
   approvePurchase(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: ApprovePurchaseDto,
@@ -110,6 +122,7 @@ export class StockController {
   }
 
   @Post('purchases/:id/reject')
+  @Permissions('compras:aprovar')
   rejectPurchase(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: RejectPurchaseDto,
@@ -117,12 +130,16 @@ export class StockController {
     return this.stockService.rejectPurchase(id, body.motivoRejeicao);
   }
 
+  // ── Alocações ─────────────────────────────────────────────────────────────
+
   @Post('alocacoes')
+  @Permissions('estoque:movimentar', 'estoque:visualizar')
   createAlocacao(@Body() body: CreateAlocacaoDto) {
     return this.stockService.createAlocacao(body);
   }
 
   @Get('alocacoes')
+  @Permissions('estoque:visualizar', 'estoque:movimentar')
   listAlocacoes(
     @Query('estoqueId') estoqueId?: string,
     @Query('projetoId') projetoId?: string,
@@ -138,6 +155,7 @@ export class StockController {
   }
 
   @Patch('alocacoes/:id')
+  @Permissions('estoque:movimentar')
   updateAlocacao(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateAlocacaoDto,
@@ -149,6 +167,7 @@ export class StockController {
   }
 
   @Delete('alocacoes/:id')
+  @Permissions('estoque:movimentar')
   deleteAlocacao(@Param('id', ParseIntPipe) id: number) {
     return this.stockService.deleteAlocacao(id);
   }

@@ -13,7 +13,7 @@ import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { Permissions } from '../../common/decorators/permissions.decorator';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 
 @Controller('notifications')
@@ -41,7 +41,7 @@ export class NotificationsController {
   }
 
   @Post()
-  @Roles('DIRETOR', 'SUPERVISOR')
+  @Permissions('projetos:editar', 'projetos:aprovar')
   create(@Body() body: CreateNotificationDto) {
     return this.notificationsService.create(body);
   }

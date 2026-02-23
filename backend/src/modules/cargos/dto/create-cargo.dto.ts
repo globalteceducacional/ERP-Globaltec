@@ -1,5 +1,4 @@
-import { IsOptional, IsString, IsBoolean, IsArray, IsEnum } from 'class-validator';
-import { CargoNivel } from '@prisma/client';
+import { IsOptional, IsString, IsBoolean, IsArray } from 'class-validator';
 
 export class CreateCargoDto {
   @IsString()
@@ -17,13 +16,6 @@ export class CreateCargoDto {
   @IsArray()
   @IsString({ each: true })
   paginasPermitidas?: string[];
-
-  @IsEnum(CargoNivel)
-  nivelAcesso: CargoNivel;
-
-  @IsOptional()
-  @IsBoolean()
-  herdaPermissoes?: boolean;
 
   @IsOptional()
   @IsArray()
