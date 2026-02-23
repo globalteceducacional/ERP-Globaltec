@@ -82,4 +82,9 @@ export class CreateTaskDto {
   @IsInt({ each: true })
   @Transform(({ value }) => (Array.isArray(value) ? value.map((v) => Number(v)).filter((n) => !Number.isNaN(n)) : value))
   integrantesIds?: number[];
+
+  @IsOptional()
+  @IsInt()
+  @Transform(({ value }) => (value !== undefined && value !== null && value !== '' ? Number(value) : undefined))
+  responsavelId?: number;
 }

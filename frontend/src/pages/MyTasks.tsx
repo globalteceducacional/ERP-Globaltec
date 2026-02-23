@@ -43,7 +43,9 @@ interface Etapa {
   dataFim?: string | null;
   checklistJson?: ChecklistItem[] | null;
   executorId: number;
+  responsavelId?: number | null;
   executor?: { nome: string; cargo: string } | null;
+  responsavel?: { nome: string } | null;
   integrantes?: Array<{ usuario: Usuario }>;
   projeto: Projeto;
   subetapas: any[];
@@ -96,6 +98,9 @@ export default function MyTasks() {
   const [objetivoError, setObjetivoError] = useState<string | null>(null);
   const [showViewEntregaModal, setShowViewEntregaModal] = useState(false);
   const [selectedViewEntrega, setSelectedViewEntrega] = useState<{ etapa: Etapa; index: number; entrega: ChecklistItemEntrega } | null>(null);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewComentario, setReviewComentario] = useState('');
+  const [stageReviewLoading, setStageReviewLoading] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
   
   // Estado para controlar expansão de detalhes dos itens do checklist
@@ -190,6 +195,27 @@ export default function MyTasks() {
     setShowChecklistModal(true);
   }
 
+  async function handleReviewChecklistItem(etapaId: number, checklistIndex: number, status: 'APROVADO' | 'REPROVADO', subitemIndex?: number | null) {
+    if (!selectedViewEntrega) return;
+    setReviewLoading(true);
+    try {
+      const query = subitemIndex != null && subitemIndex !== undefined ? `?subitemIndex=${subitemIndex}` : '';
+      await api.patch(`/tasks/${etapaId}/checklist/${checklistIndex}/review${query}`, {
+        status,
+        comentario: reviewComentario?.trim() || undefined,
+      });
+      toast.success(status === 'APROVADO' ? 'Item aprovado.' : 'Item reprovado.');
+      setShowViewEntregaModal(false);
+      setSelectedViewEntrega(null);
+      setReviewComentario('');
+      await fetchTasks();
+    } catch (err: any) {
+      toast.error(formatApiError(err));
+    } finally {
+      setReviewLoading(false);
+    }
+  }
+
   function handleCloseChecklistModal() {
     setShowChecklistModal(false);
     setSelectedChecklistEtapa(null);
@@ -217,6 +243,32 @@ export default function MyTasks() {
     setSelectedEtapa(null);
     resetEntregaForm();
     setEditingEntrega(null);
+  }
+
+  async function handleApproveStage(etapaId: number, comentario?: string) {
+    setStageReviewLoading(true);
+    try {
+      await api.post(`/tasks/${etapaId}/approve`, { comentario: comentario?.trim() || undefined });
+      toast.success('Etapa aprovada.');
+      await fetchTasks();
+    } catch (err: any) {
+      toast.error(formatApiError(err));
+    } finally {
+      setStageReviewLoading(false);
+    }
+  }
+
+  async function handleRejectStage(etapaId: number, reason?: string) {
+    setStageReviewLoading(true);
+    try {
+      await api.post(`/tasks/${etapaId}/reject`, { reason: reason?.trim() || undefined });
+      toast.success('Etapa reprovada.');
+      await fetchTasks();
+    } catch (err: any) {
+      toast.error(formatApiError(err));
+    } finally {
+      setStageReviewLoading(false);
+    }
   }
 
   async function handleEntregaImagemChange(event: ChangeEvent<HTMLInputElement>) {
@@ -646,8 +698,10 @@ export default function MyTasks() {
                     const integrantesIds = etapa.integrantes?.map(i => i.usuario?.id).filter(Boolean) || [];
                     const isIntegrante = user?.id && integrantesIds.some(id => Number(user.id) === Number(id));
                     
-                    // Usuário pode interagir se for executor OU integrante
+                    // Usuário pode interagir se for executor OU integrante OU responsável da etapa
+                    const isResponsavel = user?.id && etapa.responsavelId != null && Number(user.id) === Number(etapa.responsavelId);
                     const podeInteragir = isExecutor || isIntegrante;
+                    const podeAprovarReprovar = isResponsavel;
                     
                     const latestEntrega = etapa.entregas && etapa.entregas.length > 0 ? etapa.entregas[0] : null;
                     
@@ -718,6 +772,26 @@ export default function MyTasks() {
                                         Editar
                                       </button>
                                     )}
+                                    {podeAprovarReprovar && latestEntrega.status === 'EM_ANALISE' && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleApproveStage(etapa.id)}
+                                          disabled={stageReviewLoading}
+                                          className={`${btn.success} shrink-0`}
+                                        >
+                                          {stageReviewLoading ? '...' : 'Aprovar etapa'}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleRejectStage(etapa.id)}
+                                          disabled={stageReviewLoading}
+                                          className={`${btn.danger} shrink-0`}
+                                        >
+                                          {stageReviewLoading ? '...' : 'Reprovar etapa'}
+                                        </button>
+                                      </>
+                                    )}
                                   </div>
           </div>
                             <p className="text-sm text-white/80 whitespace-pre-wrap">{latestEntrega.descricao}</p>
@@ -758,12 +832,12 @@ export default function MyTasks() {
                               )}
                             </label>
                           </div>
-                          {/* Supervisor e integrantes da etapa */}
+                          {/* Responsável e integrantes da etapa */}
                           {(etapa.executor || (etapa.integrantes && etapa.integrantes.length > 0)) && (
                             <div className="mb-3 space-y-1 text-xs text-white/70">
                               {etapa.executor && (
                                 <p>
-                                  <span className="text-white/50 font-medium">Supervisor:</span>{' '}
+                                  <span className="text-white/50 font-medium">Responsável:</span>{' '}
                                   {etapa.executor.nome}
                                 </p>
                               )}
@@ -1378,6 +1452,54 @@ export default function MyTasks() {
                   </label>
                   <div className="w-full bg-warning/10 border border-warning/30 rounded-md px-4 py-3 text-warning whitespace-pre-wrap">
                     {selectedViewEntrega.entrega.comentario}
+                  </div>
+                </div>
+              )}
+
+              {selectedViewEntrega.entrega.status === 'EM_ANALISE' &&
+                user?.id &&
+                selectedViewEntrega.etapa.responsavelId != null &&
+                Number(user.id) === Number(selectedViewEntrega.etapa.responsavelId) && (
+                <div className="space-y-3 pt-4 border-t border-white/20">
+                  <label className="block text-sm font-medium text-white/90">Comentário (opcional)</label>
+                  <textarea
+                    value={reviewComentario}
+                    onChange={(e) => setReviewComentario(e.target.value)}
+                    placeholder="Comentário da avaliação..."
+                    className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary min-h-[80px]"
+                    disabled={reviewLoading}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleReviewChecklistItem(
+                          selectedViewEntrega.etapa.id,
+                          selectedViewEntrega.index,
+                          'APROVADO',
+                          selectedViewEntrega.entrega.subitemIndex ?? undefined
+                        )
+                      }
+                      disabled={reviewLoading}
+                      className={`${btn.success} shrink-0`}
+                    >
+                      {reviewLoading ? '...' : 'Aprovar'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleReviewChecklistItem(
+                          selectedViewEntrega.etapa.id,
+                          selectedViewEntrega.index,
+                          'REPROVADO',
+                          selectedViewEntrega.entrega.subitemIndex ?? undefined
+                        )
+                      }
+                      disabled={reviewLoading}
+                      className={`${btn.danger} shrink-0`}
+                    >
+                      {reviewLoading ? '...' : 'Reprovar'}
+                    </button>
                   </div>
                 </div>
               )}

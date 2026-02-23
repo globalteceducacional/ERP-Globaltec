@@ -112,10 +112,11 @@ export default function ImportProjects() {
       'dataFim',
       'valorInsumos',
       'executorEmail',
+      'responsavelEmail',
       'integrantesEmails',
     ];
     // dataInicio (índice 3) e dataFim (índice 4) formatadas como data (yyyy-mm-dd)
-    createSheetWithStyledHeader(etapasHeaders, 'Etapas', [25, 25, 35, 14, 14, 18, 28, 32], [3, 4]);
+    createSheetWithStyledHeader(etapasHeaders, 'Etapas', [25, 25, 35, 14, 14, 18, 28, 28, 32], [3, 4]);
 
     // Aba Checklist
     const checklistHeaders = ['projetoNome', 'etapaNome', 'itemTexto', 'itemDescricao', 'subitemTexto', 'subitemDescricao'];
@@ -265,10 +266,16 @@ export default function ImportProjects() {
           </div>
           <div className="space-y-4 text-gray-300">
             <div>
-              <h3 className="font-semibold text-white mb-2">Aba "Projetos" (obrigatória)</h3>
+              <h3 className="font-semibold text-white mb-2">Aba "Projetos" (obrigatória na planilha, pode ficar vazia)</h3>
+              <p className="text-sm mb-2">
+                A aba deve existir, mas pode não ter nenhuma linha preenchida. Use vazia quando quiser apenas adicionar etapas ou itens de checklist a projetos já existentes no sistema.
+              </p>
+              <p className="text-sm mb-2">
+                <strong>Regra:</strong> dois projetos não podem ter o mesmo nome (na planilha nem no sistema). Etapas e itens de checklist podem repetir nomes.
+              </p>
               <p className="text-sm mb-2">Colunas:</p>
               <ul className="list-disc list-inside text-sm space-y-1 ml-4">
-                <li><strong>nome</strong> (obrigatório) - Nome do projeto</li>
+                <li><strong>nome</strong> (obrigatório por linha) - Nome do projeto</li>
                 <li><strong>resumo</strong> (opcional) - Resumo do projeto</li>
                 <li><strong>objetivo</strong> (opcional) - Objetivo do projeto</li>
                 <li><strong>valorTotal</strong> (opcional) - Valor total do projeto</li>
@@ -279,25 +286,32 @@ export default function ImportProjects() {
 
             <div>
               <h3 className="font-semibold text-white mb-2">Aba "Etapas" (opcional)</h3>
+              <p className="text-sm mb-2">
+                <strong>projetoNome</strong> pode ser o nome de um projeto criado na aba Projetos desta planilha ou o nome exato de um projeto já existente no sistema. Assim você pode inserir novas etapas em projetos existentes sem precisar preencher a aba Projetos.
+              </p>
               <p className="text-sm mb-2">Colunas:</p>
               <ul className="list-disc list-inside text-sm space-y-1 ml-4">
-                <li><strong>projetoNome</strong> (obrigatório) - Nome do projeto (deve corresponder ao nome na aba Projetos)</li>
+                <li><strong>projetoNome</strong> (obrigatório) - Nome do projeto (da aba Projetos ou de projeto já existente)</li>
                 <li><strong>nome</strong> (obrigatório) - Nome da etapa</li>
                 <li><strong>descricao</strong> (opcional) - Descrição da etapa</li>
                 <li><strong>dataInicio</strong> (opcional) - Data de início (formato: YYYY-MM-DD)</li>
                 <li><strong>dataFim</strong> (opcional) - Data de fim (formato: YYYY-MM-DD)</li>
                 <li><strong>valorInsumos</strong> (opcional) - Valor de insumos da etapa</li>
                 <li><strong>executorEmail</strong> (opcional) - Email do executor (se não informado, usa o usuário atual)</li>
+                <li><strong>responsavelEmail</strong> (opcional) - Email do responsável da etapa (quem pode aprovar/reprovar itens pela tela Meu trabalho)</li>
                 <li><strong>integrantesEmails</strong> (opcional) - Emails dos integrantes separados por vírgula</li>
               </ul>
             </div>
 
             <div>
               <h3 className="font-semibold text-white mb-2">Aba "Checklist" (opcional)</h3>
+              <p className="text-sm mb-2">
+                <strong>projetoNome</strong> e <strong>etapaNome</strong> podem ser de um projeto e uma etapa criados nesta importação ou de projeto e etapa já existentes no sistema. Os itens são adicionados à etapa (sem remover os já existentes).
+              </p>
               <p className="text-sm mb-2">Colunas:</p>
               <ul className="list-disc list-inside text-sm space-y-1 ml-4">
-                <li><strong>projetoNome</strong> (obrigatório) - Nome do projeto</li>
-                <li><strong>etapaNome</strong> (obrigatório) - Nome da etapa</li>
+                <li><strong>projetoNome</strong> (obrigatório) - Nome do projeto (existente ou criado nesta planilha)</li>
+                <li><strong>etapaNome</strong> (obrigatório) - Nome da etapa (existente ou criada nesta planilha)</li>
                 <li><strong>itemTexto</strong> (obrigatório) - Texto do item do checklist</li>
                 <li><strong>itemDescricao</strong> (opcional) - Descrição do item</li>
                 <li><strong>subitemTexto</strong> (opcional) - Texto do subitem (se houver)</li>

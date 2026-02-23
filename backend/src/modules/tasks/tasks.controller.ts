@@ -83,7 +83,7 @@ export class TasksController {
   }
 
   @Post(':id/approve')
-  @Roles('DIRETOR', 'SUPERVISOR')
+  @Roles('DIRETOR', 'SUPERVISOR', 'EXECUTOR')
   approve(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: { userId: number },
@@ -93,7 +93,7 @@ export class TasksController {
   }
 
   @Post(':id/reject')
-  @Roles('DIRETOR', 'SUPERVISOR')
+  @Roles('DIRETOR', 'SUPERVISOR', 'EXECUTOR')
   reject(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: { userId: number },
@@ -144,7 +144,7 @@ export class TasksController {
   }
 
   @Patch(':id/checklist/:index/review')
-  @Roles('DIRETOR', 'SUPERVISOR', 'GM')
+  @Roles('DIRETOR', 'SUPERVISOR', 'GM', 'EXECUTOR')
   reviewChecklistItem(
     @Param('id', ParseIntPipe) etapaId: number,
     @Param('index', ParseIntPipe) checklistIndex: number,

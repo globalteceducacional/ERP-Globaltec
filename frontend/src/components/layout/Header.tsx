@@ -69,7 +69,7 @@ export function Header({ title, subtitle, isMobile, onOpenMobileMenu }: HeaderPr
     }
   }
 
-  // Carregar contador de notificações não lidas
+  // Carregar contador de notificações não lidas e atualizar periodicamente / ao voltar à aba
   useEffect(() => {
     async function loadUnreadCount() {
       try {
@@ -81,11 +81,22 @@ export function Header({ title, subtitle, isMobile, onOpenMobileMenu }: HeaderPr
     }
 
     loadUnreadCount();
-    
-    // Atualizar contador a cada 30 segundos
-    const interval = setInterval(loadUnreadCount, 30000);
-    
-    return () => clearInterval(interval);
+
+    // Atualizar a cada 15 segundos
+    const interval = setInterval(loadUnreadCount, 15000);
+
+    // Quando o usuário voltar à aba, atualizar na hora
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        loadUnreadCount();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, []);
 
   // Fechar dropdown ao clicar fora

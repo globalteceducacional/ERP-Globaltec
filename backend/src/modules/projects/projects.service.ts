@@ -3,7 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UpdateResponsiblesDto } from './dto/update-responsibles.dto';
-import { EtapaStatus, ProjetoStatus, NotificacaoTipo, RequerimentoTipo } from '@prisma/client';
+import { EtapaStatus, ProjetoStatus, NotificacaoTipo, RequerimentoTipo, Prisma } from '@prisma/client';
 
 @Injectable()
 export class ProjectsService {
@@ -158,6 +158,7 @@ export class ProjectsService {
           orderBy: { id: 'asc' }, // Ordenar por ID (ordem de criação: primeira etapa criada, segunda, terceira...)
           include: {
             executor: true,
+            responsavel: true,
             integrantes: { include: { usuario: true } },
             subetapas: true,
             entregas: {
@@ -179,7 +180,7 @@ export class ProjectsService {
             solicitadoPor: { include: { cargo: true } },
           },
         },
-      },
+      } as Prisma.ProjetoInclude,
     });
 
     if (!project) {
@@ -206,8 +207,20 @@ export class ProjectsService {
   }
 
   async create(data: CreateProjectDto) {
+    const nomeTrim = data.nome?.trim();
+    if (!nomeTrim) {
+      throw new BadRequestException('Nome do projeto é obrigatório');
+    }
+    const existente = await this.prisma.projeto.findFirst({
+      where: { nome: nomeTrim },
+      select: { id: true },
+    });
+    if (existente) {
+      throw new BadRequestException(`Já existe um projeto com o nome "${nomeTrim}". Projetos não podem ter o mesmo nome.`);
+    }
+
     const payload: any = {
-      nome: data.nome,
+      nome: nomeTrim,
       resumo: data.resumo,
       objetivo: data.objetivo,
       valorTotal: data.valorTotal ?? 0,
@@ -287,6 +300,18 @@ export class ProjectsService {
         delete payload[key];
       }
     });
+
+    if (payload.nome !== undefined && payload.nome !== projetoAtual.nome) {
+      const nomeTrim = String(payload.nome).trim();
+      const outro = await this.prisma.projeto.findFirst({
+        where: { nome: nomeTrim, id: { not: id } },
+        select: { id: true },
+      });
+      if (outro) {
+        throw new BadRequestException(`Já existe um projeto com o nome "${nomeTrim}". Projetos não podem ter o mesmo nome.`);
+      }
+      payload.nome = nomeTrim;
+    }
 
     const projetoAtualizado = await this.prisma.projeto.update({
       where: { id },

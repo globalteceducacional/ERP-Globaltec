@@ -19,11 +19,22 @@ export function Notifications({ onClose, onUpdateCount, asPage }: NotificationsP
 
   useEffect(() => {
     loadNotifications();
-    
-    // Atualizar notificações a cada 30 segundos
-    const interval = setInterval(loadNotifications, 30000);
-    
-    return () => clearInterval(interval);
+
+    // Atualizar a cada 15 segundos para novas notificações aparecerem sem recarregar
+    const interval = setInterval(loadNotifications, 15000);
+
+    // Quando o usuário voltar à aba, atualizar na hora
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') {
+        loadNotifications();
+      }
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, []);
 
   // Fechar dropdown ao clicar fora (apenas no modo dropdown)

@@ -22,7 +22,7 @@ export class TasksService {
   ) {}
 
   async listMyTasks(userId: number, filter: FilterMyTasksDto) {
-    // Buscar apenas etapas em que o usuário é executor OU integrante (não todas as etapas do projeto)
+    // Buscar apenas etapas em que o usuário é executor, integrante OU responsável (aprovação)
     const whereEtapas: Record<string, unknown> = {
       status: {
         in: [
@@ -35,6 +35,7 @@ export class TasksService {
       OR: [
         { executorId: userId },
         { integrantes: { some: { usuarioId: userId } } },
+        { responsavelId: userId },
       ],
     };
 
@@ -48,6 +49,7 @@ export class TasksService {
         projeto: true,
         subetapas: true,
         executor: true,
+        responsavel: true,
         integrantes: { include: { usuario: true } },
         entregas: {
           orderBy: { dataEnvio: 'desc' },
@@ -162,6 +164,7 @@ export class TasksService {
       include: {
         projeto: { include: { supervisor: true } },
         executor: true,
+        responsavel: true,
         integrantes: { include: { usuario: true } },
         subetapas: true,
         entregas: {
@@ -206,6 +209,11 @@ export class TasksService {
       createData.checklistJson = data.checklist as any;
     }
 
+    if (data.responsavelId != null && data.responsavelId > 0) {
+      await this.ensureUserExists(data.responsavelId);
+      createData.responsavel = { connect: { id: data.responsavelId } };
+    }
+
     // Tratar integrantes
     if (data.integrantesIds && Array.isArray(data.integrantesIds) && data.integrantesIds.length > 0) {
       // Validar que todos os IDs existem
@@ -219,7 +227,7 @@ export class TasksService {
 
     const created = await this.prisma.etapa.create({
       data: createData,
-      include: { executor: true, projeto: true, integrantes: { include: { usuario: true } } },
+      include: { executor: true, responsavel: true, projeto: true, integrantes: { include: { usuario: true } } },
     });
 
     await this.updateProjetoStatus(created.projetoId);
@@ -286,6 +294,16 @@ export class TasksService {
       }
     }
 
+    // Tratar responsável da etapa (quem pode aprovar/reprovar; opcional)
+    if (data.responsavelId !== undefined) {
+      if (data.responsavelId === null || data.responsavelId === 0) {
+        payload.responsavel = { disconnect: true };
+      } else {
+        await this.ensureUserExists(data.responsavelId);
+        payload.responsavel = { connect: { id: data.responsavelId } };
+      }
+    }
+
     // Tratar projeto (relação)
     if (data.projetoId !== undefined) {
       if (data.projetoId === null || data.projetoId === 0) {
@@ -335,7 +353,7 @@ export class TasksService {
     const updated = await this.prisma.etapa.update({
       where: { id },
       data: payload,
-      include: { executor: true, projeto: true, integrantes: { include: { usuario: true } } },
+      include: { executor: true, responsavel: true, projeto: true, integrantes: { include: { usuario: true } } },
     });
 
     await this.updateProjetoStatus(updated.projetoId);
@@ -551,6 +569,7 @@ export class TasksService {
             supervisor: true,
           },
         },
+        responsavel: true,
         integrantes: {
           include: { usuario: true },
         },
@@ -574,12 +593,14 @@ export class TasksService {
     // Verificar se o usuário é GM/DIRETOR
     const isDiretor = user.cargo.nome === 'DIRETOR' || user.cargo.nome === 'GM';
     
-    // Verificar se o usuário é supervisor do projeto (supervisor da etapa)
+    // Verificar se o usuário é supervisor do projeto
     const isSupervisorProjeto = etapa.projeto?.supervisor?.id === userId;
+    // Verificar se o usuário é responsável da etapa (pode aprovar/reprovar pela tela Meu trabalho, sem acesso à aba Projetos)
+    const isResponsavelEtapa = etapa.responsavelId === userId;
 
-    // Usuário pode atualizar checklist se for GM/DIRETOR OU supervisor do projeto
-    if (!isDiretor && !isSupervisorProjeto) {
-      throw new UnauthorizedException('Somente o supervisor do projeto ou GM/DIRETOR podem atualizar o checklist');
+    // Usuário pode atualizar checklist se for GM/DIRETOR OU supervisor do projeto OU responsável da etapa
+    if (!isDiretor && !isSupervisorProjeto && !isResponsavelEtapa) {
+      throw new UnauthorizedException('Somente o supervisor do projeto, o responsável da etapa ou GM/DIRETOR podem atualizar o checklist');
     }
 
     // Normalizar valores booleanos do checklist - garantir valores explícitos
@@ -683,7 +704,7 @@ export class TasksService {
     const updated = await this.prisma.etapa.update({
       where: { id },
       data: updateData,
-      include: { executor: true, projeto: true, integrantes: { include: { usuario: true } } },
+      include: { executor: true, responsavel: true, projeto: true, integrantes: { include: { usuario: true } } },
     });
 
     // Log para confirmar a atualização
@@ -960,6 +981,7 @@ export class TasksService {
             supervisor: true,
           },
         },
+        responsavel: true,
       },
     });
 
@@ -967,7 +989,7 @@ export class TasksService {
       throw new NotFoundException('Etapa não encontrada');
     }
 
-    // Verificar se o usuário é supervisor ou diretor
+    // Verificar se o usuário é supervisor do projeto, responsável da etapa ou diretor/GM
     const user = await this.prisma.usuario.findUnique({
       where: { id: reviewerId },
       include: { cargo: true },
@@ -978,11 +1000,13 @@ export class TasksService {
     }
 
     const cargoNome = user.cargo.nome;
-    const isSupervisor = cargoNome === 'SUPERVISOR' || etapa.projeto?.supervisor?.id === reviewerId;
+    const isSupervisorProjeto = etapa.projeto?.supervisor?.id === reviewerId;
+    const isResponsavelEtapa = etapa.responsavelId === reviewerId;
     const isDiretor = cargoNome === 'DIRETOR' || cargoNome === 'GM';
+    const isSupervisorCargo = cargoNome === 'SUPERVISOR';
 
-    if (!isSupervisor && !isDiretor) {
-      throw new ForbiddenException('Somente supervisores ou diretores podem avaliar entregas');
+    if (!isSupervisorProjeto && !isResponsavelEtapa && !isDiretor && !isSupervisorCargo) {
+      throw new ForbiddenException('Somente o responsável da etapa, o supervisor do projeto ou cargos supervisor/diretor podem avaliar entregas');
     }
 
     const entrega = await this.prisma.checklistItemEntrega.findFirst({
@@ -1098,6 +1122,8 @@ export class TasksService {
     const etapa = await this.prisma.etapa.findUnique({
       where: { id },
       include: {
+        projeto: { include: { supervisor: true } },
+        responsavel: true,
         entregas: {
           where: { status: EtapaEntregaStatus.EM_ANALISE },
           orderBy: { dataEnvio: 'desc' },
@@ -1107,6 +1133,21 @@ export class TasksService {
 
     if (!etapa) {
       throw new NotFoundException('Etapa não encontrada');
+    }
+
+    const user = await this.prisma.usuario.findUnique({
+      where: { id: reviewerId },
+      include: { cargo: true },
+    });
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+    const isResponsavelEtapa = etapa.responsavelId === reviewerId;
+    const isSupervisorProjeto = etapa.projeto?.supervisor?.id === reviewerId;
+    const isDiretorOuGM = user.cargo.nome === 'DIRETOR' || user.cargo.nome === 'GM';
+    const isSupervisorCargo = user.cargo.nome === 'SUPERVISOR';
+    if (!isResponsavelEtapa && !isSupervisorProjeto && !isDiretorOuGM && !isSupervisorCargo) {
+      throw new ForbiddenException('Somente o responsável da etapa, o supervisor do projeto ou cargos supervisor/diretor podem aprovar entregas');
     }
 
     const entregaPendente = etapa.entregas[0];
@@ -1159,6 +1200,8 @@ export class TasksService {
     const etapa = await this.prisma.etapa.findUnique({
       where: { id },
       include: {
+        projeto: { include: { supervisor: true } },
+        responsavel: true,
         entregas: {
           where: { status: EtapaEntregaStatus.EM_ANALISE },
           orderBy: { dataEnvio: 'desc' },
@@ -1168,6 +1211,21 @@ export class TasksService {
 
     if (!etapa) {
       throw new NotFoundException('Etapa não encontrada');
+    }
+
+    const user = await this.prisma.usuario.findUnique({
+      where: { id: reviewerId },
+      include: { cargo: true },
+    });
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+    const isResponsavelEtapa = etapa.responsavelId === reviewerId;
+    const isSupervisorProjeto = etapa.projeto?.supervisor?.id === reviewerId;
+    const isDiretorOuGM = user.cargo.nome === 'DIRETOR' || user.cargo.nome === 'GM';
+    const isSupervisorCargo = user.cargo.nome === 'SUPERVISOR';
+    if (!isResponsavelEtapa && !isSupervisorProjeto && !isDiretorOuGM && !isSupervisorCargo) {
+      throw new ForbiddenException('Somente o responsável da etapa, o supervisor do projeto ou cargos supervisor/diretor podem reprovar entregas');
     }
 
     const entregaPendente = etapa.entregas[0];

@@ -42,6 +42,7 @@ interface Etapa {
   valorInsumos?: number;
   checklistJson?: ChecklistItem[] | null;
   executor: Usuario;
+  responsavel?: Usuario | null;
   integrantes?: Array<{ usuario: Usuario }>;
   subetapas: Subetapa[];
   entregas?: EtapaEntrega[];
@@ -141,6 +142,7 @@ export default function ProjectDetails() {
     nome: '',
     descricao: '',
     executorId: 0,
+    responsavelId: 0 as number | undefined,
     integrantesIds: [] as number[],
     dataInicio: '',
     dataFim: '',
@@ -363,7 +365,7 @@ export default function ProjectDetails() {
     // Validar executorId antes de enviar
     const executorId = Number(etapaForm.executorId);
     if (!executorId || executorId === 0 || isNaN(executorId)) {
-      setError('É necessário selecionar um responsável (executor) para a etapa');
+      setError('É necessário selecionar um executor para a etapa');
       setSubmitting(false);
       return;
     }
@@ -414,6 +416,12 @@ export default function ProjectDetails() {
 
       if (etapaForm.integrantesIds && etapaForm.integrantesIds.length > 0) {
         payload.integrantesIds = etapaForm.integrantesIds;
+      }
+
+      if (etapaForm.responsavelId != null && etapaForm.responsavelId > 0) {
+        payload.responsavelId = etapaForm.responsavelId;
+      } else if (editingEtapa) {
+        payload.responsavelId = null;
       }
 
       if (editingEtapa && etapaForm.status) {
@@ -502,6 +510,7 @@ export default function ProjectDetails() {
         nome: '',
         descricao: '',
         executorId: 0,
+        responsavelId: undefined,
         integrantesIds: [],
         dataInicio: '',
         dataFim: '',
@@ -588,6 +597,7 @@ export default function ProjectDetails() {
       nome: etapa.nome || '',
       descricao: etapa.descricao || '',
       executorId: etapa.executor?.id || 0,
+      responsavelId: etapa.responsavel?.id || undefined,
       integrantesIds: etapa.integrantes ? etapa.integrantes.filter(i => i.usuario?.id).map((i) => i.usuario.id) : [],
       dataInicio: formatDateForInput(etapa.dataInicio),
       dataFim: formatDateForInput(etapa.dataFim),
@@ -984,6 +994,7 @@ export default function ProjectDetails() {
                   nome: '',
                   descricao: '',
                   executorId: 0,
+                  responsavelId: undefined,
                   integrantesIds: [],
                   dataInicio: '',
                   dataFim: '',
@@ -1073,7 +1084,7 @@ export default function ProjectDetails() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-sm text-white/70">
                     {etapa.executor && (
                       <div>
-                        <span className="font-medium">Supervisor:</span> {etapa.executor.nome}
+                        <span className="font-medium">Responsável:</span> {etapa.executor.nome}
                       </div>
                     )}
                     {etapa.integrantes && etapa.integrantes.length > 0 && (
@@ -2141,6 +2152,7 @@ export default function ProjectDetails() {
                     nome: '',
                     descricao: '',
                     executorId: 0,
+                    responsavelId: undefined,
                     integrantesIds: [],
                     dataInicio: '',
                     dataFim: '',
@@ -2183,7 +2195,7 @@ export default function ProjectDetails() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Responsável *</label>
+                <label className="block text-sm font-medium text-white/90 mb-2">Executor *</label>
                 <select
                   required
                   value={etapaForm.executorId || ''}
@@ -2199,7 +2211,7 @@ export default function ProjectDetails() {
                     paddingRight: '2.5rem'
                   }}
                 >
-                  <option value="" className="bg-neutral text-white">Selecione um responsável...</option>
+                  <option value="" className="bg-neutral text-white">Selecione um executor...</option>
                   {users
                     .filter((user) => {
                       if (!user) return false;
@@ -2208,6 +2220,40 @@ export default function ProjectDetails() {
                       const isSupervisor = project?.supervisor?.id === user.id;
                       return isResponsavel || isSupervisor;
                     })
+                    .map((user) => {
+                    if (!user) return null;
+                    const cargoNome = typeof user.cargo === 'string' 
+                      ? user.cargo 
+                      : (user.cargo?.nome || 'Sem cargo');
+                    return (
+                      <option key={user.id} value={user.id} className="bg-neutral text-white">
+                        {user.nome} ({cargoNome})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Responsável (aprovação)</label>
+                <p className="text-xs text-white/60 mb-1">Quem pode aprovar/reprovar itens desta etapa pela tela Meu trabalho (não precisa ter acesso à aba Projetos)</p>
+                <select
+                  value={etapaForm.responsavelId ?? ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setEtapaForm({ ...etapaForm, responsavelId: value ? Number(value) : undefined });
+                  }}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem'
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">Nenhum</option>
+                  {users
+                    .filter((u) => u && u.id !== etapaForm.executorId)
                     .map((user) => {
                     if (!user) return null;
                     const cargoNome = typeof user.cargo === 'string' 
@@ -2785,6 +2831,7 @@ export default function ProjectDetails() {
                       nome: '',
                       descricao: '',
                       executorId: 0,
+                      responsavelId: undefined,
                       integrantesIds: [],
                       dataInicio: '',
                       dataFim: '',

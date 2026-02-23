@@ -120,6 +120,7 @@ model Usuario {
   projetosResponsavel         ProjetoResponsavel[]
   projetos                    Projeto[]              @relation("Supervisor")
   etapasExecutadas            Etapa[]                @relation("Executor")
+  etapasComoResponsavel        Etapa[]                @relation("ResponsavelEtapa")
   etapasIntegrantes           EtapaIntegrante[]
   ocorrenciasEnviadas         Ocorrencia[]           @relation("OcorrenciasEnviadas")
   ocorrenciasRecebidas        Ocorrencia[]           @relation("OcorrenciasRecebidas")
@@ -135,7 +136,7 @@ model Usuario {
 
 model Projeto {
   id               Int                  @id @default(autoincrement())
-  nome             String
+  nome             String               @unique
   resumo           String?
   objetivo         String?
   valorTotal       Float                @default(0)
@@ -185,6 +186,8 @@ model Etapa {
   projeto           Projeto                @relation(fields: [projetoId], references: [id], onDelete: Cascade)
   executorId        Int
   executor          Usuario                @relation("Executor", fields: [executorId], references: [id])
+  responsavelId     Int?
+  responsavel       Usuario?               @relation("ResponsavelEtapa", fields: [responsavelId], references: [id], onDelete: SetNull)
   integrantes       EtapaIntegrante[]
   subetapas         Subetapa[]
   requerimentos     Requerimento[]
