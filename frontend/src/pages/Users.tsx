@@ -1,8 +1,9 @@
 import { useEffect, useState, FormEvent, useMemo } from 'react';
 import { api } from '../services/api';
 import { Cargo, Usuario } from '../types';
-import { buttonStyles } from '../utils/buttonStyles';
+import { btn } from '../utils/buttonStyles';
 import { useAuthStore } from '../store/auth';
+import { DataTable, DataTableColumn } from '../components/DataTable';
 import { toast, formatApiError } from '../utils/toast';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
 
@@ -321,7 +322,7 @@ export default function Users() {
       <div className="flex items-center justify-between">
         <h3 className="text-xl font-semibold">Usuários</h3>
         {isDiretor && (
-          <button onClick={openCreateModal} className={buttonStyles.primary}>
+          <button onClick={openCreateModal} className={btn.primary}>
             Novo Usuário
           </button>
         )}
@@ -400,7 +401,7 @@ export default function Users() {
                 setFilterCargo('all');
                 setFilterStatus('all');
               }}
-              className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+              className={btn.secondary}
             >
               Limpar Filtros
             </button>
@@ -411,86 +412,79 @@ export default function Users() {
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-white/10">
-        <table className="min-w-full text-sm">
-          <thead className="bg-white/5 text-white/70">
-            <tr>
-              <th className="px-4 py-3 text-left">Nome</th>
-              <th className="px-4 py-3 text-left">E-mail</th>
-              <th className="px-4 py-3 text-left">Cargo</th>
-              <th className="px-4 py-3 text-left">Status</th>
-              <th className="px-4 py-3 text-left">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map((userRow) => (
-              <tr key={userRow.id} className="border-t border-white/5 hover:bg-white/5">
-                <td className="px-4 py-3">{userRow.nome}</td>
-                <td className="px-4 py-3">{userRow.email}</td>
-                <td className="px-4 py-3">
-                  {userRow?.cargo?.nome || 'Sem cargo'}
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${
-                    userRow.ativo 
-                      ? 'bg-green-500/20 text-green-300 border border-green-500/40' 
-                      : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
-                  }`}>
-                    {userRow.ativo ? 'Ativo' : 'Pendente'}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    {isDiretor && (
-                      <>
-                        <select
-                          value={userRow.cargo.id}
-                          onChange={(event) => changeRole(userRow, Number(event.target.value))}
-                          className="bg-neutral/60 border border-white/10 rounded-md px-2 py-1 text-sm"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {cargos.map((cargo) => (
-                            <option key={cargo.id} value={cargo.id}>
-                              {cargo.nome}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditModal(userRow);
-                          }}
-                          className={buttonStyles.edit}
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleActive(userRow);
-                          }}
-                          className="px-3 py-1 rounded-md bg-primary hover:bg-primary/80 text-xs"
-                        >
-                          {userRow.ativo ? 'Desativar' : 'Ativar'}
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openDeleteModal(userRow);
-                          }}
-                          className={buttonStyles.danger}
-                        >
-                          Excluir
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<Usuario>
+        data={users}
+        keyExtractor={(u) => u.id}
+        emptyMessage="Nenhum usuário encontrado"
+        columns={[
+          {
+            key: 'nome',
+            label: 'Nome',
+            render: (u) => (
+              <span className="block truncate" title={u.nome}>{u.nome}</span>
+            ),
+          },
+          {
+            key: 'email',
+            label: 'E-mail',
+            render: (u) => (
+              <span className="block truncate text-white/80" title={u.email}>{u.email}</span>
+            ),
+          },
+          {
+            key: 'cargo',
+            label: 'Cargo',
+            render: (u) => <span>{u?.cargo?.nome || 'Sem cargo'}</span>,
+          },
+          {
+            key: 'status',
+            label: 'Status',
+            render: (u) => (
+              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                u.ativo
+                  ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                  : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+              }`}>
+                {u.ativo ? 'Ativo' : 'Pendente'}
+              </span>
+            ),
+          },
+          {
+            key: 'acoes',
+            label: 'Ações',
+            stopRowClick: true,
+            render: (u) => (
+              <div className="flex items-center gap-1.5 flex-nowrap">
+                {isDiretor && (
+                  <>
+                    <select
+                      value={u.cargo.id}
+                      onChange={(e) => changeRole(u, Number(e.target.value))}
+                      className="bg-neutral/60 border border-white/10 rounded-md px-2 py-1 text-xs"
+                    >
+                      {cargos.map((cargo) => (
+                        <option key={cargo.id} value={cargo.id}>{cargo.nome}</option>
+                      ))}
+                    </select>
+                    <button onClick={() => openEditModal(u)} className={btn.editSm}>
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => toggleActive(u)}
+                      className={u.ativo ? btn.warningSm : btn.successSm}
+                    >
+                      {u.ativo ? 'Desativar' : 'Ativar'}
+                    </button>
+                    <button onClick={() => openDeleteModal(u)} className={btn.dangerSm}>
+                      Excluir
+                    </button>
+                  </>
+                )}
+              </div>
+            ),
+          },
+        ] satisfies DataTableColumn<Usuario>[]}
+      />
 
       {/* Modal de Novo Usuário */}
       {showModal && (
@@ -727,14 +721,14 @@ export default function Users() {
                     setError(null);
                     setModalError(null);
                   }}
-                  className={buttonStyles.secondary}
+                  className={btn.secondaryLg}
                   disabled={submitting}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className={`${buttonStyles.primary} disabled:opacity-50 disabled:cursor-not-allowed`}
+                  className={btn.primaryLg}
                   disabled={submitting}
                 >
                   {submitting
@@ -789,7 +783,7 @@ export default function Users() {
                     setDeleteConfirmName('');
                     setError(null);
                   }}
-                  className={buttonStyles.secondary}
+                  className={btn.secondaryLg}
                   disabled={deleting}
                 >
                   Cancelar
@@ -797,7 +791,7 @@ export default function Users() {
                 <button
                   type="button"
                   onClick={handleDeleteUser}
-                  className={`px-6 py-2.5 rounded-md bg-danger hover:bg-danger/80 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed`}
+                  className={btn.dangerLg}
                   disabled={deleting || deleteConfirmName.trim() !== userToDelete.nome.trim()}
                 >
                   {deleting ? 'Excluindo...' : 'Excluir Usuário'}

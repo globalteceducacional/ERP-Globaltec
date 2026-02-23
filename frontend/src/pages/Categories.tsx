@@ -2,6 +2,8 @@ import { useEffect, useState, FormEvent } from 'react';
 import { api } from '../services/api';
 import { toast, formatApiError } from '../utils/toast';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
+import { DataTable, DataTableColumn } from '../components/DataTable';
+import { btn } from '../utils/buttonStyles';
 
 interface Category {
   id: number;
@@ -169,7 +171,7 @@ export default function Categories() {
         </div>
         <button
           onClick={openCreateModal}
-          className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-white text-sm font-semibold transition-colors"
+          className={btn.primary}
         >
           + Nova Categoria
         </button>
@@ -199,86 +201,72 @@ export default function Categories() {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-white/10">
-        <table className="min-w-full text-sm">
-          <thead className="bg-white/5 text-white/70">
-            <tr>
-              <th className="px-4 py-3 text-left">Nome</th>
-              <th className="px-4 py-3 text-left">Descrição</th>
-              <th className="px-4 py-3 text-left">Status</th>
-              <th className="px-4 py-3 text-right">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredCategories.length === 0 ? (
-              <tr>
-                <td colSpan={4} className="px-4 py-8 text-center text-white/60">
-                  Nenhuma categoria encontrada
-                </td>
-              </tr>
-            ) : (
-              filteredCategories.map((category) => (
-                <tr
-                  key={category.id}
-                  className="border-t border-white/5 hover:bg-white/5"
+      <DataTable<Category>
+        data={filteredCategories}
+        keyExtractor={(c) => c.id}
+        emptyMessage="Nenhuma categoria encontrada"
+        columns={[
+          {
+            key: 'nome',
+            label: 'Nome',
+            render: (c) => (
+              <span className="font-medium text-white/90 block truncate" title={c.nome}>
+                {c.nome}
+              </span>
+            ),
+          },
+          {
+            key: 'descricao',
+            label: 'Descrição',
+            render: (c) => (
+              <span className="block max-w-[220px] truncate text-white/70" title={c.descricao || undefined}>
+                {c.descricao || '-'}
+              </span>
+            ),
+          },
+          {
+            key: 'status',
+            label: 'Status',
+            render: (c) => (
+              <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                c.ativo
+                  ? 'bg-success/20 text-success border border-success/40'
+                  : 'bg-danger/20 text-danger border border-danger/40'
+              }`}>
+                {c.ativo ? 'Ativa' : 'Inativa'}
+              </span>
+            ),
+          },
+          {
+            key: 'acoes',
+            label: 'Ações',
+            align: 'right',
+            stopRowClick: true,
+            render: (c) => (
+              <div className="flex items-center justify-end gap-1.5 flex-nowrap">
+                <button
+                  onClick={() => openEditModal(c)}
+                  className={btn.editSm}
                 >
-                  <td
-                    className="px-4 py-3 text-white/90 font-medium truncate"
-                    title={category.nome}
-                  >
-                    {category.nome}
-                  </td>
-                  <td className="px-4 py-3 text-white/70">
-                    <span
-                      className="block max-w-[220px] truncate"
-                      title={category.descricao || undefined}
-                    >
-                      {category.descricao || '-'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                        category.ativo
-                          ? 'bg-success/20 text-success border border-success/40'
-                          : 'bg-danger/20 text-danger border border-danger/40'
-                      }`}
-                    >
-                      {category.ativo ? 'Ativa' : 'Inativa'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                      <button
-                        onClick={() => openEditModal(category)}
-                        className="px-3 py-1.5 rounded-md bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-xs font-medium transition-colors"
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleToggleActive(category)}
-                        className={`px-2.5 py-1 rounded-md text-xs font-medium ${
-                          category.ativo
-                            ? 'bg-warning/20 hover:bg-warning/30 text-warning'
-                            : 'bg-success/20 hover:bg-success/30 text-success'
-                        }`}
-                      >
-                        {category.ativo ? 'Desativar' : 'Ativar'}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(category)}
-                        className="px-3 py-1.5 rounded-md bg-red-600/20 hover:bg-red-600/30 text-red-300 text-xs font-medium transition-colors"
-                      >
-                        Excluir
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+                  Editar
+                </button>
+                <button
+                  onClick={() => handleToggleActive(c)}
+                  className={c.ativo ? btn.warningSm : btn.successSm}
+                >
+                  {c.ativo ? 'Desativar' : 'Ativar'}
+                </button>
+                <button
+                  onClick={() => handleDelete(c)}
+                  className={btn.dangerSm}
+                >
+                  Excluir
+                </button>
+              </div>
+            ),
+          },
+        ] satisfies DataTableColumn<Category>[]}
+      />
 
       {/* Modal Criar/Editar Categoria */}
       {showModal && (
@@ -358,7 +346,7 @@ export default function Categories() {
                     setModalError(null);
                     validation.reset();
                   }}
-                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  className={btn.secondaryLg}
                   disabled={submitting}
                 >
                   Cancelar
@@ -366,7 +354,7 @@ export default function Categories() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-2.5 rounded-md bg-primary hover:bg-primary/80 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.primaryLg}
                 >
                   {submitting ? 'Salvando...' : editingCategory ? 'Salvar Alterações' : 'Criar Categoria'}
                 </button>

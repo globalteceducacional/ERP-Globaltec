@@ -2,7 +2,8 @@ import { useEffect, useState, FormEvent, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { Projeto } from '../types';
-import { buttonStyles } from '../utils/buttonStyles';
+import { btn } from '../utils/buttonStyles';
+import { DataTable, DataTableColumn } from '../components/DataTable';
 import { toast, formatApiError } from '../utils/toast';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
 
@@ -264,11 +265,11 @@ export default function Projects() {
         <div className="flex flex-wrap gap-2 sm:gap-3">
           <button
             onClick={() => navigate('/projects/import')}
-            className="flex-1 sm:flex-none px-3 py-2 text-sm sm:px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+            className={`${btn.success} flex-1 sm:flex-none`}
           >
             Importar do Excel
           </button>
-          <button onClick={openCreateModal} className="flex-1 sm:flex-none px-3 py-2 text-sm sm:px-4 sm:py-2 rounded-lg bg-primary hover:bg-primary/90 text-neutral font-medium transition-colors">
+          <button onClick={openCreateModal} className={`${btn.primary} flex-1 sm:flex-none`}>
             Novo Projeto
           </button>
         </div>
@@ -280,112 +281,96 @@ export default function Projects() {
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-xl border border-white/10">
-        <table className="min-w-full text-sm">
-          <thead className="bg-white/5 text-white/70">
-            <tr>
-              <th className="px-4 py-3 text-left">Nome</th>
-              <th className="px-4 py-3 text-left min-w-[7rem]">Status</th>
-              <th className="px-4 py-3 text-left">Progresso</th>
-              <th className="px-4 py-3 text-left">Supervisor</th>
-              <th className="px-4 py-3 text-left">Valor Total</th>
-              <th className="px-4 py-3 text-left">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {projects.length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-white/50">
-                  Nenhum projeto cadastrado
-                </td>
-              </tr>
-            ) : (
-              projects.map((project) => {
-                const progressValue = project.progress ?? 0;
-                const statusKey = progressValue === 100 ? 'FINALIZADO' : project.status;
-                const status = statusLabels[statusKey] ?? statusLabels.EM_ANDAMENTO;
-
-                return (
-                  <tr
-                    key={project.id}
-                    className="border-t border-white/5 hover:bg-white/5 transition-colors"
-                  >
-                    <td
-                      className="px-4 py-3 cursor-pointer"
-                      onClick={() => navigate(`/projects/${project.id}`)}
-                    >
-                      {project.nome}
-                    </td>
-                    <td 
-                      className="px-4 py-3 cursor-pointer align-middle whitespace-nowrap min-w-[7rem]"
-                      onClick={() => navigate(`/projects/${project.id}`)}
-                    >
-                      <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap min-w-[6.5rem] ${status.className}`}>
-                        {status.label}
-                      </span>
-                    </td>
-                    <td 
-                      className="px-4 py-3 cursor-pointer"
-                      onClick={() => navigate(`/projects/${project.id}`)}
-                    >
-                      <div className="space-y-1">
-                        <div className="w-full bg-white/10 rounded-full h-2.5 overflow-hidden">
-                          <div
-                            className={`h-2.5 rounded-full transition-all duration-300 ${
-                              progressValue >= 100 
-                                ? 'bg-gradient-to-r from-green-500 to-emerald-400' 
-                                : progressValue >= 50 
-                                  ? 'bg-gradient-to-r from-blue-500 to-cyan-400'
-                                  : 'bg-gradient-to-r from-amber-500 to-yellow-400'
-                            }`}
-                            style={{ width: `${progressValue}%` }}
-                          />
-                        </div>
-                        <span className={`text-xs font-medium ${
-                          progressValue >= 100 ? 'text-green-400' : progressValue >= 50 ? 'text-blue-400' : 'text-amber-400'
-                        }`}>{progressValue}%</span>
-                      </div>
-                    </td>
-                    <td 
-                      className="px-4 py-3 cursor-pointer"
-                      onClick={() => navigate(`/projects/${project.id}`)}
-                    >
-                      {project.supervisor?.nome ?? '—'}
-                    </td>
-                    <td 
-                      className="px-4 py-3 cursor-pointer"
-                      onClick={() => navigate(`/projects/${project.id}`)}
-                    >
-                      {project.valorTotal.toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                      })}
-                    </td>
-                    <td 
-                      className="px-4 py-3 flex items-center gap-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        onClick={() => openEditModal(project)}
-                        className={buttonStyles.edit}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleDeleteProject(project.id)}
-                        className={`${buttonStyles.danger} disabled:opacity-50 disabled:cursor-not-allowed`}
-                        disabled={deletingId === project.id}
-                      >
-                        {deletingId === project.id ? 'Excluindo...' : 'Excluir'}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<Projeto>
+        data={projects}
+        keyExtractor={(p) => p.id}
+        emptyMessage="Nenhum projeto cadastrado"
+        onRowClick={(p) => navigate(`/projects/${p.id}`)}
+        columns={[
+          {
+            key: 'nome',
+            label: 'Nome',
+            render: (p) => (
+              <span className="block truncate font-medium" title={p.nome}>{p.nome}</span>
+            ),
+          },
+          {
+            key: 'status',
+            label: 'Status',
+            thClassName: 'min-w-[7rem]',
+            tdClassName: 'whitespace-nowrap min-w-[7rem]',
+            render: (p) => {
+              const progressValue = p.progress ?? 0;
+              const statusKey = progressValue === 100 ? 'FINALIZADO' : p.status;
+              const status = statusLabels[statusKey] ?? statusLabels.EM_ANDAMENTO;
+              return (
+                <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap min-w-[6.5rem] ${status.className}`}>
+                  {status.label}
+                </span>
+              );
+            },
+          },
+          {
+            key: 'progresso',
+            label: 'Progresso',
+            render: (p) => {
+              const progressValue = p.progress ?? 0;
+              return (
+                <div className="space-y-1 min-w-[6rem]">
+                  <div className="w-full bg-white/10 rounded-full h-2.5 overflow-hidden">
+                    <div
+                      className={`h-2.5 rounded-full transition-all duration-300 ${
+                        progressValue >= 100
+                          ? 'bg-gradient-to-r from-green-500 to-emerald-400'
+                          : progressValue >= 50
+                            ? 'bg-gradient-to-r from-blue-500 to-cyan-400'
+                            : 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                      }`}
+                      style={{ width: `${progressValue}%` }}
+                    />
+                  </div>
+                  <span className={`text-xs font-medium ${
+                    progressValue >= 100 ? 'text-green-400' : progressValue >= 50 ? 'text-blue-400' : 'text-amber-400'
+                  }`}>{progressValue}%</span>
+                </div>
+              );
+            },
+          },
+          {
+            key: 'supervisor',
+            label: 'Supervisor',
+            render: (p) => <span>{p.supervisor?.nome ?? '—'}</span>,
+          },
+          {
+            key: 'valorTotal',
+            label: 'Valor Total',
+            render: (p) => (
+              <span className="whitespace-nowrap">
+                {p.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </span>
+            ),
+          },
+          {
+            key: 'acoes',
+            label: 'Ações',
+            stopRowClick: true,
+            render: (p) => (
+              <div className="flex items-center gap-1.5 flex-nowrap">
+                <button onClick={() => openEditModal(p)} className={btn.editSm}>
+                  Editar
+                </button>
+                <button
+                  onClick={() => handleDeleteProject(p.id)}
+                  className={btn.dangerSm}
+                  disabled={deletingId === p.id}
+                >
+                  {deletingId === p.id ? 'Excluindo...' : 'Excluir'}
+                </button>
+              </div>
+            ),
+          },
+        ] satisfies DataTableColumn<Projeto>[]}
+      />
 
       {/* Modal de Novo Projeto */}
       {showModal && (
@@ -628,14 +613,14 @@ export default function Projects() {
                     setModalError(null);
                     setEditingProject(null);
                   }}
-                  className={buttonStyles.secondary}
+                  className={btn.secondaryLg}
                   disabled={submitting}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className={`${buttonStyles.primary} disabled:opacity-50 disabled:cursor-not-allowed`}
+                  className={btn.primaryLg}
                   disabled={submitting}
                 >
                   {submitting ? (editingProject ? 'Salvando...' : 'Criando...') : editingProject ? 'Salvar Alterações' : 'Criar Projeto'}
@@ -687,7 +672,7 @@ export default function Projects() {
                     setDeleteConfirmName('');
                     setError(null);
                   }}
-                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  className={btn.secondaryLg}
                   disabled={deletingId === projectToDelete.id}
                 >
                   Cancelar
@@ -695,7 +680,7 @@ export default function Projects() {
                 <button
                   type="button"
                   onClick={handleConfirmDelete}
-                  className="px-6 py-2.5 rounded-md bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.dangerLg}
                   disabled={deletingId === projectToDelete.id || deleteConfirmName.trim() !== projectToDelete.nome.trim()}
                 >
                   {deletingId === projectToDelete.id ? 'Removendo...' : 'Confirmar Remoção'}

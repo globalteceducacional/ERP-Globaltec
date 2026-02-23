@@ -5,6 +5,8 @@ import { toast, formatApiError } from '../utils/toast';
 import { compressImage } from '../utils/stockHelpers';
 import { FORMAS_PAGAMENTO, INITIAL_COTACAO } from '../constants/stock';
 import type { Cotacao, Supplier, Projeto } from '../types/stock';
+import { DataTable, DataTableColumn } from '../components/DataTable';
+import { btn } from '../utils/buttonStyles';
 
 type RequerimentoTipo = 'SOLICITACAO' | 'APROVACAO' | 'INFORMACAO' | 'RECLAMACAO' | 'SUGESTAO' | 'COMPRA' | 'OUTRO';
 
@@ -716,7 +718,7 @@ export default function Communications() {
               <button
                 type="button"
                 onClick={addItem}
-                className="px-3 py-1.5 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-sm transition-colors"
+                className={btn.primarySoft}
               >
                 + Adicionar Item
               </button>
@@ -843,7 +845,7 @@ export default function Communications() {
                     <button
                       type="button"
                       onClick={() => addCotacaoItem(index)}
-                      className="px-2 py-1 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-xs transition-colors"
+                      className={btn.primarySoft}
                     >
                       + Adicionar Cotação
                     </button>
@@ -984,114 +986,104 @@ export default function Communications() {
         <button
           type="submit"
           disabled={submitting}
-          className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          className={btn.primary}
         >
           {submitting ? 'Enviando...' : 'Enviar Requerimento'}
         </button>
       </form>
 
       {/* Tabela de Requerimentos */}
-      <div className="bg-neutral/80 border border-white/10 rounded-xl overflow-hidden">
-        {loading ? (
-          <div className="p-8 text-center text-white/60">Carregando...</div>
-        ) : requests.length === 0 ? (
-          <div className="p-8 text-center text-white/60">Nenhum requerimento encontrado</div>
-        ) : (
-          <table className="min-w-full text-sm">
-            <thead className="bg-white/5 text-white/70">
-              <tr>
-                <th className="px-4 py-3 text-left">Tipo</th>
-                <th className="px-4 py-3 text-left">Mensagem</th>
-                <th className="px-4 py-3 text-left">Usuário</th>
-                <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-4 py-3 text-left">Resposta</th>
-                <th className="px-4 py-3 text-left">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {requests.map((request) => {
-                const tipoLabels: Record<RequerimentoTipo, string> = {
-                  SOLICITACAO: 'Solicitação',
-                  APROVACAO: 'Aprovação',
-                  INFORMACAO: 'Informação',
-                  RECLAMACAO: 'Reclamação',
-                  SUGESTAO: 'Sugestão',
-                  COMPRA: 'Compra',
-                  OUTRO: 'Outro',
-                };
-
-                return (
-                  <tr
-                    key={request.id}
-                    className="border-t border-white/5 hover:bg-white/10 transition-colors"
+      {(() => {
+        const tipoLabels: Record<RequerimentoTipo, string> = {
+          SOLICITACAO: 'Solicitação',
+          APROVACAO: 'Aprovação',
+          INFORMACAO: 'Informação',
+          RECLAMACAO: 'Reclamação',
+          SUGESTAO: 'Sugestão',
+          COMPRA: 'Compra',
+          OUTRO: 'Outro',
+        };
+        return (
+          <DataTable<Request>
+            data={requests}
+            keyExtractor={(r) => r.id}
+            loading={loading}
+            emptyMessage="Nenhum requerimento encontrado"
+            onRowClick={(r) => handleRequestClick(r)}
+            columns={[
+              {
+                key: 'tipo',
+                label: 'Tipo',
+                render: (r) => (
+                  <span className="px-2 py-1 rounded text-xs bg-primary/20 text-primary border border-primary/30">
+                    {tipoLabels[r.tipo] || r.tipo}
+                  </span>
+                ),
+              },
+              {
+                key: 'mensagem',
+                label: 'Mensagem',
+                tdClassName: 'max-w-xl',
+                render: (r) => (
+                  <>
+                    <p className="font-medium text-white/90">
+                      {r.tipo === 'COMPRA' ? 'Solicitação de Compra' : r.texto || '—'}
+                    </p>
+                    <p className="text-xs text-white/50 mt-1">
+                      {new Date(r.dataCriacao).toLocaleString('pt-BR')}
+                    </p>
+                  </>
+                ),
+              },
+              {
+                key: 'usuario',
+                label: 'Usuário',
+                render: (r) => (
+                  <span className="text-white/80">
+                    {subTab === 'sent' ? r.destinatario?.nome ?? '—' : r.usuario?.nome ?? '—'}
+                  </span>
+                ),
+              },
+              {
+                key: 'status',
+                label: 'Status',
+                render: (r) => <span className="text-white/60">{r.status}</span>,
+              },
+              {
+                key: 'resposta',
+                label: 'Resposta',
+                render: (r) =>
+                  r.resposta ? (
+                    <span className="text-primary">Respondido</span>
+                  ) : (
+                    <span className="text-white/40">Pendente</span>
+                  ),
+              },
+              {
+                key: 'acoes',
+                label: 'Ações',
+                stopRowClick: true,
+                render: (r) => (
+                  <button
+                    onClick={() => handleDeleteRequest(r)}
+                    disabled={deletingRequestId === r.id}
+                    className="text-danger hover:text-danger/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Excluir requerimento"
                   >
-                    <td 
-                      className="px-4 py-3 cursor-pointer"
-                      onClick={() => handleRequestClick(request)}
-                    >
-                      <span className="px-2 py-1 rounded text-xs bg-primary/20 text-primary border border-primary/30">
-                        {tipoLabels[request.tipo] || request.tipo}
-                      </span>
-                    </td>
-                    <td 
-                      className="px-4 py-3 max-w-xl cursor-pointer"
-                      onClick={() => handleRequestClick(request)}
-                    >
-                      <p className="font-medium text-white/90">
-                        {request.tipo === 'COMPRA' ? 'Solicitação de Compra' : request.texto || '—'}
-                      </p>
-                      <p className="text-xs text-white/50 mt-1">
-                        {new Date(request.dataCriacao).toLocaleString('pt-BR')}
-                      </p>
-                    </td>
-                    <td 
-                      className="px-4 py-3 text-white/80 cursor-pointer"
-                      onClick={() => handleRequestClick(request)}
-                    >
-                      {subTab === 'sent' ? request.destinatario?.nome ?? '—' : request.usuario?.nome ?? '—'}
-                    </td>
-                    <td 
-                      className="px-4 py-3 text-white/60 cursor-pointer"
-                      onClick={() => handleRequestClick(request)}
-                    >
-                      {request.status}
-                    </td>
-                    <td 
-                      className="px-4 py-3 text-white/70 cursor-pointer"
-                      onClick={() => handleRequestClick(request)}
-                    >
-                      {request.resposta ? (
-                        <span className="text-primary">Respondido</span>
-                      ) : (
-                        <span className="text-white/40">Pendente</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteRequest(request);
-                        }}
-                        disabled={deletingRequestId === request.id}
-                        className="text-danger hover:text-danger/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Excluir requerimento"
-                      >
-                        {deletingRequestId === request.id ? (
-                          <span className="text-sm">Excluindo...</span>
-                        ) : (
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        )}
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+                    {deletingRequestId === r.id ? (
+                      <span className="text-sm">Excluindo...</span>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    )}
+                  </button>
+                ),
+              },
+            ] satisfies DataTableColumn<Request>[]}
+          />
+        );
+      })()}
 
       {/* Modal de Confirmação de Exclusão */}
       {showDeleteConfirm && requestToDelete && (
@@ -1108,7 +1100,7 @@ export default function Communications() {
                     setShowDeleteConfirm(false);
                     setRequestToDelete(null);
                   }}
-                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  className={btn.secondary}
                   disabled={deletingRequestId !== null}
                 >
                   Cancelar
@@ -1116,7 +1108,7 @@ export default function Communications() {
                 <button
                   onClick={confirmDelete}
                   disabled={deletingRequestId !== null}
-                  className="px-4 py-2 rounded-md bg-danger hover:bg-danger/80 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.danger}
                 >
                   {deletingRequestId !== null ? 'Excluindo...' : 'Excluir'}
                 </button>

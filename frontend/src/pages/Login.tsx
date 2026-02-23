@@ -1,4 +1,5 @@
 import { FormEvent, useState, useEffect } from 'react';
+import { btn } from '../utils/buttonStyles';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
@@ -79,7 +80,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="bg-primary hover:bg-primary/80 disabled:bg-primary/40 px-4 py-2 rounded-md font-semibold"
+            className={`${btn.primaryLg} w-full`}
           >
             {loading ? 'Entrando...' : 'Entrar'}
           </button>

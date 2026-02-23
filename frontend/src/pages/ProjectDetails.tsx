@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
 import { ChecklistItemEntrega, ChecklistItem, ChecklistSubItem } from '../types';
-import { buttonStyles } from '../utils/buttonStyles';
+import { btn } from '../utils/buttonStyles';
+import { DataTable, DataTableColumn } from '../components/DataTable';
 import { toast, formatApiError } from '../utils/toast';
 import {
   getStatusColor,
@@ -73,6 +74,8 @@ interface Compra {
   nfUrl?: string | null;
   comprovantePagamentoUrl?: string | null;
   motivoRejeicao?: string | null;
+  etapaId?: number | null;
+  etapa?: { id: number; nome: string } | null;
 }
 
 interface ProjectDetails {
@@ -739,6 +742,15 @@ export default function ProjectDetails() {
     }
   }
 
+  const filteredCompras = useMemo(() => {
+    if (!project) return [];
+    if (!selectedEtapaForCompra) return project.compras;
+    return project.compras.filter((compra) => {
+      const etapaId = compra.etapaId ?? compra.etapa?.id ?? null;
+      return etapaId === selectedEtapaForCompra.id;
+    });
+  }, [project, selectedEtapaForCompra]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -815,21 +827,19 @@ export default function ProjectDetails() {
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap items-center gap-2 sm:space-x-4">
-          <button
-            onClick={() => navigate('/projects')}
-            className="text-primary hover:text-primary/80 transition-colors text-sm sm:text-base"
-          >
-            ← Voltar
-          </button>
-          <div className="min-w-0">
-            <h2 className="text-xl font-bold truncate sm:text-2xl">{project.nome}</h2>
-            <span className={`inline-block mt-1 px-2 py-1 rounded text-xs ${projectStatusColor}`}>
-              {projectStatusLabel}
-            </span>
-          </div>
+      {/* Header: Voltar à esquerda, nome do projeto à direita */}
+      <div className="flex items-center justify-between gap-3">
+        <button
+          onClick={() => navigate('/projects')}
+          className="text-primary hover:text-primary/80 transition-colors text-sm sm:text-base shrink-0"
+        >
+          ← Voltar
+        </button>
+        <div className="min-w-0 flex-1 text-right">
+          <h2 className="text-xl font-bold truncate sm:text-2xl">{project.nome}</h2>
+          <span className={`inline-block mt-1 px-2 py-1 rounded text-xs ${projectStatusColor}`}>
+            {projectStatusLabel}
+          </span>
         </div>
       </div>
 
@@ -968,7 +978,7 @@ export default function ProjectDetails() {
                 await loadAvailableStockItems();
                 setShowEtapaModal(true);
               }}
-              className={buttonStyles.primary}
+              className={btn.primary}
             >
               + Adicionar Etapa
             </button>
@@ -1017,12 +1027,12 @@ export default function ProjectDetails() {
                         </span>
                         {isDiretor && (
                           <>
-                          <button onClick={() => handleEditEtapa(etapa)} className={buttonStyles.edit}>
-                            Editar
-                          </button>
+                            <button onClick={() => handleEditEtapa(etapa)} className={btn.editSm}>
+                              Editar
+                            </button>
                             <button 
                               onClick={() => handleDeleteEtapa(etapa)} 
-                              className="px-3 py-1 rounded-md bg-danger/20 hover:bg-danger/30 text-danger text-xs border border-danger/30 transition-colors"
+                              className={btn.dangerSm}
                             >
                               Deletar
                             </button>
@@ -1150,7 +1160,7 @@ export default function ProjectDetails() {
                               type="button"
                               onClick={() => handleRejectEtapa(etapa.id)}
                               disabled={isReviewing}
-                              className="px-4 py-2 rounded-md bg-danger/20 hover:bg-danger/30 text-danger text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={btn.primary}
                             >
                               {isReviewing ? 'Processando...' : 'Recusar'}
                             </button>
@@ -1158,7 +1168,7 @@ export default function ProjectDetails() {
                               type="button"
                               onClick={() => handleApproveEtapa(etapa.id)}
                               disabled={isReviewing}
-                              className="px-4 py-2 rounded-md bg-success/20 hover:bg-success/30 text-success text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                              className={btn.primary}
                             >
                               {isReviewing ? 'Processando...' : 'Aprovar'}
                             </button>
@@ -1252,7 +1262,7 @@ export default function ProjectDetails() {
                                     <button
                                       type="button"
                                       onClick={() => toggleChecklistDetails(detailsKey)}
-                                      className="shrink-0 px-2 py-1 rounded text-xs transition-colors bg-sky-500/20 hover:bg-sky-500/30 text-sky-300 border border-sky-400/30"
+                                      className={`${btn.editSm} shrink-0`}
                                       title={isExpanded ? 'Ocultar detalhes' : 'Ver detalhes e subitens'}
                                     >
                                       {hasSubitens ? `(${item.subitens!.length})` : ''} {isExpanded ? '▲' : '▼'}
@@ -1265,7 +1275,7 @@ export default function ProjectDetails() {
                                         setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
                                         setShowViewEntregaModal(true);
                                       }}
-                                      className="shrink-0 px-2 py-1 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors whitespace-nowrap"
+                                      className={`${btn.primarySoft} shrink-0 whitespace-nowrap`}
                                       title="Ver detalhes da entrega"
                                     >
                                       Ver entrega
@@ -1297,7 +1307,7 @@ export default function ProjectDetails() {
                                             setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: false }));
                                           }
                                         }}
-                                        className="px-2 py-0.5 rounded text-xs bg-success/20 hover:bg-success/30 text-success border border-success/30"
+                                        className={btn.successSm}
                                         disabled={itemLoading}
                                       >
                                         Aprovar
@@ -1323,7 +1333,7 @@ export default function ProjectDetails() {
                                             setReviewLoading((prev) => ({ ...prev, [`${etapa.id}-${index}`]: false }));
                                           }
                                         }}
-                                        className="px-2 py-0.5 rounded text-xs bg-danger/20 hover:bg-danger/30 text-danger border border-danger/30"
+                                        className={btn.dangerSm}
                                         disabled={itemLoading}
                                       >
                                         Recusar
@@ -1409,7 +1419,7 @@ export default function ProjectDetails() {
                                                     setSelectedViewEntrega({ etapa, index, entrega: entregaSubitem });
                                                     setShowViewEntregaModal(true);
                                                   }}
-                                                  className="px-1.5 py-0.5 rounded text-[10px] bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                                                  className={btn.primarySoft}
                                                   title="Ver detalhes da entrega"
                                                 >
                                                   Ver
@@ -1453,7 +1463,7 @@ export default function ProjectDetails() {
                                                         }));
                                                       }
                                                     }}
-                                                    className="px-1.5 py-0.5 rounded text-[10px] bg-success/20 hover:bg-success/30 text-success border border-success/30"
+                                                    className={btn.successSm}
                                                     disabled={subLoading}
                                                   >
                                                     Aprovar
@@ -1490,7 +1500,7 @@ export default function ProjectDetails() {
                                                         }));
                                                       }
                                                     }}
-                                                    className="px-1.5 py-0.5 rounded text-[10px] bg-danger/20 hover:bg-danger/30 text-danger border border-danger/30"
+                                                    className={btn.dangerSm}
                                                     disabled={subLoading}
                                                   >
                                                     Recusar
@@ -1606,32 +1616,32 @@ export default function ProjectDetails() {
 
       {/* Compras */}
       {/* Compras Relacionadas */}
-        <div className="bg-neutral/80 border border-white/10 rounded-xl p-6">
-        <div className="flex items-center justify-between mb-4">
+      <div className="bg-neutral/80 border border-white/10 rounded-xl p-4 sm:p-6">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
           <h3 className="text-lg font-semibold border-b border-white/10 pb-2">
             Compras Relacionadas ({project.compras.length})
           </h3>
           {(isDiretor || isSupervisor) && (
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
               {project.etapas.length > 1 && (
                 <select
                   value={selectedEtapaForCompra?.id || ''}
                   onChange={(e) => {
                     const etapaId = Number(e.target.value);
-                    const etapa = project.etapas.find((e) => e.id === etapaId);
-                    if (etapa) {
-                      setSelectedEtapaForCompra(etapa);
-                    }
+                    const etapa = project.etapas.find((et) => et.id === etapaId);
+                    setSelectedEtapaForCompra(etapa ?? null);
                   }}
-                  className="px-3 py-2 rounded-md bg-white/10 border border-white/30 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  className="w-full px-3 py-2 rounded-md bg-white/10 border border-white/30 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
                   style={{
                     backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
                     backgroundRepeat: 'no-repeat',
                     backgroundPosition: 'right 0.75rem center',
-                    paddingRight: '2.5rem'
+                    paddingRight: '2.5rem',
                   }}
                 >
-                  <option value="" className="bg-neutral text-white">Selecione a etapa</option>
+                  <option value="" className="bg-neutral text-white">
+                    Selecione a etapa
+                  </option>
                   {project.etapas.map((etapa) => (
                     <option key={etapa.id} value={etapa.id} className="bg-neutral text-white">
                       {etapa.nome}
@@ -1670,66 +1680,74 @@ export default function ProjectDetails() {
                   }
                 }}
                 disabled={project.etapas.length > 1 && !selectedEtapaForCompra}
-                className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className={btn.primary}
               >
                 + Solicitar Compra
               </button>
             </div>
           )}
         </div>
-        
+
         {project.compras.length > 0 ? (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-white/5 text-white/70">
-                <tr>
-                  <th className="px-4 py-2 text-left">Item</th>
-                  <th className="px-4 py-2 text-left">Quantidade</th>
-                  <th className="px-4 py-2 text-left">Valor Unitário</th>
-                  <th className="px-4 py-2 text-left">Total</th>
-                  <th className="px-4 py-2 text-left">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {project.compras.map((compra) => (
-                  <tr key={compra.id} className={`border-t border-white/5 ${compra.status === 'REPROVADO' ? 'bg-red-500/10' : ''}`}>
-                    <td className="px-4 py-2">
-                      <div>
-                        <div>{compra.item}</div>
-                        {compra.status === 'REPROVADO' && compra.motivoRejeicao && (
-                          <div className="text-xs text-red-300 mt-1">
-                            Motivo: {compra.motivoRejeicao}
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-2">{compra.quantidade}</td>
-                    <td className="px-4 py-2">
-                      {compra.valorUnitario 
-                        ? compra.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
-                        : 'Aguardando cotação'}
-                    </td>
-                    <td className="px-4 py-2 font-semibold">
-                      {compra.valorUnitario 
-                        ? (compra.quantidade * compra.valorUnitario).toLocaleString('pt-BR', {
-                        style: 'currency',
-                        currency: 'BRL',
-                          })
-                        : 'Aguardando cotação'}
-                    </td>
-                    <td className="px-4 py-2">
-                      <span className={`px-2 py-1 rounded text-xs ${getStatusColor(compra.status)}`}>
-                        {getStatusLabel(compra.status)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable<Compra>
+            data={filteredCompras}
+            keyExtractor={(c) => c.id}
+            emptyMessage="Nenhuma compra relacionada a este projeto"
+            rowClassName={(c) => c.status === 'REPROVADO' ? 'bg-red-500/10' : ''}
+            columns={[
+              {
+                key: 'item',
+                label: 'Item',
+                render: (c) => (
+                  <div>
+                    <div>{c.item}</div>
+                    {c.status === 'REPROVADO' && c.motivoRejeicao && (
+                      <div className="text-xs text-red-300 mt-1">Motivo: {c.motivoRejeicao}</div>
+                    )}
+                  </div>
+                ),
+              },
+              {
+                key: 'quantidade',
+                label: 'Quantidade',
+                render: (c) => <span>{c.quantidade}</span>,
+              },
+              {
+                key: 'valorUnitario',
+                label: 'Valor Unitário',
+                render: (c) => (
+                  <span>
+                    {c.valorUnitario
+                      ? c.valorUnitario.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                      : 'Aguardando cotação'}
+                  </span>
+                ),
+              },
+              {
+                key: 'total',
+                label: 'Total',
+                render: (c) => (
+                  <span className="font-semibold">
+                    {c.valorUnitario
+                      ? (c.quantidade * c.valorUnitario).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+                      : 'Aguardando cotação'}
+                  </span>
+                ),
+              },
+              {
+                key: 'status',
+                label: 'Status',
+                render: (c) => (
+                  <span className={`px-2 py-1 rounded text-xs ${getStatusColor(c.status)}`}>
+                    {getStatusLabel(c.status)}
+                  </span>
+                ),
+              },
+            ] satisfies DataTableColumn<Compra>[]}
+          />
         ) : (
           <p className="text-white/50 text-sm">Nenhuma compra relacionada a este projeto</p>
-      )}
+        )}
       </div>
       
       {/* Modal Enviar Entrega */}
@@ -1797,14 +1815,14 @@ export default function ProjectDetails() {
                 <button
                   type="button"
                   onClick={handleCloseEntregaModal}
-                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                  className={btn.secondary}
                   disabled={enviandoEntrega}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.primary}
                   disabled={enviandoEntrega}
                 >
                   {enviandoEntrega ? 'Enviando...' : 'Enviar para revisão'}
@@ -1933,7 +1951,7 @@ export default function ProjectDetails() {
                               toast.error('Erro ao abrir documento. Tente novamente.');
                             }
                           }}
-                          className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-md bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                          className={`${btn.primarySoft} w-full gap-2`}
                         >
                           <span>📄</span>
                           <span>Abrir documento {index + 1}</span>
@@ -2007,7 +2025,7 @@ export default function ProjectDetails() {
                     setShowViewEntregaModal(false);
                     setSelectedViewEntrega(null);
                   }}
-                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                  className={btn.secondary}
                 >
                   Fechar
                 </button>
@@ -2290,7 +2308,7 @@ export default function ProjectDetails() {
                                 const newChecklist = etapaForm.checklist.filter((_, i) => i !== index);
                                 setEtapaForm({ ...etapaForm, checklist: newChecklist });
                               }}
-                              className={buttonStyles.danger}
+                              className={btn.dangerSm}
                             >
                               Remover
                             </button>
@@ -2412,7 +2430,7 @@ export default function ProjectDetails() {
                         checklist: [...etapaForm.checklist, { texto: '', concluido: false, descricao: '', subitens: [] }],
                       });
                     }}
-                    className={`${buttonStyles.secondary} w-full text-center`}
+                    className={`${btn.secondary} w-full`}
                   >
                     + Adicionar Item
                   </button>
@@ -2582,7 +2600,7 @@ export default function ProjectDetails() {
                             }
                           }
                         }}
-                        className="px-4 py-2.5 bg-primary hover:bg-primary/80 text-white rounded-md transition-colors font-medium"
+                        className={btn.primaryLg}
                       >
                         Adicionar
                       </button>
@@ -2690,14 +2708,14 @@ export default function ProjectDetails() {
                     setSelectedStockItemId(null);
                     setSelectedStockQuantity(1);
                   }}
-                  className={buttonStyles.secondary}
+                  className={btn.secondaryLg}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className={`${buttonStyles.primary} disabled:opacity-50 disabled:cursor-not-allowed`}
+                  className={btn.primaryLg}
                 >
                   {submitting ? (editingEtapa ? 'Salvando...' : 'Criando...') : editingEtapa ? 'Salvar Alterações' : 'Criar Etapa'}
                 </button>
@@ -2910,7 +2928,7 @@ export default function ProjectDetails() {
                         cotacoes: [...prev.cotacoes, { valorUnitario: 0, frete: 0, impostos: 0 }],
                       }));
                     }}
-                    className="w-full px-3 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                    className={`${btn.secondary} w-full`}
                   >
                     + Adicionar Cotação
                   </button>
@@ -2954,7 +2972,7 @@ export default function ProjectDetails() {
                     setSelectedEtapaForCompra(null);
                     setError(null);
                   }}
-                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                  className={btn.secondary}
                   disabled={submitting}
                 >
                   Cancelar
@@ -2962,7 +2980,7 @@ export default function ProjectDetails() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.primary}
                 >
                   {submitting ? 'Criando...' : 'Criar Compra'}
                 </button>
@@ -2989,7 +3007,7 @@ export default function ProjectDetails() {
                   setShowDeleteEtapaModal(false);
                   setEtapaToDelete(null);
                 }}
-                className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                className={btn.secondary}
                 disabled={deletingEtapa}
               >
                 Cancelar
@@ -2998,7 +3016,7 @@ export default function ProjectDetails() {
                 type="button"
                 onClick={confirmDeleteEtapa}
                 disabled={deletingEtapa}
-                className="px-4 py-2 rounded-md bg-danger hover:bg-danger/80 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className={btn.danger}
               >
                 {deletingEtapa ? 'Deletando...' : 'Deletar'}
               </button>

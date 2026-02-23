@@ -2,7 +2,7 @@ import { useAuthStore } from '../../store/auth';
 import { useNavigate } from 'react-router-dom';
 import { useState, FormEvent, useEffect, useRef } from 'react';
 import { api } from '../../services/api';
-import { buttonStyles } from '../../utils/buttonStyles';
+import { btn } from '../../utils/buttonStyles';
 import { Notifications } from '../Notifications';
 import { Notificacao } from '../../types';
 import { toast } from '../../utils/toast';
@@ -110,7 +110,7 @@ export function Header({ title, subtitle, isMobile, onOpenMobileMenu }: HeaderPr
             <button
               type="button"
               onClick={onOpenMobileMenu}
-              className="p-2 rounded-md hover:bg-white/10 text-white transition-colors shrink-0"
+              className={`${btn.iconBtn} shrink-0`}
               title="Abrir menu"
               aria-label="Abrir menu"
             >
@@ -129,7 +129,14 @@ export function Header({ title, subtitle, isMobile, onOpenMobileMenu }: HeaderPr
             <>
               <div className="relative" ref={notificationsRef}>
                 <button
-                  onClick={() => setShowNotifications(!showNotifications)}
+                  onClick={() => {
+                    if (window.innerWidth < 640) {
+                      setShowNotifications(false);
+                      navigate('/notifications');
+                      return;
+                    }
+                    setShowNotifications((prev) => !prev);
+                  }}
                   className="relative p-2 sm:px-3 sm:py-2 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
                   title="Notificações"
                 >
@@ -148,7 +155,7 @@ export function Header({ title, subtitle, isMobile, onOpenMobileMenu }: HeaderPr
               </div>
               <button
                 onClick={() => setShowPasswordModal(true)}
-                className="hidden sm:inline-flex px-3 py-2 sm:px-4 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-xs sm:text-sm border border-primary/30"
+                className={`hidden sm:inline-flex ${btn.primarySoft}`}
               >
                 Alterar Senha
               </button>
@@ -159,7 +166,7 @@ export function Header({ title, subtitle, isMobile, onOpenMobileMenu }: HeaderPr
           )}
           <button
             onClick={handleLogout}
-            className="px-3 py-2 sm:px-4 rounded-md bg-danger hover:bg-danger/80 text-white text-xs sm:text-sm"
+            className={btn.dangerSm}
           >
             Sair
           </button>
@@ -232,14 +239,14 @@ export function Header({ title, subtitle, isMobile, onOpenMobileMenu }: HeaderPr
                     setNovaSenha('');
                     setConfirmarSenha('');
                   }}
-                  className={buttonStyles.secondary}
+                  className={btn.secondaryLg}
                   disabled={loading}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className={`${buttonStyles.primary} disabled:opacity-50 disabled:cursor-not-allowed`}
+                  className={btn.primaryLg}
                   disabled={loading}
                 >
                   {loading ? 'Alterando...' : 'Alterar Senha'}

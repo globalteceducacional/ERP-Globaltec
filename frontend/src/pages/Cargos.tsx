@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, FormEvent } from 'react';
 import { api } from '../services/api';
 import { Cargo, CargoNivel, CargoPermission } from '../types';
-import { buttonStyles } from '../utils/buttonStyles';
+import { btn } from '../utils/buttonStyles';
 import { useAuthStore } from '../store/auth';
+import { DataTable, DataTableColumn } from '../components/DataTable';
 import { toast, formatApiError } from '../utils/toast';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
 
@@ -313,7 +314,7 @@ export default function Cargos() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h3 className="text-xl font-semibold">Cargos</h3>
-        <button onClick={openCreateModal} className={buttonStyles.primary}>
+        <button onClick={openCreateModal} className={btn.primary}>
           Novo Cargo
         </button>
       </div>
@@ -391,7 +392,7 @@ export default function Cargos() {
                 setFilterStatus('all');
                 setFilterNivel('all');
               }}
-              className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+              className={btn.secondary}
             >
               Limpar Filtros
             </button>
@@ -402,72 +403,82 @@ export default function Cargos() {
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-white/10">
-        <table className="min-w-full text-sm">
-          <thead className="bg-white/5 text-white/70">
-            <tr>
-              <th className="px-4 py-3 text-left">Nome</th>
-              <th className="px-4 py-3 text-left">Nível</th>
-              <th className="px-4 py-3 text-left">Descrição</th>
-              <th className="px-4 py-3 text-left">Usuários</th>
-              <th className="px-4 py-3 text-left">Status</th>
-              <th className="px-4 py-3 text-left">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredCargos.map((cargo) => (
-              <tr key={cargo.id} className="border-t border-white/5 hover:bg-white/5">
-                <td className="px-4 py-3 font-medium">{cargo.nome}</td>
-                <td className="px-4 py-3 text-white/70">
-                  {nivelLabels[cargo.nivelAcesso] || cargo.nivelAcesso}
-                  {!cargo.herdaPermissoes && (
-                    <span className="ml-2 text-xs px-2 py-0.5 rounded bg-warning/20 text-warning border border-warning/30">
-                      Sem herança
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-white/70">{cargo.descricao || '-'}</td>
-                <td className="px-4 py-3">{cargo._count?.usuarios || 0}</td>
-                <td className="px-4 py-3">
-                  <span className={`px-2 py-1 rounded text-xs font-medium ${
-                    cargo.ativo 
-                      ? 'bg-green-500/20 text-green-300 border border-green-500/40' 
-                      : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
-                  }`}>
-                    {cargo.ativo ? 'Ativo' : 'Inativo'}
+      <DataTable<Cargo>
+        data={filteredCargos}
+        keyExtractor={(c) => c.id}
+        emptyMessage="Nenhum cargo encontrado"
+        columns={[
+          {
+            key: 'nome',
+            label: 'Nome',
+            render: (c) => <span className="font-medium">{c.nome}</span>,
+          },
+          {
+            key: 'nivel',
+            label: 'Nível',
+            render: (c) => (
+              <span className="text-white/70">
+                {nivelLabels[c.nivelAcesso] || c.nivelAcesso}
+                {!c.herdaPermissoes && (
+                  <span className="ml-2 text-xs px-2 py-0.5 rounded bg-warning/20 text-warning border border-warning/30">
+                    Sem herança
                   </span>
-                </td>
-                <td className="px-4 py-3 flex items-center gap-2">
-                  <button
-                    onClick={() => openEditModal(cargo)}
-                    className={buttonStyles.edit}
-                  >
-                    Editar
+                )}
+              </span>
+            ),
+          },
+          {
+            key: 'descricao',
+            label: 'Descrição',
+            render: (c) => (
+              <span className="block max-w-[220px] truncate text-white/70" title={c.descricao || undefined}>
+                {c.descricao || '-'}
+              </span>
+            ),
+          },
+          {
+            key: 'usuarios',
+            label: 'Usuários',
+            render: (c) => <span>{c._count?.usuarios || 0}</span>,
+          },
+          {
+            key: 'status',
+            label: 'Status',
+            render: (c) => (
+              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                c.ativo
+                  ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                  : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+              }`}>
+                {c.ativo ? 'Ativo' : 'Inativo'}
+              </span>
+            ),
+          },
+          {
+            key: 'acoes',
+            label: 'Ações',
+            stopRowClick: true,
+            render: (c) => (
+              <div className="flex items-center gap-1.5 flex-nowrap">
+                <button onClick={() => openEditModal(c)} className={btn.editSm}>
+                  Editar
+                </button>
+                <button
+                  onClick={() => toggleActive(c)}
+                  className={c.ativo ? btn.warningSm : btn.successSm}
+                >
+                  {c.ativo ? 'Desativar' : 'Ativar'}
+                </button>
+                {c._count?.usuarios === 0 && (
+                  <button onClick={() => handleDelete(c)} className={btn.dangerSm}>
+                    Excluir
                   </button>
-                  <button
-                    onClick={() => toggleActive(cargo)}
-                    className={`px-3 py-1 rounded-md text-xs transition-colors ${
-                      cargo.ativo
-                        ? 'bg-warning/20 hover:bg-warning/30 text-warning'
-                        : 'bg-success/20 hover:bg-success/30 text-success'
-                    }`}
-                  >
-                    {cargo.ativo ? 'Desativar' : 'Ativar'}
-                  </button>
-                  {cargo._count?.usuarios === 0 && (
-                    <button
-                      onClick={() => handleDelete(cargo)}
-                      className={buttonStyles.danger}
-                    >
-                      Excluir
-                    </button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+                )}
+              </div>
+            ),
+          },
+        ] satisfies DataTableColumn<Cargo>[]}
+      />
 
       {/* Modal de Criar/Editar Cargo */}
       {showModal && (
@@ -629,14 +640,14 @@ export default function Cargos() {
                     setError(null);
                     setModalError(null);
                   }}
-                  className={buttonStyles.secondary}
+                  className={btn.secondaryLg}
                   disabled={submitting}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className={`${buttonStyles.primary} disabled:opacity-50 disabled:cursor-not-allowed`}
+                  className={btn.primaryLg}
                   disabled={submitting}
                 >
                   {submitting

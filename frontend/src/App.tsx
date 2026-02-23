@@ -11,6 +11,7 @@ import Users from './pages/Users';
 import Cargos from './pages/Cargos';
 import Suppliers from './pages/Suppliers';
 import Categories from './pages/Categories';
+import NotificationsPage from './pages/NotificationsPage';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
 import { ToastContainer } from './components/ToastContainer';
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="/communications" element={<Communications />} />
             {/* Redirecionamento para compatibilidade com rota antiga */}
             <Route path="/requests" element={<Navigate to="/communications" replace />} />
+            <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/users" element={<Users />} />
             <Route path="/cargos" element={<Cargos />} />
             <Route path="/suppliers" element={<Suppliers />} />

@@ -1,4 +1,5 @@
 import { useEffect, useState, FormEvent, useMemo } from 'react';
+import { btn } from '../utils/buttonStyles';
 import { api } from '../services/api';
 import { jsPDF } from 'jspdf';
 import * as XLSX from 'xlsx-js-style';
@@ -43,6 +44,7 @@ import {
 // Hooks importados
 import { useStockData } from '../hooks/useStockData';
 import { usePurchaseFilters } from '../hooks/usePurchaseFilters';
+import { DataTable, DataTableColumn } from '../components/DataTable';
 
 export default function Stock() {
   // Hook para gerenciar dados do estoque
@@ -1571,163 +1573,121 @@ export default function Stock() {
           <h3 className="text-xl font-semibold">Estoque</h3>
           <button
             onClick={() => setShowItemModal(true)}
-            className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-sm font-semibold"
+            className={btn.primary}
           >
             Adicionar Item
           </button>
         </div>
-        <div className="overflow-x-auto rounded-xl border border-white/10">
-          <table className="min-w-full text-sm table-fixed sm:table-auto">
-            <thead className="bg-white/5 text-white/70">
-              <tr>
-                <th className="px-3 sm:px-4 py-3 text-left w-auto min-w-0">Item</th>
-                <th className="px-3 sm:px-4 py-3 text-left whitespace-nowrap w-24 min-w-[5rem]" title="Quantidade Total">
-                  <span className="hidden sm:inline">Quantidade Total</span>
-                  <span className="sm:hidden">Qtd. Total</span>
-                </th>
-                <th className="px-3 sm:px-4 py-3 text-left whitespace-nowrap w-16 min-w-[4rem]" title="Alocada">
-                  <span className="hidden sm:inline">Alocada</span>
-                  <span className="sm:hidden">Aloc.</span>
-                </th>
-                <th className="px-3 sm:px-4 py-3 text-left whitespace-nowrap w-16 min-w-[4rem]" title="Disponível">
-                  <span className="hidden sm:inline">Disponível</span>
-                  <span className="sm:hidden">Disp.</span>
-                </th>
-                <th className="px-3 sm:px-4 py-3 text-left whitespace-nowrap w-24 min-w-[5rem]">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredItems.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-white/50">
-                    {items.length === 0 ? 'Nenhum item no estoque' : 'Nenhum item encontrado com os filtros aplicados'}
-                  </td>
-                </tr>
-              ) : (
-                filteredItems.map((item) => {
-                  const quantidadeAlocada = item.quantidadeAlocada ?? 0;
-                  const quantidadeDisponivel = item.quantidadeDisponivel ?? item.quantidade ?? 0;
-                  
-                  return (
-                    <tr 
-                      key={item.id} 
-                      className="border-t border-white/5 hover:bg-white/5 cursor-pointer"
-                      onClick={(e) => {
-                        // Não abrir modal se clicar em botões ou inputs
-                        const target = e.target as HTMLElement;
-                        if (target.closest('button') || target.closest('input')) {
-                          return;
+        <DataTable<StockItem>
+          data={filteredItems}
+          keyExtractor={(i) => i.id}
+          emptyMessage={items.length === 0 ? 'Nenhum item no estoque' : 'Nenhum item encontrado com os filtros aplicados'}
+          tableClassName="table-fixed sm:table-auto"
+          onRowClick={(item) => { setItemToView(item); setShowItemDetailsModal(true); }}
+          columns={[
+            {
+              key: 'item',
+              label: 'Item',
+              tdClassName: 'min-w-0 align-top',
+              render: (item) => (
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+                  {item.imagemUrl && (item.imagemUrl.startsWith('data:image/') || item.imagemUrl.startsWith('http://') || item.imagemUrl.startsWith('https://')) && (
+                    <img src={item.imagemUrl} alt={item.item || 'Item'} className="w-10 h-10 object-cover rounded shrink-0"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  )}
+                  <div className="min-w-0 flex-1 overflow-hidden">
+                    <div className="font-medium truncate">{item.item || 'Sem nome'}</div>
+                    {item.descricao && <div className="text-xs text-white/60 truncate">{item.descricao}</div>}
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'quantidade',
+              label: (<><span className="hidden sm:inline">Quantidade Total</span><span className="sm:hidden">Qtd.</span></>),
+              thClassName: 'whitespace-nowrap w-24 min-w-[5rem]',
+              tdClassName: 'align-top whitespace-nowrap w-24 min-w-[5rem]',
+              render: (item) => <span className="font-medium">{item.quantidade || 0}</span>,
+            },
+            {
+              key: 'alocada',
+              label: (<><span className="hidden sm:inline">Alocada</span><span className="sm:hidden">Aloc.</span></>),
+              thClassName: 'whitespace-nowrap w-16 min-w-[4rem]',
+              tdClassName: 'align-top whitespace-nowrap w-16 min-w-[4rem]',
+              render: (item) => {
+                const qtd = item.quantidadeAlocada ?? 0;
+                return (
+                  <span className={`px-2 py-1 rounded text-xs ${qtd > 0 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-white/10 text-white/50'}`}>
+                    {qtd}
+                  </span>
+                );
+              },
+            },
+            {
+              key: 'disponivel',
+              label: (<><span className="hidden sm:inline">Disponível</span><span className="sm:hidden">Disp.</span></>),
+              thClassName: 'whitespace-nowrap w-16 min-w-[4rem]',
+              tdClassName: 'align-top whitespace-nowrap w-16 min-w-[4rem]',
+              render: (item) => {
+                const qtd = item.quantidadeDisponivel ?? item.quantidade ?? 0;
+                return (
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${qtd > 0 ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                    {qtd}
+                  </span>
+                );
+              },
+            },
+            {
+              key: 'acoes',
+              label: 'Ações',
+              stopRowClick: true,
+              render: (item) => (
+                <div className="flex items-center gap-1.5 flex-nowrap">
+                  <button onClick={() => openAlocacaoModal(item)}
+                    className={btn.editSm} title="Gerenciar alocações">
+                    Alocar
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setEditingItem(item);
+                      let etapasData: any[] = [];
+                      if (item.projetoId) {
+                        try {
+                          const projetoResponse = await api.get(`/projects/${item.projetoId}`);
+                          etapasData = projetoResponse.data?.etapas || [];
+                          setEtapas(etapasData);
+                        } catch (err) {
+                          console.error('Erro ao carregar etapas:', err);
+                          setEtapas([]);
                         }
-                        setItemToView(item);
-                        setShowItemDetailsModal(true);
-                      }}
-                    >
-                      <td className="px-3 sm:px-4 py-3 min-w-0 align-top">
-                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                          {item.imagemUrl && (
-                            (item.imagemUrl.startsWith('data:image/') || item.imagemUrl.startsWith('http://') || item.imagemUrl.startsWith('https://')) ? (
-                              <img 
-                                src={item.imagemUrl} 
-                                alt={item.item || 'Item'} 
-                                className="w-10 h-10 object-cover rounded shrink-0"
-                                onError={(e) => {
-                                  // Se a imagem falhar ao carregar, ocultar ou mostrar placeholder
-                                  e.currentTarget.style.display = 'none';
-                                }}
-                              />
-                            ) : null
-                          )}
-                          <div className="min-w-0 flex-1 overflow-hidden">
-                            <div className="font-medium truncate">{item.item || 'Sem nome'}</div>
-                            {item.descricao && <div className="text-xs text-white/60 truncate">{item.descricao}</div>}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-3 sm:px-4 py-3 align-top whitespace-nowrap w-24 min-w-[5rem]">
-                        <span className="font-medium">{item.quantidade || 0}</span>
-                      </td>
-                      <td className="px-3 sm:px-4 py-3 align-top whitespace-nowrap w-16 min-w-[4rem]">
-                        <span className={`px-2 py-1 rounded text-xs ${
-                          quantidadeAlocada > 0 
-                            ? 'bg-yellow-500/20 text-yellow-400' 
-                            : 'bg-white/10 text-white/50'
-                        }`}>
-                          {quantidadeAlocada}
-                        </span>
-                      </td>
-                      <td className="px-3 sm:px-4 py-3 align-top whitespace-nowrap w-16 min-w-[4rem]">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          quantidadeDisponivel > 0 
-                            ? 'bg-green-500/20 text-green-400' 
-                            : 'bg-red-500/20 text-red-400'
-                        }`}>
-                          {quantidadeDisponivel}
-                        </span>
-                      </td>
-                    <td className="px-3 sm:px-4 py-3 align-top w-24 min-w-[5rem]" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => openAlocacaoModal(item)}
-                          className="px-3 py-1.5 text-sm rounded-md bg-purple-600 hover:bg-purple-700 text-white"
-                          title="Gerenciar alocações"
-                        >
-                          Alocar
-                        </button>
-                        <button
-                          onClick={async () => {
-                            setEditingItem(item);
-                            
-                            // Carregar etapas se houver projetoId
-                            let etapasData: any[] = [];
-                            if (item.projetoId) {
-                              try {
-                                // Buscar etapas através do endpoint do projeto que já retorna as etapas
-                                const projetoResponse = await api.get(`/projects/${item.projetoId}`);
-                                etapasData = projetoResponse.data?.etapas || [];
-                                setEtapas(etapasData);
-                              } catch (err) {
-                                console.error('Erro ao carregar etapas:', err);
-                                setEtapas([]);
-                              }
-                            } else {
-                              setEtapas([]);
-                            }
-                            
-                            setItemForm({
-                              item: item.item || '',
-                              codigo: (item as any).codigo || '',
-                              categoriaId: (item as any).categoriaId || undefined,
-                              descricao: item.descricao || '',
-                              quantidade: item.quantidade || 1,
-                              valorUnitario: item.valorUnitario || 0,
-                              unidadeMedida: (item as any).unidadeMedida || 'UN',
-                              localizacao: (item as any).localizacao || '',
-                              imagemUrl: item.imagemUrl || '',
-                            });
-                            setShowEditModal(true);
-                          }}
-                          className="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => {
-                            setItemToDelete(item);
-                            setShowDeleteModal(true);
-                          }}
-                          className="px-3 py-1.5 text-sm rounded-md bg-red-600 hover:bg-red-700 text-white"
-                        >
-                          Remover
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                      } else {
+                        setEtapas([]);
+                      }
+                      setItemForm({
+                        item: item.item || '',
+                        codigo: (item as any).codigo || '',
+                        categoriaId: (item as any).categoriaId || undefined,
+                        descricao: item.descricao || '',
+                        quantidade: item.quantidade || 1,
+                        valorUnitario: item.valorUnitario || 0,
+                        unidadeMedida: (item as any).unidadeMedida || 'UN',
+                        localizacao: (item as any).localizacao || '',
+                        imagemUrl: item.imagemUrl || '',
+                      });
+                      setShowEditModal(true);
+                    }}
+                    className={btn.editSm}>
+                    Editar
+                  </button>
+                  <button onClick={() => { setItemToDelete(item); setShowDeleteModal(true); }}
+                    className={btn.dangerSm}>
+                    Remover
+                  </button>
+                </div>
+              ),
+            },
+          ] satisfies DataTableColumn<StockItem>[]}
+        />
       </section>
       )}
 
@@ -1740,14 +1700,14 @@ export default function Stock() {
               {selectedPurchases.length > 0 && (
                 <button
                   onClick={() => setShowReportModal(true)}
-                  className="px-4 py-2 rounded-md bg-green-600 hover:bg-green-700 text-sm font-semibold"
+                  className={btn.success}
                 >
                   Gerar Relatório ({selectedPurchases.length})
                 </button>
               )}
           <button
             onClick={() => setShowPurchaseModal(true)}
-            className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-sm font-semibold"
+            className={btn.primary}
           >
             Nova Compra
           </button>
@@ -2018,7 +1978,7 @@ export default function Stock() {
                       </div>
                     </td>
                     <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-1.5 flex-nowrap">
                         <button
                           onClick={() => {
                             setPurchaseToUpdateStatus(purchase);
@@ -2046,7 +2006,7 @@ export default function Stock() {
                             setNewObservacao(purchase.observacao || '');
                             setShowStatusModal(true);
                           }}
-                          className="px-3 py-1.5 text-sm rounded-md bg-green-600 hover:bg-green-700 text-white"
+                          className={btn.successSm}
                           title="Alterar Status"
                         >
                           Status
@@ -2080,7 +2040,7 @@ export default function Stock() {
                             });
                             setShowEditPurchaseModal(true);
                           }}
-                          className="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
+                          className={btn.editSm}
                           title="Editar Compra"
                         >
                           Editar
@@ -2090,7 +2050,7 @@ export default function Stock() {
                             setPurchaseToDelete(purchase);
                             setShowDeletePurchaseModal(true);
                           }}
-                          className="px-3 py-1.5 text-sm rounded-md bg-red-600 hover:bg-red-700 text-white"
+                          className={btn.dangerSm}
                           title="Remover Compra"
                         >
                           Remover
@@ -2113,95 +2073,74 @@ export default function Stock() {
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xl font-semibold">Solicitações de Compra</h3>
         </div>
-        <div className="overflow-x-auto rounded-xl border border-white/10">
-          <table className="min-w-full text-sm">
-            <thead className="bg-white/5 text-white/70">
-              <tr>
-                <th className="px-4 py-3 text-left">Item</th>
-                <th className="px-4 py-3 text-left">Quantidade</th>
-                <th className="px-4 py-3 text-left">Solicitado Por</th>
-                <th className="px-4 py-3 text-left">Projeto</th>
-                <th className="px-4 py-3 text-left">Status</th>
-                <th className="px-4 py-3 text-left">Ações</th>
-              </tr>
-            </thead>
-            <tbody>
-              {purchases.filter((p) => p.status === 'SOLICITADO').length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-white/50">
-                    Nenhuma solicitação pendente
-                  </td>
-                </tr>
-              ) : (
-                purchases
-                  .filter((p) => p.status === 'SOLICITADO')
-                  .map((purchase) => {
-                    const solicitadoPor = (purchase as any).solicitadoPor;
-                    const cargoNome = solicitadoPor?.cargo 
-                      ? (typeof solicitadoPor.cargo === 'string' 
-                          ? solicitadoPor.cargo 
-                          : solicitadoPor.cargo.nome || 'Sem cargo')
-                      : 'N/A';
-                    return (
-                      <tr key={purchase.id} className="border-t border-white/5 hover:bg-white/5 bg-yellow-500/10">
-                        <td className="px-4 py-3">
-                          <div className="flex items-center space-x-3">
-                            {purchase.imagemUrl && (
-                              (purchase.imagemUrl.startsWith('data:image/') || purchase.imagemUrl.startsWith('http://') || purchase.imagemUrl.startsWith('https://')) ? (
-                                <img
-                                  src={purchase.imagemUrl}
-                                  alt={purchase.item || 'Item'}
-                                  className="w-10 h-10 object-cover rounded"
-                                  onError={(e) => {
-                                    e.currentTarget.style.display = 'none';
-                                  }}
-                                />
-                              ) : null
-                            )}
-                            <div>
-                              <div className="font-medium">{purchase.item || 'Sem nome'}</div>
-                              {purchase.descricao && <div className="text-xs text-white/60">Motivo: {purchase.descricao}</div>}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">{purchase.quantidade || 0}</td>
-                        <td className="px-4 py-3">
-                          {solicitadoPor ? (
-                            <span>
-                              {solicitadoPor.nome} <span className="text-white/50">({cargoNome})</span>
-                            </span>
-                          ) : (
-                            'N/A'
-                          )}
-                        </td>
-                        <td className="px-4 py-3">
-                          {(purchase as any).projeto?.nome || 'Sem projeto'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="px-2 py-1 rounded text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
-                            SOLICITADO
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => {
-                                setPurchaseToView(purchase);
-                                setShowViewRequestModal(true);
-                              }}
-                              className="px-3 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white"
-                            >
-                              Ver Detalhes
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+        <DataTable<Purchase>
+          data={purchases.filter((p) => p.status === 'SOLICITADO')}
+          keyExtractor={(p) => p.id}
+          emptyMessage="Nenhuma solicitação pendente"
+          rowClassName={() => 'bg-yellow-500/10'}
+          columns={[
+            {
+              key: 'item',
+              label: 'Item',
+              render: (p) => (
+                <div className="flex items-center gap-3 min-w-0">
+                  {p.imagemUrl && (p.imagemUrl.startsWith('data:image/') || p.imagemUrl.startsWith('http://') || p.imagemUrl.startsWith('https://')) && (
+                    <img src={p.imagemUrl} alt={p.item || 'Item'} className="w-10 h-10 object-cover rounded shrink-0"
+                      onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  )}
+                  <div className="min-w-0">
+                    <div className="font-medium truncate">{p.item || 'Sem nome'}</div>
+                    {p.descricao && <div className="text-xs text-white/60 truncate">Motivo: {p.descricao}</div>}
+                  </div>
+                </div>
+              ),
+            },
+            {
+              key: 'quantidade',
+              label: 'Qtd',
+              thClassName: 'whitespace-nowrap',
+              render: (p) => <span>{p.quantidade || 0}</span>,
+            },
+            {
+              key: 'solicitadoPor',
+              label: 'Solicitado Por',
+              render: (p) => {
+                const sol = (p as any).solicitadoPor;
+                const cargo = sol?.cargo ? (typeof sol.cargo === 'string' ? sol.cargo : sol.cargo.nome || 'Sem cargo') : 'N/A';
+                return sol ? (
+                  <span>{sol.nome} <span className="text-white/50">({cargo})</span></span>
+                ) : <span>N/A</span>;
+              },
+            },
+            {
+              key: 'projeto',
+              label: 'Projeto',
+              render: (p) => <span>{(p as any).projeto?.nome || 'Sem projeto'}</span>,
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              render: () => (
+                <span className="px-2 py-1 rounded text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
+                  SOLICITADO
+                </span>
+              ),
+            },
+            {
+              key: 'acoes',
+              label: 'Ações',
+              stopRowClick: true,
+              render: (p) => (
+                <button
+                  onClick={() => { setPurchaseToView(p); setShowViewRequestModal(true); }}
+                  className={btn.editSm}
+                >
+                  Ver Detalhes
+                </button>
+              ),
+            },
+          ] satisfies DataTableColumn<Purchase>[]}
+        />
       </section>
       )}
 
@@ -2371,14 +2310,14 @@ export default function Stock() {
                     setShowItemModal(false);
                     setError(null);
                   }}
-                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm font-semibold transition-colors"
+                  className={btn.secondary}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.primary}
                 >
                   {submitting ? 'Salvando...' : 'Adicionar Item'}
                 </button>
@@ -2531,7 +2470,7 @@ export default function Stock() {
                   (!alocacaoForm.projetoId && !alocacaoForm.usuarioId) ||
                   ((itemParaAlocar?.quantidade || 0) - alocacoes.reduce((sum, a) => sum + (a.quantidade || 0), 0)) <= 0
                 }
-                className="w-full sm:w-auto px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm mb-4"
+                className={`${btn.primary} w-full sm:w-auto mb-4`}
               >
                 {submitting ? 'Criando...' : 'Criar Alocação'}
               </button>
@@ -2572,7 +2511,7 @@ export default function Stock() {
                       <button
                         onClick={() => handleDeleteAlocacao(alocacao.id)}
                         disabled={submitting}
-                        className="px-3 py-1.5 text-xs rounded-md bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+                        className={btn.dangerSm}
                       >
                         Remover
                       </button>
@@ -2789,7 +2728,7 @@ export default function Stock() {
                       imagemUrl: '',
                     });
                   }}
-                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm font-semibold transition-colors"
+                  className={btn.secondary}
                   disabled={submitting}
                 >
                   Cancelar
@@ -2797,7 +2736,7 @@ export default function Stock() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.primary}
                 >
                   {submitting ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
@@ -2837,7 +2776,7 @@ export default function Stock() {
                     setItemToDelete(null);
                     setError(null);
                   }}
-                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  className={btn.secondaryLg}
                   disabled={deleting}
                 >
                   Cancelar
@@ -2845,7 +2784,7 @@ export default function Stock() {
                 <button
                   type="button"
                   onClick={handleDeleteItem}
-                  className="px-6 py-2.5 rounded-md bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.dangerLg}
                   disabled={deleting}
                 >
                   {deleting ? 'Removendo...' : 'Confirmar Remoção'}
@@ -3089,7 +3028,7 @@ export default function Stock() {
                   <button
                     type="button"
                     onClick={() => addCotacao(purchaseForm, setPurchaseForm)}
-                    className="px-3 py-1 rounded-md bg-primary/20 hover:bg-primary/30 text-sm"
+                    className={btn.primarySoft}
                   >
                     + Adicionar Cotação
                   </button>
@@ -3324,14 +3263,14 @@ export default function Stock() {
                     setShowPurchaseModal(false);
                     setError(null);
                   }}
-                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm font-semibold transition-colors"
+                  className={btn.secondary}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.primary}
                 >
                   {submitting ? 'Salvando...' : 'Criar Compra'}
                 </button>
@@ -3567,7 +3506,7 @@ export default function Stock() {
                   <button
                     type="button"
                     onClick={() => addCotacao(purchaseForm, setPurchaseForm)}
-                    className="px-3 py-1 rounded-md bg-primary/20 hover:bg-primary/30 text-sm"
+                    className={btn.primarySoft}
                   >
                     + Adicionar Cotação
                   </button>
@@ -3838,7 +3777,7 @@ export default function Stock() {
                       observacao: '',
                     });
                   }}
-                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm font-semibold transition-colors"
+                  className={btn.secondary}
                   disabled={submitting}
                 >
                   Cancelar
@@ -3846,7 +3785,7 @@ export default function Stock() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.primary}
                 >
                   {submitting ? 'Salvando...' : 'Salvar Alterações'}
                 </button>
@@ -4428,7 +4367,7 @@ export default function Stock() {
                           setShowReportModal(false);
                           setSelectedPurchases([]);
                         }}
-                        className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                        className={btn.secondaryLg}
                       >
                         Fechar
                       </button>
@@ -5405,7 +5344,7 @@ export default function Stock() {
                     setPurchaseToView(null);
                     setError(null);
                   }}
-                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  className={btn.secondaryLg}
                 >
                   Fechar
                 </button>
@@ -5514,7 +5453,7 @@ export default function Stock() {
                     setRejectReason('');
                     setError(null);
                   }}
-                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  className={btn.secondaryLg}
                   disabled={submitting}
                 >
                   Cancelar
@@ -5550,7 +5489,7 @@ export default function Stock() {
                       setSubmitting(false);
                     }
                   }}
-                  className="px-6 py-2.5 rounded-md bg-red-600 hover:bg-red-700 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.dangerLg}
                   disabled={submitting || !rejectReason.trim()}
                 >
                   {submitting ? 'Reprovando...' : 'Confirmar Reprovação'}
@@ -5738,7 +5677,7 @@ export default function Stock() {
                     setShowItemDetailsModal(false);
                     setItemToView(null);
                   }}
-                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  className={btn.secondaryLg}
                 >
                   Fechar
                 </button>
@@ -5999,7 +5938,7 @@ export default function Stock() {
                     setShowPurchaseDetailsModal(false);
                     setPurchaseToViewDetails(null);
                   }}
-                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  className={btn.secondaryLg}
                 >
                   Fechar
                 </button>

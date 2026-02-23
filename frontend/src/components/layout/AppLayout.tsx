@@ -16,6 +16,7 @@ const titles: Record<string, { title: string; subtitle?: string }> = {
   '/communications': { title: 'Requerimentos', subtitle: 'Solicitações e direcionamentos' },
   '/users': { title: 'Usuários', subtitle: 'Administração de acesso e perfis' },
   '/cargos': { title: 'Cargos', subtitle: 'Gerenciamento de cargos e permissões' },
+  '/notifications': { title: 'Notificações', subtitle: 'Central de notificações' },
 };
 
 export function AppLayout() {
@@ -56,25 +57,28 @@ export function AppLayout() {
     
     if (typeof user.cargo === 'string') {
       const allowedMap: Record<string, string[]> = {
-        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-        GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-        SUPERVISOR: ['/tasks/my', '/communications'],
-        EXECUTOR: ['/tasks/my', '/communications'],
-        COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications'],
-        PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications'],
+        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
+        GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
+        SUPERVISOR: ['/tasks/my', '/communications', '/notifications'],
+        EXECUTOR: ['/tasks/my', '/communications', '/notifications'],
+        COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/notifications'],
+        PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/notifications'],
       };
       paginasPermitidas = allowedMap[user.cargo] || [];
     } else if (user.cargo && typeof user.cargo === 'object' && 'nome' in user.cargo) {
       if (user.cargo.paginasPermitidas && Array.isArray(user.cargo.paginasPermitidas)) {
         paginasPermitidas = user.cargo.paginasPermitidas;
+        if (!paginasPermitidas.includes('/notifications')) {
+          paginasPermitidas = [...paginasPermitidas, '/notifications'];
+        }
       } else {
         const allowedMap: Record<string, string[]> = {
-          DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-          GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-          SUPERVISOR: ['/tasks/my', '/communications'],
-          EXECUTOR: ['/tasks/my', '/communications'],
-          COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories'],
-          PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories'],
+          DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
+          GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
+          SUPERVISOR: ['/tasks/my', '/communications', '/notifications'],
+          EXECUTOR: ['/tasks/my', '/communications', '/notifications'],
+          COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/notifications'],
+          PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/notifications'],
         };
         paginasPermitidas = allowedMap[user.cargo.nome] || [];
       }
@@ -85,6 +89,9 @@ export function AppLayout() {
     const currentPath = location.pathname;
     if (currentPath.startsWith('/projects/')) {
       return paginasPermitidas.includes('/projects');
+    }
+    if (currentPath === '/notifications') {
+      return paginasPermitidas.includes('/notifications');
     }
     
     return paginasPermitidas.includes(currentPath);

@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx-js-style';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { toast, formatApiError } from '../utils/toast';
-import { buttonStyles } from '../utils/buttonStyles';
+import { btn } from '../utils/buttonStyles';
 import { ExcelDownloadButton } from '../components/ExcelDownloadButton';
 
 export default function ImportProjects() {
@@ -260,7 +260,7 @@ export default function ImportProjects() {
               fileName="modelo-importacao-projetos.xlsx"
               label="Baixar modelo Excel"
               disabled={uploading}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-medium transition-colors"
+              className={btn.success}
             />
           </div>
           <div className="space-y-4 text-gray-300">
@@ -338,14 +338,14 @@ export default function ImportProjects() {
             <button
               type="submit"
               disabled={!file || uploading}
-              className={buttonStyles.primary}
+              className={btn.primary}
             >
               {uploading ? 'Importando...' : 'Importar Projetos'}
             </button>
             <button
               type="button"
               onClick={() => navigate('/projects')}
-              className={buttonStyles.secondary}
+              className={btn.secondary}
               disabled={uploading}
             >
               Cancelar

@@ -6,9 +6,11 @@ import { Notificacao } from '../types';
 interface NotificationsProps {
   onClose?: () => void;
   onUpdateCount?: (count: number) => void;
+  /** Quando true, renderiza como página inteira em vez de dropdown */
+  asPage?: boolean;
 }
 
-export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
+export function Notifications({ onClose, onUpdateCount, asPage }: NotificationsProps) {
   const [notifications, setNotifications] = useState<Notificacao[]>([]);
   const [loading, setLoading] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -24,8 +26,10 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Fechar dropdown ao clicar fora
+  // Fechar dropdown ao clicar fora (apenas no modo dropdown)
   useEffect(() => {
+    if (asPage) return;
+
     function handleClickOutside(event: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         onClose?.();
@@ -34,7 +38,7 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [onClose]);
+  }, [onClose, asPage]);
 
   async function loadNotifications() {
     try {
@@ -104,7 +108,8 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
     }
   }
 
-  function formatDate(dateString: string) {
+  function formatDate(dateString: string | undefined | null) {
+    if (!dateString) return '—';
     const date = new Date(dateString);
     const now = new Date();
     const diff = now.getTime() - date.getTime();
@@ -119,14 +124,12 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
     return date.toLocaleDateString('pt-BR');
   }
 
-  return (
-    <div
-      ref={dropdownRef}
-      className="absolute right-0 top-full mt-2 w-96 bg-neutral border border-white/20 rounded-xl shadow-2xl z-50 max-h-[600px] flex flex-col"
-    >
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
-        <h3 className="text-lg font-semibold">Notificações</h3>
+  const content = (
+    <>
+      {/* Header (esconde título quando asPage; a página já mostra "Notificações") */}
+      <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between shrink-0">
+        {!asPage && <h3 className="text-lg font-semibold">Notificações</h3>}
+        {asPage && <span className="flex-1" />}
         {unreadCount > 0 && (
           <button
             onClick={markAllAsRead}
@@ -164,7 +167,7 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs text-white/50">
-                        {formatDate(notification.dataCriacao)}
+                        {formatDate(notification.dataCriacao ?? undefined)}
                       </span>
                       {notification.requerimentoId != null && (
                         <span className="text-xs text-primary">
@@ -172,8 +175,8 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
                         </span>
                       )}
                     </div>
-                    <h4 className="font-semibold text-sm mb-1">{notification.titulo}</h4>
-                    <p className="text-sm text-white/70 line-clamp-2">{notification.mensagem}</p>
+                    <h4 className="font-semibold text-sm mb-1">{notification.titulo ?? 'Notificação'}</h4>
+                    <p className="text-sm text-white/70 line-clamp-2">{notification.mensagem ?? ''}</p>
                   </div>
                 </div>
               </div>
@@ -181,6 +184,30 @@ export function Notifications({ onClose, onUpdateCount }: NotificationsProps) {
           </div>
         )}
       </div>
+    </>
+  );
+
+  // Versão tela cheia (mobile: sem card, ocupa toda a área; desktop: card centralizado)
+  if (asPage) {
+    return (
+      <div className="w-full sm:max-w-2xl sm:mx-auto sm:px-4 sm:py-6 flex flex-col flex-1 min-h-0 sm:flex-initial sm:min-h-0">
+        <div
+          ref={dropdownRef}
+          className="flex flex-col flex-1 min-h-0 sm:flex-initial sm:max-h-[80vh] sm:bg-neutral sm:border sm:border-white/20 sm:rounded-xl sm:shadow-2xl"
+        >
+          {content}
+        </div>
+      </div>
+    );
+  }
+
+  // Versão dropdown (desktop)
+  return (
+    <div
+      ref={dropdownRef}
+      className="absolute left-2 right-2 sm:left-auto sm:right-0 top-full mt-2 sm:w-96 bg-neutral border border-white/20 rounded-xl shadow-2xl z-50 max-h-[70vh] flex flex-col"
+    >
+      {content}
     </div>
   );
 }

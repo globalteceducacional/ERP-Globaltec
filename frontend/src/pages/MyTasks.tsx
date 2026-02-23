@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, FormEvent, ChangeEvent } from 'react';
+import { btn } from '../utils/buttonStyles';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
@@ -547,27 +548,17 @@ export default function MyTasks() {
                       <div className="flex-1">
                         <div className="flex items-center gap-3 mb-2">
                           <h3 className="text-lg font-semibold">{projeto.nome}</h3>
-                  <span className={`px-2 py-1 rounded text-xs ${getStatusColor(projeto.status)}`}>
-                    {getStatusLabel(projeto.status)}
-                  </span>
+                          <span className={`px-2 py-1 rounded text-xs ${getStatusColor(projeto.status)}`}>
+                            {getStatusLabel(projeto.status)}
+                          </span>
                           {projeto.progress !== undefined && (
                             <span className="text-xs text-white/60">
                               {projeto.progress}% concluído
                             </span>
-                  )}
-                </div>
+                          )}
+                        </div>
                         {projeto.resumo && (
                           <p className="text-white/60 text-sm mb-3 line-clamp-2">{projeto.resumo}</p>
-                        )}
-                        {projeto.progress !== undefined && (
-                          <div className="mb-3">
-                            <div className="w-full bg-white/10 rounded-full h-2">
-                              <div
-                                className="bg-primary h-2 rounded-full transition-all"
-                                style={{ width: `${projeto.progress}%` }}
-                              />
-              </div>
-          </div>
                         )}
                         {hasEtapas && (
                           <div className="flex items-center gap-4 text-xs">
@@ -589,9 +580,9 @@ export default function MyTasks() {
                                 {stats.emAnalise} em análise
                               </span>
                             )}
-        </div>
-      )}
-                  </div>
+                          </div>
+                        )}
+                      </div>
                       <div className="flex items-center gap-2">
                   {hasProjectsAccess && (
                     <button
@@ -599,7 +590,7 @@ export default function MyTasks() {
                               e.stopPropagation();
                               navigate(`/projects/${projeto.id}`);
                             }}
-                            className="px-3 py-1.5 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-sm border border-primary/30 transition-colors"
+                            className={btn.primarySoft}
                           >
                             Ver Detalhes
                           </button>
@@ -610,7 +601,7 @@ export default function MyTasks() {
                               e.stopPropagation();
                               toggleProject(projeto.id);
                             }}
-                            className="p-2 rounded-md bg-white/10 hover:bg-white/20 text-white transition-colors"
+                            className={btn.iconBtn}
                             title={isExpanded ? 'Recolher' : 'Expandir'}
                     >
                             <svg
@@ -625,6 +616,16 @@ export default function MyTasks() {
                   )}
                       </div>
                     </div>
+                    {projeto.progress !== undefined && (
+                      <div className="mt-3">
+                        <div className="w-full bg-white/10 rounded-full h-2">
+                          <div
+                            className="bg-primary h-2 rounded-full transition-all"
+                            style={{ width: `${projeto.progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                 </div>
 
                   {/* Etapas do Projeto (Colapsável) */}
@@ -681,7 +682,7 @@ export default function MyTasks() {
                               <button
                                 type="button"
                                 onClick={() => handleOpenEntregaModal(etapa)}
-                                className="px-3 py-1 rounded-md bg-primary/20 hover:bg-primary/30 text-primary text-xs border border-primary/30 transition-colors"
+                                className={btn.primarySoft}
                               >
                                 Enviar Entrega ({itensMarcados}/{totalItens})
                               </button>
@@ -706,7 +707,7 @@ export default function MyTasks() {
                                       <button
                                         type="button"
                                         onClick={() => handleOpenEntregaModal(etapa, latestEntrega)}
-                                        className="px-2 py-1 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors"
+                                        className={btn.primarySoft}
                                         title="Editar entrega"
                                       >
                                         Editar
@@ -824,7 +825,7 @@ export default function MyTasks() {
                                             setSelectedViewEntrega({ etapa, index, entrega: entregaItem });
                                             setShowViewEntregaModal(true);
                                           }}
-                                          className="shrink-0 px-2 py-1 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors whitespace-nowrap"
+                                          className={`${btn.primarySoft} shrink-0 whitespace-nowrap`}
                                           title="Ver detalhes da entrega"
                                         >
                                           Ver entrega
@@ -833,7 +834,7 @@ export default function MyTasks() {
                                         <button
                                           type="button"
                                           onClick={() => handleOpenChecklistModal(etapa, index)}
-                                          className="shrink-0 px-2 py-1 rounded text-xs bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 transition-colors whitespace-nowrap"
+                                          className={`${btn.primarySoft} shrink-0 whitespace-nowrap`}
                                           title="Enviar objetivo para análise"
                                         >
                                           Enviar
@@ -905,7 +906,7 @@ export default function MyTasks() {
                                                           setSelectedViewEntrega({ etapa, index, entrega: entregaSubitem });
                                                           setShowViewEntregaModal(true);
                                                         }}
-                                                        className="shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 whitespace-nowrap"
+                                                        className={`${btn.primarySoft} shrink-0 whitespace-nowrap`}
                                                         title="Ver detalhes da entrega"
                                                       >
                                                         Ver
@@ -914,7 +915,7 @@ export default function MyTasks() {
                                                       <button
                                                         type="button"
                                                         onClick={() => handleOpenChecklistModal(etapa, index, subIndex)}
-                                                        className="shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 whitespace-nowrap"
+                                                        className={`${btn.primarySoft} shrink-0 whitespace-nowrap`}
                                                         title="Enviar subitem para análise"
                                                       >
                                                         Enviar
@@ -1066,14 +1067,14 @@ export default function MyTasks() {
                 <button
                   type="button"
                   onClick={handleCloseEntregaModal}
-                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                  className={btn.secondary}
                   disabled={entregaLoading}
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.primary}
                   disabled={entregaLoading}
                 >
                   {entregaLoading 
@@ -1182,10 +1183,10 @@ export default function MyTasks() {
               )}
 
               <div className="flex justify-end gap-3 pt-4 border-t border-white/20">
-                <button type="button" onClick={handleCloseChecklistModal} className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors" disabled={objetivoLoading}>
+                <button type="button" onClick={handleCloseChecklistModal} className={btn.secondary} disabled={objetivoLoading}>
                   Cancelar
                 </button>
-                <button type="submit" className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-white text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled={objetivoLoading}>
+                <button type="submit" className={btn.primary} disabled={objetivoLoading}>
                   {objetivoLoading ? 'Enviando...' : 'Enviar para análise'}
                 </button>
               </div>
@@ -1386,7 +1387,7 @@ export default function MyTasks() {
                     setShowViewEntregaModal(false);
                     setSelectedViewEntrega(null);
                   }}
-                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                  className={btn.secondary}
                 >
                   Fechar
                 </button>

@@ -2,7 +2,8 @@ import { useEffect, useState, FormEvent, useMemo } from 'react';
 import { api } from '../services/api';
 import { toast, formatApiError } from '../utils/toast';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
-import { buttonStyles } from '../utils/buttonStyles';
+import { btn } from '../utils/buttonStyles';
+import { DataTable, DataTableColumn } from '../components/DataTable';
 
 interface Supplier {
   id: number;
@@ -266,7 +267,7 @@ export default function Suppliers() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h3 className="text-xl font-semibold">Fornecedores</h3>
-        <button onClick={openCreateModal} className={buttonStyles.primary}>
+        <button onClick={openCreateModal} className={btn.primary}>
           + Novo Fornecedor
         </button>
       </div>
@@ -331,7 +332,7 @@ export default function Suppliers() {
                   setSearchNome('');
                   setFilterStatus('all');
                 }}
-                className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+                className={btn.secondary}
               >
                 Limpar filtros
               </button>
@@ -343,89 +344,92 @@ export default function Suppliers() {
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-xl border border-white/10">
-        <table className="min-w-full text-sm">
-          <thead className="bg-white/5 text-white/70">
-            <tr>
-              <th className="px-4 py-3 text-left">Razão Social</th>
-              <th className="px-4 py-3 text-left">Nome Fantasia</th>
-              <th className="px-4 py-3 text-left whitespace-nowrap">CNPJ</th>
-              <th className="px-4 py-3 text-left">Endereço</th>
-              <th className="px-4 py-3 text-left">Contato</th>
-              <th className="px-4 py-3 text-left">Status</th>
-              <th className="px-4 py-3 text-right">Ações</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredSuppliers.length === 0 ? (
-              <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-white/60">
-                  Nenhum fornecedor encontrado
-                </td>
-              </tr>
-            ) : (
-              filteredSuppliers.map((supplier) => (
-                <tr key={supplier.id} className="border-t border-white/5 hover:bg-white/5">
-                  <td className="px-4 py-3 text-white/90 truncate" title={supplier.razaoSocial}>
-                    {supplier.razaoSocial}
-                  </td>
-                  <td className="px-4 py-3 text-white/90 truncate" title={supplier.nomeFantasia}>
-                    {supplier.nomeFantasia}
-                  </td>
-                  <td className="px-4 py-3 text-white/90 whitespace-nowrap">{formatCNPJ(supplier.cnpj)}</td>
-                  <td className="px-4 py-3 text-white/70">
-                    <span className="block max-w-[220px] truncate" title={supplier.endereco || undefined}>
-                      {supplier.endereco || '-'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-white/70">
-                    <span className="block max-w-[160px] truncate" title={supplier.contato || undefined}>
-                      {supplier.contato || '-'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-                        supplier.ativo
-                          ? 'bg-green-500/20 text-green-300 border border-green-500/40'
-                          : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
-                      }`}
-                    >
-                      {supplier.ativo ? 'Ativo' : 'Inativo'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                      <button
-                        onClick={() => openEditModal(supplier)}
-                        className={buttonStyles.edit}
-                      >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleToggleActive(supplier)}
-                        className={`px-2.5 py-1 rounded-md text-xs font-medium ${
-                          supplier.ativo
-                            ? 'bg-warning/20 hover:bg-warning/30 text-warning'
-                            : 'bg-success/20 hover:bg-success/30 text-success'
-                        }`}
-                      >
-                        {supplier.ativo ? 'Desativar' : 'Ativar'}
-                      </button>
-                      <button
-                        onClick={() => handleDelete(supplier)}
-                        className={buttonStyles.danger}
-                      >
-                        Excluir
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+      <DataTable<Supplier>
+        data={filteredSuppliers}
+        keyExtractor={(s) => s.id}
+        emptyMessage="Nenhum fornecedor encontrado"
+        columns={[
+          {
+            key: 'razaoSocial',
+            label: 'Razão Social',
+            render: (s) => (
+              <span className="text-white/90 block truncate" title={s.razaoSocial}>
+                {s.razaoSocial}
+              </span>
+            ),
+          },
+          {
+            key: 'nomeFantasia',
+            label: 'Nome Fantasia',
+            render: (s) => (
+              <span className="text-white/90 block truncate" title={s.nomeFantasia}>
+                {s.nomeFantasia}
+              </span>
+            ),
+          },
+          {
+            key: 'cnpj',
+            label: 'CNPJ',
+            thClassName: 'whitespace-nowrap',
+            render: (s) => (
+              <span className="text-white/90 whitespace-nowrap">{formatCNPJ(s.cnpj)}</span>
+            ),
+          },
+          {
+            key: 'endereco',
+            label: 'Endereço',
+            render: (s) => (
+              <span className="block max-w-[220px] truncate text-white/70" title={s.endereco || undefined}>
+                {s.endereco || '-'}
+              </span>
+            ),
+          },
+          {
+            key: 'contato',
+            label: 'Contato',
+            render: (s) => (
+              <span className="block max-w-[160px] truncate text-white/70" title={s.contato || undefined}>
+                {s.contato || '-'}
+              </span>
+            ),
+          },
+          {
+            key: 'status',
+            label: 'Status',
+            render: (s) => (
+              <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                s.ativo
+                  ? 'bg-green-500/20 text-green-300 border border-green-500/40'
+                  : 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/40'
+              }`}>
+                {s.ativo ? 'Ativo' : 'Inativo'}
+              </span>
+            ),
+          },
+          {
+            key: 'acoes',
+            label: 'Ações',
+            align: 'right',
+            stopRowClick: true,
+            render: (s) => (
+              <div className="flex items-center justify-end gap-1.5 flex-nowrap">
+                <button onClick={() => openEditModal(s)} className={btn.editSm}>
+                  Editar
+                </button>
+                <button
+                  onClick={() => handleToggleActive(s)}
+                  className={s.ativo ? btn.warningSm : btn.successSm}
+                >
+                  {s.ativo ? 'Desativar' : 'Ativar'}
+                </button>
+                <button onClick={() => handleDelete(s)} className={btn.dangerSm}>
+                  Excluir
+                </button>
+              </div>
+            ),
+          },
+        ] satisfies DataTableColumn<Supplier>[]}
+      />
 
       {/* Modal Criar/Editar Fornecedor */}
       {showModal && (
@@ -485,7 +489,7 @@ export default function Suppliers() {
                       type="button"
                       onClick={() => fetchCNPJData(form.cnpj)}
                       disabled={loadingCNPJ || !validateCNPJ(form.cnpj)}
-                      className="px-4 py-2.5 rounded-md bg-primary/80 hover:bg-primary text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm whitespace-nowrap"
+                      className={`${btn.primaryLg} whitespace-nowrap`}
                       title="Buscar dados do CNPJ"
                     >
                       {loadingCNPJ ? 'Buscando...' : 'Buscar'}
@@ -587,7 +591,7 @@ export default function Suppliers() {
                     setModalError(null);
                     validation.reset();
                   }}
-                  className="px-6 py-2.5 rounded-md bg-white/10 hover:bg-white/20 text-white font-semibold transition-colors"
+                  className={btn.secondaryLg}
                   disabled={submitting}
                 >
                   Cancelar
@@ -595,7 +599,7 @@ export default function Suppliers() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-2.5 rounded-md bg-primary hover:bg-primary/80 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  className={btn.primaryLg}
                 >
                   {submitting ? 'Salvando...' : editingSupplier ? 'Salvar Alterações' : 'Criar Fornecedor'}
                 </button>
