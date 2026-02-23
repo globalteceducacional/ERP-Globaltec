@@ -104,8 +104,8 @@ export function Header({ title, subtitle, isMobile, onOpenMobileMenu }: HeaderPr
 
   return (
     <>
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-4 lg:px-8 lg:py-5 sticky top-0 bg-neutral/80 backdrop-blur supports-[backdrop-filter]:bg-neutral/60 z-20">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+      <header className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center justify-between gap-3 border-b border-white/10 px-4 py-4 sm:px-6 sm:py-4 lg:px-8 lg:py-5 sticky top-0 bg-neutral/80 backdrop-blur supports-[backdrop-filter]:bg-neutral/60 z-20">
+        <div className="flex items-center gap-3 min-w-0 w-full sm:flex-1 order-1">
           {isMobile && onOpenMobileMenu && (
             <button
               type="button"
@@ -119,12 +119,12 @@ export function Header({ title, subtitle, isMobile, onOpenMobileMenu }: HeaderPr
               </svg>
             </button>
           )}
-          <div className="min-w-0">
-            <h2 className="text-lg font-bold truncate sm:text-xl lg:text-2xl">{title}</h2>
-            {subtitle && <p className="text-xs text-white/60 mt-0.5 truncate sm:text-sm sm:mt-1">{subtitle}</p>}
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-bold min-w-0 break-words sm:truncate sm:text-xl lg:text-2xl">{title}</h2>
+            {subtitle && <p className="text-xs text-white/60 mt-0.5 min-w-0 break-words sm:truncate sm:text-sm sm:mt-1">{subtitle}</p>}
           </div>
         </div>
-        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0 order-2 w-full sm:w-auto justify-end sm:justify-start">
           {user && (
             <>
               <div className="relative" ref={notificationsRef}>

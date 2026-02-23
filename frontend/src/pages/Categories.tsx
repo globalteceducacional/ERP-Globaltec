@@ -161,13 +161,28 @@ export default function Categories() {
   }
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold mb-2">Categorias de Compras</h1>
-          <p className="text-white/60">Gerenciamento de categorias</p>
+          <h3 className="text-xl font-semibold">Categorias</h3>
+          <p className="text-sm text-white/60">Gerenciamento de categorias de compras</p>
         </div>
-        <div className="flex gap-4">
+        <button
+          onClick={openCreateModal}
+          className="px-4 py-2 rounded-md bg-primary hover:bg-primary/80 text-white text-sm font-semibold transition-colors"
+        >
+          + Nova Categoria
+        </button>
+      </div>
+
+      {error && (
+        <div className="bg-danger/20 border border-danger/50 text-danger px-4 py-3 rounded-md">
+          {error}
+        </div>
+      )}
+
+      <div className="bg-white/5 rounded-xl border border-white/10 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -175,92 +190,94 @@ export default function Categories() {
               onChange={(e) => setShowInactive(e.target.checked)}
               className="w-4 h-4 rounded border-white/30 bg-white/10 text-primary focus:ring-primary"
             />
-            <span className="text-white/90">Mostrar inativas</span>
+            <span className="text-sm text-white/80">Mostrar inativas</span>
           </label>
-          <button
-            onClick={openCreateModal}
-            className="px-6 py-2.5 rounded-md bg-primary hover:bg-primary/80 text-white font-semibold transition-colors"
-          >
-            + Nova Categoria
-          </button>
+          <span className="text-xs text-white/50">
+            {filteredCategories.length}{' '}
+            {filteredCategories.length === 1 ? 'categoria' : 'categorias'}
+          </span>
         </div>
       </div>
 
-      {error && (
-        <div className="mb-4 bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md">
-          {error}
-        </div>
-      )}
-
-      <div className="bg-neutral/80 border border-white/20 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-white/5 border-b border-white/10">
+      <div className="overflow-x-auto rounded-xl border border-white/10">
+        <table className="min-w-full text-sm">
+          <thead className="bg-white/5 text-white/70">
+            <tr>
+              <th className="px-4 py-3 text-left">Nome</th>
+              <th className="px-4 py-3 text-left">Descrição</th>
+              <th className="px-4 py-3 text-left">Status</th>
+              <th className="px-4 py-3 text-right">Ações</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredCategories.length === 0 ? (
               <tr>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-white/90">Nome</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-white/90">Descrição</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-white/90">Status</th>
-                <th className="px-6 py-4 text-right text-sm font-semibold text-white/90">Ações</th>
+                <td colSpan={4} className="px-4 py-8 text-center text-white/60">
+                  Nenhuma categoria encontrada
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {filteredCategories.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="px-6 py-8 text-center text-white/60">
-                    Nenhuma categoria encontrada
-                  </td>
-                </tr>
-              ) : (
-                filteredCategories.map((category) => (
-                  <tr
-                    key={category.id}
-                    className="border-b border-white/10 hover:bg-white/5 transition-colors"
+            ) : (
+              filteredCategories.map((category) => (
+                <tr
+                  key={category.id}
+                  className="border-t border-white/5 hover:bg-white/5"
+                >
+                  <td
+                    className="px-4 py-3 text-white/90 font-medium truncate"
+                    title={category.nome}
                   >
-                    <td className="px-6 py-4 text-white/90 font-medium">{category.nome}</td>
-                    <td className="px-6 py-4 text-white/70">{category.descricao || '-'}</td>
-                    <td className="px-6 py-4">
-                      <span
-                        className={`px-2 py-1 rounded text-xs ${
+                    {category.nome}
+                  </td>
+                  <td className="px-4 py-3 text-white/70">
+                    <span
+                      className="block max-w-[220px] truncate"
+                      title={category.descricao || undefined}
+                    >
+                      {category.descricao || '-'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                        category.ativo
+                          ? 'bg-success/20 text-success border border-success/40'
+                          : 'bg-danger/20 text-danger border border-danger/40'
+                      }`}
+                    >
+                      {category.ativo ? 'Ativa' : 'Inativa'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                      <button
+                        onClick={() => openEditModal(category)}
+                        className="px-3 py-1.5 rounded-md bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-xs font-medium transition-colors"
+                      >
+                        Editar
+                      </button>
+                      <button
+                        onClick={() => handleToggleActive(category)}
+                        className={`px-2.5 py-1 rounded-md text-xs font-medium ${
                           category.ativo
-                            ? 'bg-green-500/20 text-green-300 border border-green-500/50'
-                            : 'bg-red-500/20 text-red-300 border border-red-500/50'
+                            ? 'bg-warning/20 hover:bg-warning/30 text-warning'
+                            : 'bg-success/20 hover:bg-success/30 text-success'
                         }`}
                       >
-                        {category.ativo ? 'Ativa' : 'Inativa'}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => openEditModal(category)}
-                          className="px-3 py-1.5 rounded-md bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 text-sm font-medium transition-colors"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          onClick={() => handleToggleActive(category)}
-                          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                            category.ativo
-                              ? 'bg-yellow-600/20 hover:bg-yellow-600/30 text-yellow-300'
-                              : 'bg-green-600/20 hover:bg-green-600/30 text-green-300'
-                          }`}
-                        >
-                          {category.ativo ? 'Desativar' : 'Ativar'}
-                        </button>
-                        <button
-                          onClick={() => handleDelete(category)}
-                          className="px-3 py-1.5 rounded-md bg-red-600/20 hover:bg-red-600/30 text-red-300 text-sm font-medium transition-colors"
-                        >
-                          Excluir
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                        {category.ativo ? 'Desativar' : 'Ativar'}
+                      </button>
+                      <button
+                        onClick={() => handleDelete(category)}
+                        className="px-3 py-1.5 rounded-md bg-red-600/20 hover:bg-red-600/30 text-red-300 text-xs font-medium transition-colors"
+                      >
+                        Excluir
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* Modal Criar/Editar Categoria */}

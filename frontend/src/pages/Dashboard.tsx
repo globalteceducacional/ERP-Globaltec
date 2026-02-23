@@ -360,36 +360,38 @@ export default function Dashboard() {
       {/* Filtro de Usuário (apenas para Diretores) */}
       {isDiretor && (
         <div className="bg-neutral/80 border border-white/10 rounded-xl p-4">
-          <div className="flex items-center gap-4">
-            <label className="text-sm font-medium text-white/90 whitespace-nowrap">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+            <label className="text-sm font-medium text-white/90 whitespace-nowrap shrink-0">
               Filtrar por Usuário:
             </label>
-            <select
-              value={selectedUserId}
-              onChange={(e) => setSelectedUserId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-              className="flex-1 max-w-xs bg-neutral/60 border border-white/10 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 1rem center',
-                paddingRight: '2.5rem'
-              }}
-            >
-              <option value="all" className="bg-neutral text-white">Todos os usuários</option>
-              {users.map((u) => (
-                <option key={u.id} value={u.id} className="bg-neutral text-white">
-                  {u.nome}
-                </option>
-              ))}
-            </select>
-            {selectedUserId !== 'all' && (
-              <button
-                onClick={() => setSelectedUserId('all')}
-                className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors"
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 sm:flex-1 sm:max-w-md w-full min-w-0">
+              <select
+                value={selectedUserId}
+                onChange={(e) => setSelectedUserId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+                className="w-full sm:flex-1 sm:max-w-xs min-w-0 bg-neutral/60 border border-white/10 rounded-md px-4 py-2 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 1rem center',
+                  paddingRight: '2.5rem'
+                }}
               >
-                Limpar Filtro
-              </button>
-            )}
+                <option value="all" className="bg-neutral text-white">Todos os usuários</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id} className="bg-neutral text-white">
+                    {u.nome}
+                  </option>
+                ))}
+              </select>
+              {selectedUserId !== 'all' && (
+                <button
+                  onClick={() => setSelectedUserId('all')}
+                  className="px-4 py-2 rounded-md bg-white/10 hover:bg-white/20 text-white text-sm transition-colors shrink-0 w-full xs:w-auto"
+                >
+                  Limpar Filtro
+                </button>
+              )}
+            </div>
           </div>
           {selectedUserId !== 'all' && (
             <p className="text-xs text-white/60 mt-2">

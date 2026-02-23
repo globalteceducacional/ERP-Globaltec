@@ -1577,14 +1577,23 @@ export default function Stock() {
           </button>
         </div>
         <div className="overflow-x-auto rounded-xl border border-white/10">
-          <table className="min-w-full text-sm">
+          <table className="min-w-full text-sm table-fixed sm:table-auto">
             <thead className="bg-white/5 text-white/70">
               <tr>
-                <th className="px-4 py-3 text-left">Item</th>
-                <th className="px-4 py-3 text-left">Quantidade Total</th>
-                <th className="px-4 py-3 text-left">Alocada</th>
-                <th className="px-4 py-3 text-left">Disponível</th>
-                <th className="px-4 py-3 text-left">Ações</th>
+                <th className="px-3 sm:px-4 py-3 text-left w-auto min-w-0">Item</th>
+                <th className="px-3 sm:px-4 py-3 text-left whitespace-nowrap w-24 min-w-[5rem]" title="Quantidade Total">
+                  <span className="hidden sm:inline">Quantidade Total</span>
+                  <span className="sm:hidden">Qtd. Total</span>
+                </th>
+                <th className="px-3 sm:px-4 py-3 text-left whitespace-nowrap w-16 min-w-[4rem]" title="Alocada">
+                  <span className="hidden sm:inline">Alocada</span>
+                  <span className="sm:hidden">Aloc.</span>
+                </th>
+                <th className="px-3 sm:px-4 py-3 text-left whitespace-nowrap w-16 min-w-[4rem]" title="Disponível">
+                  <span className="hidden sm:inline">Disponível</span>
+                  <span className="sm:hidden">Disp.</span>
+                </th>
+                <th className="px-3 sm:px-4 py-3 text-left whitespace-nowrap w-24 min-w-[5rem]">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -1613,14 +1622,14 @@ export default function Stock() {
                         setShowItemDetailsModal(true);
                       }}
                     >
-                      <td className="px-4 py-3">
-                        <div className="flex items-center space-x-3">
+                      <td className="px-3 sm:px-4 py-3 min-w-0 align-top">
+                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
                           {item.imagemUrl && (
                             (item.imagemUrl.startsWith('data:image/') || item.imagemUrl.startsWith('http://') || item.imagemUrl.startsWith('https://')) ? (
                               <img 
                                 src={item.imagemUrl} 
                                 alt={item.item || 'Item'} 
-                                className="w-10 h-10 object-cover rounded"
+                                className="w-10 h-10 object-cover rounded shrink-0"
                                 onError={(e) => {
                                   // Se a imagem falhar ao carregar, ocultar ou mostrar placeholder
                                   e.currentTarget.style.display = 'none';
@@ -1628,16 +1637,16 @@ export default function Stock() {
                               />
                             ) : null
                           )}
-                          <div>
-                            <div className="font-medium">{item.item || 'Sem nome'}</div>
-                            {item.descricao && <div className="text-xs text-white/60">{item.descricao}</div>}
+                          <div className="min-w-0 flex-1 overflow-hidden">
+                            <div className="font-medium truncate">{item.item || 'Sem nome'}</div>
+                            {item.descricao && <div className="text-xs text-white/60 truncate">{item.descricao}</div>}
                           </div>
                         </div>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 sm:px-4 py-3 align-top whitespace-nowrap w-24 min-w-[5rem]">
                         <span className="font-medium">{item.quantidade || 0}</span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 sm:px-4 py-3 align-top whitespace-nowrap w-16 min-w-[4rem]">
                         <span className={`px-2 py-1 rounded text-xs ${
                           quantidadeAlocada > 0 
                             ? 'bg-yellow-500/20 text-yellow-400' 
@@ -1646,7 +1655,7 @@ export default function Stock() {
                           {quantidadeAlocada}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-3 sm:px-4 py-3 align-top whitespace-nowrap w-16 min-w-[4rem]">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
                           quantidadeDisponivel > 0 
                             ? 'bg-green-500/20 text-green-400' 
@@ -1655,7 +1664,7 @@ export default function Stock() {
                           {quantidadeDisponivel}
                         </span>
                       </td>
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 sm:px-4 py-3 align-top w-24 min-w-[5rem]" onClick={(e) => e.stopPropagation()}>
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => openAlocacaoModal(item)}
