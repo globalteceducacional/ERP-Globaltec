@@ -21,6 +21,7 @@ Use o arquivo `deploy/nginx-erp.conf` deste repositório. Exemplo do bloco impor
 
 ```nginx
 location /api/ {
+    client_max_body_size 25M;   # Necessário para upload de arquivos (evita Erro 413)
     proxy_pass http://127.0.0.1:3001/;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
@@ -31,6 +32,7 @@ location /api/ {
 ```
 
 - Coloque esse `server` (com `location /` e `location /api/`) no site do ERP (ex.: `/etc/nginx/sites-available/erp`).
+- **Se der Erro 413 ao enviar arquivos:** confira se `client_max_body_size 25M;` está no `location /api/` e recarregue o Nginx.
 - Teste e recarregue: `sudo nginx -t && sudo systemctl reload nginx`.
 
 ### 2. Build do frontend na VPS com API relativa

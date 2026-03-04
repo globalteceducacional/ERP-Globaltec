@@ -299,6 +299,8 @@ export default function ProjectDetails() {
   const [reviewLoading, setReviewLoading] = useState<Record<string, boolean>>({});
   const [showViewEntregaModal, setShowViewEntregaModal] = useState(false);
   const [selectedViewEntrega, setSelectedViewEntrega] = useState<{ etapa: Etapa; index: number; entrega: ChecklistItemEntrega } | null>(null);
+  const [modalReviewComment, setModalReviewComment] = useState('');
+  const [modalReviewLoading, setModalReviewLoading] = useState(false);
   const [etapaEstoque, setEtapaEstoque] = useState<Record<number, any[]>>({});
   const [loadingEstoqueCompras, setLoadingEstoqueCompras] = useState<Record<number, boolean>>({});
   const [showCompraModal, setShowCompraModal] = useState(false);
@@ -1492,9 +1494,9 @@ export default function ProjectDetails() {
 
                       <div className="space-y-2">
                         {etapa.checklistJson.map((item: ChecklistItem, index: number) => {
-                          // Entrega do item principal (ignorar entregas de subitens)
+                          // Entrega do item principal (subitemIndex null/undefined = entrega do item, não de subitem)
                           const entregaItem = etapa.checklistEntregas?.find(
-                            (e) => e.checklistIndex === index && (e.subitemIndex === null || e.subitemIndex === undefined)
+                            (e) => Number(e.checklistIndex) === index && (e.subitemIndex == null)
                           );
                           // Item marcado como concluído no checklist exibe "Aprovado"; senão usa status da entrega ou "Pendente"
                           const statusItem = item.concluido ? 'APROVADO' : (entregaItem?.status ?? 'PENDENTE');
@@ -1778,17 +1780,27 @@ export default function ProjectDetails() {
                                     </div>
                                   )}
                                   
-                                  {/* Subitens */}
+                                  {/* Subitens: cada subitem tem sua própria entrega (data, status e ações) */}
                                 {hasSubitens && (
                                     <div className="space-y-1">
-                                      <p className="text-xs text-sky-300/70 font-medium">Subitens / Subcategorias:</p>
+                                      <p className="text-xs text-sky-300/70 font-medium mb-1">Subitens / Subcategorias (cada um com entrega independente):</p>
+                                      <div className="grid grid-cols-[auto_1fr_4rem_auto_auto] gap-2 px-2 py-1 text-[10px] text-white/50 border-b border-white/10 mb-1">
+                                        <span></span>
+                                        <span>Subitem</span>
+                                        <span className="text-center">Entrega</span>
+                                        <span>Status</span>
+                                        <span className="text-right">Ações</span>
+                                      </div>
                                       {item.subitens!.map((subitem, subIndex) => {
                                         const subKey = `view-${etapa.id}-${index}-${subIndex}`;
                                         const subExpanded = expandedChecklistDetails.has(subKey);
                                         const subHasDetails = subitem.descricao && subitem.descricao.trim().length > 0;
-                                        // Buscar entrega do subitem
+                                        // Buscar entrega do subitem (comparação robusta: índices podem vir como number ou string do JSON)
                                         const entregaSubitem = etapa.checklistEntregas?.find(
-                                          (e) => e.checklistIndex === index && e.subitemIndex === subIndex
+                                          (e) =>
+                                            Number(e.checklistIndex) === index &&
+                                            e.subitemIndex != null &&
+                                            Number(e.subitemIndex) === subIndex
                                         );
                                         // Subitem marcado como concluído exibe "Aprovado"; senão usa status da entrega ou "Pendente"
                                         const statusSubitem = subitem.concluido ? 'APROVADO' : (entregaSubitem?.status ?? 'PENDENTE');
@@ -1799,7 +1811,7 @@ export default function ProjectDetails() {
                                         return (
                                           <div key={subIndex} className="space-y-1">
                                             <div
-                                              className={`flex items-center gap-2 p-2 rounded-md transition-all ${
+                                              className={`grid grid-cols-[auto_1fr_4rem_auto_auto] gap-2 items-center p-2 rounded-md transition-all ${
                                                 subitem.concluido
                                                   ? 'bg-emerald-500/10 border border-emerald-500/20'
                                                   : 'bg-white/5 border border-white/10'
@@ -1819,14 +1831,20 @@ export default function ProjectDetails() {
                                                   </svg>
                                                 )}
                                               </div>
-                                              <span className={`flex-1 text-xs ${subitem.concluido ? 'text-emerald-300/70 line-through' : 'text-white/80'}`}>
+                                              <span className={`text-xs min-w-0 truncate ${subitem.concluido ? 'text-emerald-300/70 line-through' : 'text-white/80'}`}>
                                                 {subItemNumberLabel} {subitem.texto}
+                                              </span>
+                                              <span className="text-[10px] text-white/60 text-center">
+                                                {entregaSubitem?.dataEnvio
+                                                  ? new Date(entregaSubitem.dataEnvio).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                                                  : '—'}
                                               </span>
                                               <span
                                                 className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${getChecklistItemStatusColor(statusSubitem)}`}
                                               >
                                                 {getChecklistItemStatusLabel(statusSubitem)}
                                               </span>
+                                              <div className="flex flex-wrap items-center justify-end gap-1">
                                               {entregaSubitem && (
                                                 <button
                                                   type="button"
@@ -1834,10 +1852,10 @@ export default function ProjectDetails() {
                                                     setSelectedViewEntrega({ etapa, index, entrega: entregaSubitem });
                                                     setShowViewEntregaModal(true);
                                                   }}
-                                                  className={btn.primarySoft}
-                                                  title="Ver detalhes da entrega"
+                                                  className={`${btn.primarySoft} shrink-0 whitespace-nowrap`}
+                                                  title="Ver detalhes da entrega deste subitem"
                                                 >
-                                                  Ver
+                                                  Ver entrega
                                                 </button>
                                               )}
                                               {canApproveSubitem && (
@@ -1934,7 +1952,7 @@ export default function ProjectDetails() {
                                                   }
                                                   placeholder="Comentário (opcional)"
                                                   disabled={subLoading}
-                                                  className="bg-white/5 border border-white/10 rounded px-2 py-1 text-[10px] text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                                                  className="bg-white/5 border border-white/10 rounded px-2 py-1 text-[10px] text-white placeholder:text-white/40 focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 min-w-0 max-w-[8rem]"
                                                 />
                                               )}
                                               {subHasDetails && (
@@ -1946,6 +1964,7 @@ export default function ProjectDetails() {
                                                   {subExpanded ? '▲' : '▼'}
                                                 </button>
                                               )}
+                                              </div>
                                             </div>
                                             {/* Descrição do subitem expandida */}
                                             {subExpanded && subHasDetails && (
@@ -2328,14 +2347,26 @@ export default function ProjectDetails() {
             <div className="px-6 py-4 border-b border-white/20 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-white">Detalhes da Entrega</h2>
-                <p className="text-sm text-white/60 mt-1">
-                  {selectedViewEntrega.etapa.nome} • Objetivo #{selectedViewEntrega.index + 1}
-                </p>
-                {selectedViewEntrega.etapa.checklistJson && selectedViewEntrega.etapa.checklistJson[selectedViewEntrega.index] && (
-                  <p className="text-xs text-white/40 mt-1">
-                    {selectedViewEntrega.etapa.checklistJson[selectedViewEntrega.index]?.texto}
-                  </p>
-                )}
+                {(() => {
+                  const etapaIndex = project?.etapas?.findIndex((e: Etapa) => e.id === selectedViewEntrega.etapa.id) ?? 0;
+                  const checklistItem = selectedViewEntrega.etapa.checklistJson?.[selectedViewEntrega.index];
+                  const subIdx = selectedViewEntrega.entrega.subitemIndex;
+                  const isSubitem = subIdx != null && Number(subIdx) >= 0;
+                  const subitemLabel = isSubitem && checklistItem?.subitens?.[Number(subIdx)]
+                    ? `${etapaIndex + 1}.${selectedViewEntrega.index + 1}.${Number(subIdx) + 1}. ${checklistItem.subitens[Number(subIdx)].texto}`
+                    : null;
+                  const mainLabel = checklistItem ? `${etapaIndex + 1}.${selectedViewEntrega.index + 1}. ${checklistItem.texto}` : `Objetivo #${selectedViewEntrega.index + 1}`;
+                  return (
+                    <>
+                      <p className="text-sm text-white/60 mt-1">
+                        {selectedViewEntrega.etapa.nome} • {subitemLabel ?? mainLabel}
+                      </p>
+                      {subitemLabel && (
+                        <p className="text-xs text-white/40 mt-1">Subitem do objetivo: {checklistItem?.texto}</p>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
               <button
                 type="button"
@@ -2560,6 +2591,81 @@ export default function ProjectDetails() {
                   </div>
                 </div>
               )}
+
+              {/* Aprovar/Reprovar no modal quando a entrega está em análise (item ou subitem) */}
+              {(() => {
+                const statusEntrega = (selectedViewEntrega.entrega.status as string) || 'PENDENTE';
+                const emAnalise = statusEntrega === 'EM_ANALISE';
+                const subIdx = selectedViewEntrega.entrega.subitemIndex;
+                const podeAvaliarNoModal = canReview && emAnalise;
+                if (!podeAvaliarNoModal) return null;
+                return (
+                  <div className="pt-4 border-t border-white/20 space-y-3">
+                    <label className="block text-sm font-medium text-white/90">Comentário (opcional)</label>
+                    <textarea
+                      value={modalReviewComment}
+                      onChange={(e) => setModalReviewComment(e.target.value)}
+                      rows={2}
+                      placeholder="Comentário para aprovação ou reprovação"
+                      className="w-full bg-white/10 border border-white/20 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    <div className="flex flex-wrap gap-2 justify-end">
+                      <button
+                        type="button"
+                        disabled={modalReviewLoading}
+                        onClick={async () => {
+                          setModalReviewLoading(true);
+                          try {
+                            await api.patch(
+                              `/tasks/${selectedViewEntrega.etapa.id}/checklist/${selectedViewEntrega.index}/review`,
+                              { status: 'APROVADO', comentario: modalReviewComment.trim() || undefined },
+                              subIdx != null ? { params: { subitemIndex: Number(subIdx) } } : {}
+                            );
+                            setModalReviewComment('');
+                            setShowViewEntregaModal(false);
+                            setSelectedViewEntrega(null);
+                            await refreshProject(false);
+                            toast.success('Entrega aprovada.');
+                          } catch (err: any) {
+                            toast.error(err.response?.data?.message ?? 'Falha ao aprovar.');
+                          } finally {
+                            setModalReviewLoading(false);
+                          }
+                        }}
+                        className={btn.successSm}
+                      >
+                        {modalReviewLoading ? '...' : 'Aprovar'}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={modalReviewLoading}
+                        onClick={async () => {
+                          setModalReviewLoading(true);
+                          try {
+                            await api.patch(
+                              `/tasks/${selectedViewEntrega.etapa.id}/checklist/${selectedViewEntrega.index}/review`,
+                              { status: 'REPROVADO', comentario: modalReviewComment.trim() || undefined },
+                              subIdx != null ? { params: { subitemIndex: Number(subIdx) } } : {}
+                            );
+                            setModalReviewComment('');
+                            setShowViewEntregaModal(false);
+                            setSelectedViewEntrega(null);
+                            await refreshProject(false);
+                            toast.success('Entrega reprovada.');
+                          } catch (err: any) {
+                            toast.error(err.response?.data?.message ?? 'Falha ao reprovar.');
+                          } finally {
+                            setModalReviewLoading(false);
+                          }
+                        }}
+                        className={btn.dangerSm}
+                      >
+                        {modalReviewLoading ? '...' : 'Reprovar'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
 
               <div className="flex justify-end pt-4 border-t border-white/20">
                 <button

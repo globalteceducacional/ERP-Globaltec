@@ -957,9 +957,9 @@ export default function MyTasks() {
                           )}
                           <div className="space-y-2">
                             {etapa.checklistJson.map((item, index) => {
-                              // Entrega do item principal (ignorar entregas de subitens)
+                              // Entrega do item principal (subitemIndex null/undefined = entrega do item)
                               const entregaItem = etapa.checklistEntregas?.find(
-                                (e) => e.checklistIndex === index && (e.subitemIndex === null || e.subitemIndex === undefined)
+                                (e) => Number(e.checklistIndex) === index && (e.subitemIndex == null)
                               );
                               const statusItem = entregaItem?.status ?? 'PENDENTE';
                               const podeEnviarObjetivo = podeInteragir && (statusItem === 'PENDENTE' || statusItem === 'REPROVADO');
@@ -1045,17 +1045,20 @@ export default function MyTasks() {
                                         </div>
                                       )}
                                       
-                                      {/* Subitens */}
+                                      {/* Subitens: cada um com entrega independente */}
                                       {hasSubitens && (
                                         <div className="space-y-1">
-                                          <p className="text-xs text-sky-300/70 font-medium">Subitens / Subcategorias:</p>
+                                          <p className="text-xs text-sky-300/70 font-medium">Subitens (cada um com sua própria entrega):</p>
                                           {item.subitens!.map((subitem, subIndex) => {
                                             const subKey = `${etapa.id}-${index}-${subIndex}`;
                                             const subExpanded = expandedChecklistDetails.has(subKey);
                                             const subHasDetails = subitem.descricao && subitem.descricao.trim().length > 0;
-                                            // Buscar entrega do subitem
+                                            // Buscar entrega do subitem (índices podem vir como number ou string)
                                             const entregaSubitem = etapa.checklistEntregas?.find(
-                                              (e) => e.checklistIndex === index && e.subitemIndex === subIndex
+                                              (e) =>
+                                                Number(e.checklistIndex) === index &&
+                                                e.subitemIndex != null &&
+                                                Number(e.subitemIndex) === subIndex
                                             );
                                             const statusSubitem = entregaSubitem?.status ?? 'PENDENTE';
                                             const podeEnviarSubitem = podeInteragir && (statusSubitem === 'PENDENTE' || statusSubitem === 'REPROVADO');
@@ -1087,6 +1090,11 @@ export default function MyTasks() {
                                                   <span className={`flex-1 min-w-0 text-xs truncate ${subitem.concluido ? 'text-emerald-300/70 line-through' : 'text-white/80'}`}>
                                                     {subItemNumberLabel} {subitem.texto}
                                                   </span>
+                                                  <span className="text-[10px] text-white/60 shrink-0">
+                                                    {entregaSubitem?.dataEnvio
+                                                      ? new Date(entregaSubitem.dataEnvio).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                                                      : '—'}
+                                                  </span>
                                                   <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
                                                     <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold border whitespace-nowrap ${getChecklistItemStatusColor(statusSubitem)}`}>
                                                       {getChecklistItemStatusLabel(statusSubitem)}
@@ -1099,9 +1107,9 @@ export default function MyTasks() {
                                                           setShowViewEntregaModal(true);
                                                         }}
                                                         className={`${btn.primarySoft} shrink-0 whitespace-nowrap`}
-                                                        title="Ver detalhes da entrega"
+                                                        title="Ver detalhes da entrega deste subitem"
                                                       >
-                                                        Ver
+                                                        Ver entrega
                                                       </button>
                                                     ) : podeEnviarSubitem ? (
                                                       <button
