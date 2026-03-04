@@ -57,6 +57,11 @@ export class CreateTaskDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(60)
+  aba?: string;
+
+  @IsOptional()
+  @IsString()
   descricao?: string;
 
   @IsOptional()

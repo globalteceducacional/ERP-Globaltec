@@ -36,6 +36,7 @@ interface Etapa {
   id: number;
   nome: string;
   descricao?: string | null;
+  aba?: string | null;
   status: 'PENDENTE' | 'EM_ANDAMENTO' | 'EM_ANALISE' | 'APROVADA' | 'REPROVADA';
   dataInicio?: string | null;
   dataFim?: string | null;
@@ -59,6 +60,9 @@ interface EtapaEntrega {
   dataAvaliacao?: string | null;
   executor: Usuario;
   avaliadoPor?: Usuario | null;
+  foiEditada?: boolean;
+  dataEdicao?: string | null;
+  editadoPor?: Usuario | null;
 }
 
 interface Responsavel {
@@ -106,6 +110,9 @@ export default function ProjectDetails() {
   const [submitting, setSubmitting] = useState(false);
   const [editingEtapa, setEditingEtapa] = useState<Etapa | null>(null);
   const integrantesSelectRef = useRef<HTMLSelectElement>(null);
+  // Nota: a edição de entregas de checklist é feita pela tela Meu Trabalho.
+  // Este componente não possui o fluxo completo de envio/edição de objetivos,
+  // portanto qualquer tentativa de editar a entrega a partir daqui é desabilitada.
 
   const cargoNome =
     typeof user?.cargo === 'string'
@@ -142,12 +149,84 @@ export default function ProjectDetails() {
   const [reorderingEtapas, setReorderingEtapas] = useState(false);
   /** IDs das etapas expandidas (conteúdo visível). Inicializado com todas ao carregar o projeto. */
   const [expandedEtapas, setExpandedEtapas] = useState<Set<number>>(new Set());
+  const [extraAbas, setExtraAbas] = useState<string[]>([]);
+  const [selectedAba, setSelectedAba] = useState<string>('Todas');
 
   useEffect(() => {
     if (project?.etapas?.length) {
       setExpandedEtapas(new Set(project.etapas.map((e) => e.id)));
     }
   }, [project?.id, project?.etapas?.length]);
+
+  const abas = useMemo(() => {
+    const set = new Set<string>();
+
+    if (project?.etapas && project.etapas.length > 0) {
+      project.etapas.forEach((etapa) => {
+        const nomeAba = (etapa.aba && etapa.aba.trim()) || 'Geral';
+        set.add(nomeAba);
+      });
+    }
+
+    extraAbas.forEach((aba) => {
+      if (aba && aba.trim().length > 0) {
+        set.add(aba.trim());
+      }
+    });
+
+    const nomesOrdenados = Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    return ['Todas', ...nomesOrdenados];
+  }, [project?.etapas, extraAbas]);
+
+  const etapasFiltradas = useMemo(() => {
+    if (!project?.etapas) return [];
+    if (selectedAba === 'Todas') return project.etapas;
+    return project.etapas.filter((etapa) => {
+      const nomeAba = (etapa.aba && etapa.aba.trim()) || 'Geral';
+      return nomeAba === selectedAba;
+    });
+  }, [project?.etapas, selectedAba]);
+
+  function handleAddAba() {
+    if (!project) return;
+    setNovaAbaNome('');
+    setShowAbaModal(true);
+  }
+
+  function handleOpenRenameAba() {
+    if (!project || selectedAba === 'Todas') return;
+    setRenameAbaNome(selectedAba);
+    setShowRenameAbaModal(true);
+  }
+
+  function handleOpenDeleteAba() {
+    if (!project || selectedAba === 'Todas') return;
+    setShowDeleteAbaModal(true);
+  }
+
+  async function handleConfirmNovaAba(event: FormEvent) {
+    event.preventDefault();
+    if (!project) return;
+
+    const trimmed = novaAbaNome.trim();
+    if (!trimmed || trimmed.length < 2) {
+      toast.warning('Informe um nome de aba com pelo menos 2 caracteres.');
+      return;
+    }
+
+    // Adicionar aba à lista extra (somente frontend) caso ainda não exista
+    setExtraAbas((prev) => {
+      const existing = new Set(prev.map((a) => a.trim()));
+      if (!existing.has(trimmed)) {
+        return [...prev, trimmed];
+      }
+      return prev;
+    });
+
+    setSelectedAba(trimmed);
+    setShowAbaModal(false);
+    toast.success('Aba criada com sucesso. Agora você pode adicionar etapas nela.');
+  }
 
   function toggleEtapa(etapaId: number) {
     setExpandedEtapas((prev) => {
@@ -161,6 +240,7 @@ export default function ProjectDetails() {
   const [etapaForm, setEtapaForm] = useState({
     nome: '',
     descricao: '',
+    aba: '',
     executorId: 0,
     responsavelId: 0 as number | undefined,
     integrantesIds: [] as number[],
@@ -176,6 +256,12 @@ export default function ProjectDetails() {
   const [stockSearchTerm, setStockSearchTerm] = useState('');
   const [selectedStockItemId, setSelectedStockItemId] = useState<number | null>(null);
   const [selectedStockQuantity, setSelectedStockQuantity] = useState<number>(1);
+  const [showAbaModal, setShowAbaModal] = useState(false);
+  const [novaAbaNome, setNovaAbaNome] = useState('');
+  const [showRenameAbaModal, setShowRenameAbaModal] = useState(false);
+  const [renameAbaNome, setRenameAbaNome] = useState('');
+  const [showDeleteAbaModal, setShowDeleteAbaModal] = useState(false);
+  const [abaModalLoading, setAbaModalLoading] = useState(false);
 
   const [updatingChecklist, setUpdatingChecklist] = useState<number | null>(null);
   
@@ -397,6 +483,11 @@ export default function ProjectDetails() {
         executorId: executorId,
       };
 
+      const abaTrim = etapaForm.aba?.trim();
+      if (abaTrim) {
+        payload.aba = abaTrim;
+      }
+
       if (etapaForm.descricao && etapaForm.descricao.trim().length > 0) {
         payload.descricao = etapaForm.descricao.trim();
       }
@@ -438,8 +529,9 @@ export default function ProjectDetails() {
         payload.integrantesIds = etapaForm.integrantesIds;
       }
 
-      if (etapaForm.responsavelId != null && etapaForm.responsavelId > 0) {
-        payload.responsavelId = etapaForm.responsavelId;
+      // Executor e responsável devem ser a mesma pessoa
+      if (executorId && executorId > 0) {
+        payload.responsavelId = executorId;
       } else if (editingEtapa) {
         payload.responsavelId = null;
       }
@@ -529,6 +621,7 @@ export default function ProjectDetails() {
       setEtapaForm({
         nome: '',
         descricao: '',
+        aba: '',
         executorId: 0,
         responsavelId: undefined,
         integrantesIds: [],
@@ -641,8 +734,10 @@ export default function ProjectDetails() {
     setEtapaForm({
       nome: etapa.nome || '',
       descricao: etapa.descricao || '',
+      aba: etapa.aba || '',
       executorId: etapa.executor?.id || 0,
-      responsavelId: etapa.responsavel?.id || undefined,
+      // Executor e responsável passam a ser sempre o mesmo usuário
+      responsavelId: etapa.executor?.id || undefined,
       integrantesIds: etapa.integrantes ? etapa.integrantes.filter(i => i.usuario?.id).map((i) => i.usuario.id) : [],
       dataInicio: formatDateForInput(etapa.dataInicio),
       dataFim: formatDateForInput(etapa.dataFim),
@@ -1029,40 +1124,91 @@ export default function ProjectDetails() {
       <div className="bg-neutral/80 border border-white/10 rounded-xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold border-b border-white/10 pb-2">
-          Etapas ({totalEtapas})
-        </h3>
-          {isDiretor && (
-            <button
-              onClick={async () => {
-                setEditingEtapa(null);
-                setEtapaForm({
-                  nome: '',
-                  descricao: '',
-                  executorId: 0,
-                  responsavelId: undefined,
-                  integrantesIds: [],
-                  dataInicio: '',
-                  dataFim: '',
-                  valorInsumos: 0,
-                  checklist: [{ texto: '', concluido: false, descricao: '', subitens: [] }],
-                  status: 'PENDENTE',
-                  estoqueItems: [],
-                });
-                // Carregar itens de estoque disponíveis
-                await loadAvailableStockItems();
-                setShowEtapaModal(true);
-              }}
-              className={btn.primary}
-            >
-              + Adicionar Etapa
-            </button>
+            Etapas ({totalEtapas})
+          </h3>
+          {canEditProject && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handleAddAba}
+                className={btn.secondary}
+              >
+                + Nova aba
+              </button>
+              {selectedAba !== 'Todas' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleOpenRenameAba}
+                    className={btn.secondary}
+                  >
+                    Renomear aba
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleOpenDeleteAba}
+                    className={btn.dangerSm}
+                  >
+                    Excluir aba
+                  </button>
+                </>
+              )}
+              <button
+                type="button"
+                onClick={async () => {
+                  setEditingEtapa(null);
+                  setEtapaForm({
+                    nome: '',
+                    descricao: '',
+                    aba: selectedAba !== 'Todas' ? selectedAba : '',
+                    executorId: 0,
+                    responsavelId: undefined,
+                    integrantesIds: [],
+                    dataInicio: '',
+                    dataFim: '',
+                    valorInsumos: 0,
+                    checklist: [{ texto: '', concluido: false, descricao: '', subitens: [] }],
+                    status: 'PENDENTE',
+                    estoqueItems: [],
+                  });
+                  // Carregar itens de estoque disponíveis
+                  await loadAvailableStockItems();
+                  setShowEtapaModal(true);
+                }}
+                className={btn.primary}
+              >
+                + Adicionar Etapa
+              </button>
+            </div>
           )}
         </div>
-        {project.etapas.length === 0 ? (
+        {(totalEtapas > 0 || canEditProject) && (
+          <div className="flex flex-wrap items-center gap-2 mb-4">
+            <div className="flex flex-wrap gap-2">
+              {abas.map((aba) => (
+                <button
+                  key={aba}
+                  type="button"
+                  onClick={() => setSelectedAba(aba)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    selectedAba === aba
+                      ? 'bg-primary text-white border-primary'
+                      : 'bg-white/5 text-white/70 border-white/20 hover:bg-white/10'
+                  }`}
+                >
+                  {aba === 'Todas' ? 'Todas as abas' : aba}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        {totalEtapas === 0 ? (
           <p className="text-white/50 text-center py-8">Nenhuma etapa cadastrada</p>
+        ) : etapasFiltradas.length === 0 ? (
+          <p className="text-white/50 text-center py-8">Nenhuma etapa nesta aba.</p>
         ) : (
           <div className="space-y-4">
-            {project.etapas.map((etapa, etapaIndex) => {
+            {etapasFiltradas.map((etapa, etapaIndex) => {
               const latestEntrega = etapa.entregas && etapa.entregas.length > 0 ? etapa.entregas[0] : null;
               // Comparar convertendo ambos para número para evitar problemas de tipo
               const executorId = etapa.executor?.id;
@@ -1105,7 +1251,9 @@ export default function ProjectDetails() {
                         ▼
                       </span>
                       <div className="min-w-0">
-                        <h4 className="font-semibold text-white/90">{etapa.nome}</h4>
+                        <h4 className="font-semibold text-white/90">
+                          {etapaIndex + 1}. {etapa.nome}
+                        </h4>
                         {etapa.descricao && (
                           <p className={`text-sm mt-1 ${expandedEtapas.has(etapa.id) ? 'text-white/70' : 'text-white/50 line-clamp-1'}`}>
                             {etapa.descricao}
@@ -1245,6 +1393,12 @@ export default function ProjectDetails() {
                         </span>
                       </div>
                       <p className="mt-2 text-sm text-white/80 whitespace-pre-wrap">{latestEntrega.descricao}</p>
+                      {latestEntrega.foiEditada && latestEntrega.editadoPor && latestEntrega.dataEdicao && (
+                        <p className="mt-1 text-xs text-white/60">
+                          Editado por {latestEntrega.editadoPor.nome}{' '}
+                          em {new Date(latestEntrega.dataEdicao).toLocaleString('pt-BR')}
+                        </p>
+                      )}
                       {latestEntrega.imagemUrl && (
                         <img
                           src={latestEntrega.imagemUrl}
@@ -1341,6 +1495,7 @@ export default function ProjectDetails() {
                           const isExpanded = expandedChecklistDetails.has(detailsKey);
                           const hasDetails = item.descricao && item.descricao.trim().length > 0;
                           const hasSubitens = item.subitens && item.subitens.length > 0;
+                          const itemNumberLabel = `${etapaIndex + 1}.${index + 1}`;
                           
                           return (
                             <div key={`${etapa.id}-checklist-${index}`} className="space-y-1">
@@ -1373,7 +1528,7 @@ export default function ProjectDetails() {
                                 </div>
                                 <div className="min-w-0 pl-1">
                                   <span className={`text-sm block truncate ${getChecklistTextStyle(item.concluido || false)}`}>
-                                    {item.texto}
+                                    {itemNumberLabel} {item.texto}
                                   </span>
                                 </div>
                                 <div className="flex justify-center">
@@ -1499,7 +1654,7 @@ export default function ProjectDetails() {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <span className={`text-sm block truncate ${getChecklistTextStyle(item.concluido || false)}`}>
-                                    {item.texto}
+                                    {itemNumberLabel} {item.texto}
                                   </span>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto sm:flex-nowrap">
@@ -1630,6 +1785,7 @@ export default function ProjectDetails() {
                                         const statusSubitem = subitem.concluido ? 'APROVADO' : (entregaSubitem?.status ?? 'PENDENTE');
                                         const canApproveSubitem = canReview && statusSubitem === 'EM_ANALISE';
                                         const subLoading = reviewLoading[`sub-${etapa.id}-${index}-${subIndex}`] ?? false;
+                                        const subItemNumberLabel = `${etapaIndex + 1}.${index + 1}.${subIndex + 1}`;
                                         
                                         return (
                                           <div key={subIndex} className="space-y-1">
@@ -1655,7 +1811,7 @@ export default function ProjectDetails() {
                                                 )}
                                               </div>
                                               <span className={`flex-1 text-xs ${subitem.concluido ? 'text-emerald-300/70 line-through' : 'text-white/80'}`}>
-                                                {subitem.texto}
+                                                {subItemNumberLabel} {subitem.texto}
                                               </span>
                                               <span
                                                 className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${getChecklistItemStatusColor(statusSubitem)}`}
@@ -2185,6 +2341,43 @@ export default function ProjectDetails() {
             </div>
 
             <div className="p-6 space-y-4">
+              {/* (() => {
+                // Usuário pode editar se for executor ou integrante da etapa
+                const executorId = selectedViewEntrega.etapa.executor.id;
+                const integrantesIds =
+                  selectedViewEntrega.etapa.integrantes?.map((i) => i.usuario.id).filter(Boolean) || [];
+                const userId = user?.id ? Number(user.id) : null;
+                const canEditFromModal =
+                  !!userId &&
+                  (userId === Number(executorId) ||
+                    integrantesIds.some((id: number) => Number(id) === userId));
+
+                return (
+                  canEditFromModal && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowViewEntregaModal(false);
+                          setSelectedChecklistEtapa(selectedViewEntrega.etapa);
+                          setSelectedChecklistIndex(selectedViewEntrega.index);
+                          setSelectedSubitemIndex(selectedViewEntrega.entrega.subitemIndex ?? null);
+                          setObjetivoDescricao(selectedViewEntrega.entrega.descricao || '');
+                          setObjetivoImagens([]);
+                          setObjetivoDocumentos([]);
+                          setObjetivoPreviews([]);
+                          setObjetivoError(null);
+                          setObjetivoLoading(false);
+                          setShowChecklistModal(true);
+                        }}
+                        className={btn.primarySoft}
+                      >
+                        Editar entrega
+                      </button>
+                    </div>
+                  )
+                );
+              })() */}
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">
                   Descrição
@@ -2300,25 +2493,42 @@ export default function ProjectDetails() {
                 </div>
                 <div>
                   <label className="block text-xs text-white/60 mb-1">Status</label>
-                  <span
-                    className={`inline-block px-3 py-1.5 rounded-md text-xs font-semibold ${
-                      selectedViewEntrega.entrega.status === 'EM_ANALISE'
-                        ? 'bg-violet-500/30 text-violet-200 border border-violet-400/50'
-                        : selectedViewEntrega.entrega.status === 'APROVADO'
-                        ? 'bg-emerald-500/30 text-emerald-200 border border-emerald-400/50'
-                        : selectedViewEntrega.entrega.status === 'REPROVADO'
-                        ? 'bg-rose-500/30 text-rose-200 border border-rose-400/50'
-                        : 'bg-amber-500/20 text-amber-200 border border-amber-400/40'
-                    }`}
-                  >
-                    {selectedViewEntrega.entrega.status === 'PENDENTE'
-                      ? 'Pendente'
-                      : selectedViewEntrega.entrega.status === 'EM_ANALISE'
-                      ? 'Em análise'
-                      : selectedViewEntrega.entrega.status === 'APROVADO'
-                      ? 'Aprovado'
-                      : 'Reprovado'}
-                  </span>
+                  {(() => {
+                    // Status exibido deve refletir o estado atual do objetivo,
+                    // considerando tanto a entrega quanto o checklist (item/subitem concluído).
+                    const checklistItem =
+                      selectedViewEntrega.etapa.checklistJson &&
+                      selectedViewEntrega.etapa.checklistJson[selectedViewEntrega.index];
+
+                    let displayStatus: 'PENDENTE' | 'EM_ANALISE' | 'APROVADO' | 'REPROVADO' =
+                      (selectedViewEntrega.entrega.status as any) || 'PENDENTE';
+
+                    if (checklistItem) {
+                      const subIndex = (selectedViewEntrega.entrega as any).subitemIndex;
+
+                      if (
+                        subIndex !== null &&
+                        subIndex !== undefined &&
+                        Array.isArray(checklistItem.subitens) &&
+                        checklistItem.subitens[subIndex] &&
+                        checklistItem.subitens[subIndex].concluido
+                      ) {
+                        displayStatus = 'APROVADO';
+                      } else if (checklistItem.concluido) {
+                        displayStatus = 'APROVADO';
+                      }
+                    }
+
+                    return (
+                      <span
+                        className={`inline-block px-3 py-1.5 rounded-md text-xs font-semibold ${getChecklistItemStatusColor(
+                          displayStatus,
+                        )}`}
+                      >
+                        {getChecklistItemStatusLabel(displayStatus)}
+                      </span>
+                    );
+                  })()}
                 </div>
                 {selectedViewEntrega.entrega.avaliadoPor && (
                   <div>
@@ -2358,6 +2568,220 @@ export default function ProjectDetails() {
         </div>
       )}
 
+      {/* Modal Nova Aba */}
+      {showAbaModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-white/20 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-white">Nova aba de etapas</h2>
+              <button
+                type="button"
+                onClick={() => setShowAbaModal(false)}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleConfirmNovaAba} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
+                  Nome da nova aba
+                </label>
+                <input
+                  type="text"
+                  value={novaAbaNome}
+                  onChange={(e) => setNovaAbaNome(e.target.value)}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="Ex: Software, Hardware, Geral 2..."
+                  maxLength={60}
+                  autoFocus
+                />
+                <p className="text-xs text-white/60 mt-1">
+                  Essa aba será usada para agrupar etapas do mesmo tipo neste projeto.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-white/20">
+                <button
+                  type="button"
+                  onClick={() => setShowAbaModal(false)}
+                  className={btn.secondary}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className={btn.primary}
+                >
+                  Continuar
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Renomear Aba */}
+      {showRenameAbaModal && selectedAba !== 'Todas' && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-white/20 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-white">Renomear aba</h2>
+              <button
+                type="button"
+                onClick={() => setShowRenameAbaModal(false)}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!project || selectedAba === 'Todas') return;
+
+                const from = selectedAba;
+                const to = renameAbaNome.trim();
+                if (!to || to.length < 2) {
+                  toast.warning('Informe um novo nome de aba com pelo menos 2 caracteres.');
+                  return;
+                }
+
+                try {
+                  setAbaModalLoading(true);
+                  setError(null);
+                  await api.patch(`/projects/${project.id}/abas/rename`, { from, to });
+                  // Atualizar seleção e limpar cache de abas extras
+                  setSelectedAba(to);
+                  setExtraAbas((prev) =>
+                    prev
+                      .map((a) => (a === from ? to : a))
+                      .filter((a, index, arr) => arr.indexOf(a) === index),
+                  );
+                  await refreshProject(false);
+                  toast.success('Aba renomeada com sucesso.');
+                  setShowRenameAbaModal(false);
+                } catch (err: any) {
+                  const msg = formatApiError(err);
+                  setError(msg);
+                  toast.error(msg);
+                } finally {
+                  setAbaModalLoading(false);
+                }
+              }}
+              className="p-6 space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
+                  Nome atual
+                </label>
+                <p className="text-sm text-white/80 bg-white/5 border border-white/20 rounded-md px-4 py-2.5">
+                  {selectedAba}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
+                  Novo nome da aba
+                </label>
+                <input
+                  type="text"
+                  value={renameAbaNome}
+                  onChange={(e) => setRenameAbaNome(e.target.value)}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  placeholder="Ex: Software, Hardware, Geral 2..."
+                  maxLength={60}
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-white/20">
+                <button
+                  type="button"
+                  onClick={() => setShowRenameAbaModal(false)}
+                  className={btn.secondary}
+                  disabled={abaModalLoading}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className={btn.primary}
+                  disabled={abaModalLoading}
+                >
+                  {abaModalLoading ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Excluir Aba */}
+      {showDeleteAbaModal && selectedAba !== 'Todas' && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-danger/40 rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-danger/40 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-danger">Excluir aba</h2>
+              <button
+                type="button"
+                onClick={() => setShowDeleteAbaModal(false)}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-white/80">
+                Tem certeza que deseja excluir a aba <span className="font-semibold">{selectedAba}</span>?
+              </p>
+              <p className="text-xs text-white/60">
+                As etapas que usam essa aba não serão apagadas. Elas apenas voltarão para a categoria geral (sem aba específica).
+              </p>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-white/20">
+                <button
+                  type="button"
+                  onClick={() => setShowDeleteAbaModal(false)}
+                  className={btn.secondary}
+                  disabled={abaModalLoading}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!project || selectedAba === 'Todas') return;
+                    try {
+                      setAbaModalLoading(true);
+                      setError(null);
+                      await api.patch(`/projects/${project.id}/abas/delete`, {
+                        name: selectedAba,
+                      });
+                      setExtraAbas((prev) => prev.filter((a) => a !== selectedAba));
+                      setSelectedAba('Todas');
+                      await refreshProject(false);
+                      toast.success('Aba excluída com sucesso.');
+                      setShowDeleteAbaModal(false);
+                    } catch (err: any) {
+                      const msg = formatApiError(err);
+                      setError(msg);
+                      toast.error(msg);
+                    } finally {
+                      setAbaModalLoading(false);
+                    }
+                  }}
+                  className={btn.danger}
+                  disabled={abaModalLoading}
+                >
+                  {abaModalLoading ? 'Excluindo...' : 'Excluir aba'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal Adicionar Etapa */}
       {showEtapaModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -2374,6 +2798,7 @@ export default function ProjectDetails() {
                   setEtapaForm({
                     nome: '',
                     descricao: '',
+                    aba: '',
                     executorId: 0,
                     responsavelId: undefined,
                     integrantesIds: [],
@@ -2418,6 +2843,49 @@ export default function ProjectDetails() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">
+                  Aba / Categoria
+                </label>
+                <select
+                  value={etapaForm.aba || ''}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === '__nova__') {
+                      handleAddAba();
+                      return;
+                    }
+                    setEtapaForm({ ...etapaForm, aba: value });
+                  }}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem',
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">
+                    {abas.filter((a) => a !== 'Todas').length === 0
+                      ? 'Nenhuma aba cadastrada ainda'
+                      : 'Selecione uma aba...'}
+                  </option>
+                  {abas
+                    .filter((a) => a !== 'Todas')
+                    .map((abaNome) => (
+                      <option key={abaNome} value={abaNome} className="bg-neutral text-white">
+                        {abaNome}
+                      </option>
+                    ))}
+                  <option value="__nova__" className="bg-neutral text-primary">
+                    + Criar nova aba...
+                  </option>
+                </select>
+                <p className="text-xs text-white/50 mt-1">
+                  As abas são usadas para organizar etapas do mesmo tipo. Você também pode criar uma nova aba pelo botão acima da lista de etapas.
+                </p>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Executor *</label>
                 <select
                   required
@@ -2458,37 +2926,10 @@ export default function ProjectDetails() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Responsável (aprovação)</label>
-                <p className="text-xs text-white/60 mb-1">Quem pode aprovar/reprovar itens desta etapa pela tela Meu trabalho (não precisa ter acesso à aba Projetos)</p>
-                <select
-                  value={etapaForm.responsavelId ?? ''}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setEtapaForm({ ...etapaForm, responsavelId: value ? Number(value) : undefined });
-                  }}
-                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 1rem center',
-                    paddingRight: '2.5rem'
-                  }}
-                >
-                  <option value="" className="bg-neutral text-white">Nenhum</option>
-                  {users
-                    .filter((u) => u && u.id !== etapaForm.executorId)
-                    .map((user) => {
-                    if (!user) return null;
-                    const cargoNome = typeof user.cargo === 'string' 
-                      ? user.cargo 
-                      : (user.cargo?.nome || 'Sem cargo');
-                    return (
-                      <option key={user.id} value={user.id} className="bg-neutral text-white">
-                        {user.nome} ({cargoNome})
-                      </option>
-                    );
-                  })}
-                </select>
+                <label className="block text-sm font-medium text-white/90 mb-1">Responsável (aprovação)</label>
+                <p className="text-xs text-white/60">
+                  Será automaticamente o mesmo usuário definido como <strong>Executor</strong>.
+                </p>
               </div>
 
               {editingEtapa && isDiretor && (
@@ -3113,6 +3554,7 @@ export default function ProjectDetails() {
                     setEtapaForm({
                       nome: '',
                       descricao: '',
+                      aba: '',
                       executorId: 0,
                       responsavelId: undefined,
                       integrantesIds: [],

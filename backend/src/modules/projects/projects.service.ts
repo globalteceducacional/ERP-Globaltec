@@ -4,6 +4,7 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UpdateResponsiblesDto } from './dto/update-responsibles.dto';
 import { ReorderEtapasDto } from './dto/reorder-etapas.dto';
+import { DeleteAbaDto, RenameAbaDto } from './dto/update-aba.dto';
 import { EtapaStatus, ProjetoStatus, NotificacaoTipo, RequerimentoTipo, Prisma } from '@prisma/client';
 
 @Injectable()
@@ -519,6 +520,50 @@ export class ProjectsService {
         }),
       ),
     );
+
+    return this.findOne(projetoId);
+  }
+
+  async renameAba(projetoId: number, dto: RenameAbaDto) {
+    const from = dto.from?.trim();
+    const to = dto.to?.trim();
+
+    if (!from || !to) {
+      throw new BadRequestException('Nome atual e novo nome da aba são obrigatórios.');
+    }
+
+    await this.findOne(projetoId);
+
+    await this.prisma.etapa.updateMany({
+      where: {
+        projetoId,
+      } as any,
+      data: {
+        aba: to,
+      } as any,
+    } as any);
+
+    return this.findOne(projetoId);
+  }
+
+  async deleteAba(projetoId: number, dto: DeleteAbaDto) {
+    const name = dto.name?.trim();
+
+    if (!name) {
+      throw new BadRequestException('Nome da aba é obrigatório para exclusão.');
+    }
+
+    await this.findOne(projetoId);
+
+    // Remover a aba das etapas deste projeto, movendo-as para "sem aba" (Geral)
+    await this.prisma.etapa.updateMany({
+      where: {
+        projetoId,
+      } as any,
+      data: {
+        aba: null,
+      } as any,
+    } as any);
 
     return this.findOne(projetoId);
   }

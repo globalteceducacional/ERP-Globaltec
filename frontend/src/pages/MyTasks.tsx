@@ -38,6 +38,7 @@ interface Etapa {
   id: number;
   nome: string;
   descricao?: string | null;
+  aba?: string | null;
   status: 'PENDENTE' | 'EM_ANDAMENTO' | 'EM_ANALISE' | 'APROVADA' | 'REPROVADA';
   dataInicio?: string | null;
   dataFim?: string | null;
@@ -63,6 +64,9 @@ interface EtapaEntrega {
   dataAvaliacao?: string | null;
   executor?: { nome: string } | null;
   avaliadoPor?: { nome: string } | null;
+  foiEditada?: boolean;
+  dataEdicao?: string | null;
+  editadoPor?: { nome: string } | null;
 }
 
 interface MyTasksResponse {
@@ -102,6 +106,7 @@ export default function MyTasks() {
   const [reviewComentario, setReviewComentario] = useState('');
   const [stageReviewLoading, setStageReviewLoading] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
+  const [selectedAbasByProject, setSelectedAbasByProject] = useState<Record<number, string>>({});
   
   // Estado para controlar expansão de detalhes dos itens do checklist
   // Chave: "etapaId-itemIndex" ou "etapaId-itemIndex-subIndex" para subitens
@@ -585,6 +590,21 @@ export default function MyTasks() {
               const stats = getProjetoStats(projeto, etapas);
               const hasEtapas = etapas.length > 0;
 
+              const abasSet = new Set<string>();
+              etapas.forEach((etapa) => {
+                const nomeAba = (etapa.aba && etapa.aba.trim()) || 'Geral';
+                abasSet.add(nomeAba);
+              });
+              const abas = ['Todas', ...Array.from(abasSet).sort((a, b) => a.localeCompare(b, 'pt-BR'))];
+              const selectedAba = selectedAbasByProject[projeto.id] ?? 'Todas';
+              const etapasFiltradas =
+                selectedAba === 'Todas'
+                  ? etapas
+                  : etapas.filter((etapa) => {
+                      const nomeAba = (etapa.aba && etapa.aba.trim()) || 'Geral';
+                      return nomeAba === selectedAba;
+                    });
+
               return (
                 <div key={projeto.id} className="bg-neutral/80 border border-white/10 rounded-xl overflow-hidden">
                   {/* Cabeçalho do Projeto — mobile: coluna; desktop: linha */}
@@ -688,7 +708,27 @@ export default function MyTasks() {
                   {/* Etapas do Projeto (Colapsável) */}
                   {hasEtapas && isExpanded && (
                     <div className="border-t border-white/10 p-5 pt-4 space-y-4">
-                  {etapas.map((etapa) => {
+                      {abas.length > 1 && (
+                        <div className="flex flex-wrap items-center gap-2 mb-3">
+                          {abas.map((aba) => (
+                            <button
+                              key={aba}
+                              type="button"
+                              onClick={() =>
+                                setSelectedAbasByProject((prev) => ({ ...prev, [projeto.id]: aba }))
+                              }
+                              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                                selectedAba === aba
+                                  ? 'bg-primary text-white border-primary'
+                                  : 'bg-white/5 text-white/70 border-white/20 hover:bg-white/10'
+                              }`}
+                            >
+                              {aba === 'Todas' ? 'Todas as abas' : aba}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                  {etapasFiltradas.map((etapa, etapaIndex) => {
                         // Verificar se o usuário é executor usando executorId
                         const executorId = etapa.executorId;
                     // Comparar convertendo ambos para número para evitar problemas de tipo
@@ -725,7 +765,9 @@ export default function MyTasks() {
                       >
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3 mb-3">
                           <div className="flex-1 min-w-0">
-                            <h4 className="font-semibold text-white/90">{etapa.nome}</h4>
+                            <h4 className="font-semibold text-white/90">
+                              {etapaIndex + 1}. {etapa.nome}
+                            </h4>
                             {etapa.descricao && (
                               <p className="text-sm text-white/70 mt-1">{etapa.descricao}</p>
                             )}
@@ -762,7 +804,7 @@ export default function MyTasks() {
                               <span className={`px-2 py-1 rounded text-xs ${getEntregaStatusColor(latestEntrega.status)}`}>
                                 {getEntregaStatusLabel(latestEntrega.status)}
             </span>
-                                    {podeInteragir && latestEntrega.status === 'EM_ANALISE' && (
+                                    {podeInteragir && (
                                       <button
                                         type="button"
                                         onClick={() => handleOpenEntregaModal(etapa, latestEntrega)}
@@ -795,6 +837,12 @@ export default function MyTasks() {
                                   </div>
           </div>
                             <p className="text-sm text-white/80 whitespace-pre-wrap">{latestEntrega.descricao}</p>
+                            {latestEntrega.foiEditada && latestEntrega.editadoPor && latestEntrega.dataEdicao && (
+                              <p className="mt-1 text-xs text-white/60">
+                                Editado por {latestEntrega.editadoPor.nome} em{' '}
+                                {new Date(latestEntrega.dataEdicao).toLocaleString('pt-BR')}
+                              </p>
+                            )}
                             {latestEntrega.imagemUrl && (
                               <img
                                 src={latestEntrega.imagemUrl}
@@ -861,7 +909,7 @@ export default function MyTasks() {
                               const isExpanded = expandedChecklistDetails.has(detailsKey);
                               const hasDetails = item.descricao && item.descricao.trim().length > 0;
                               const hasSubitens = item.subitens && item.subitens.length > 0;
-                              
+                              const itemNumberLabel = `${etapaIndex + 1}.${index + 1}`;
                               const statusForStyle = item.concluido ? 'APROVADO' : statusItem;
                               return (
                                 <div key={index} className="space-y-1">
@@ -883,7 +931,7 @@ export default function MyTasks() {
                                     </div>
                                     <div className="flex-1 min-w-0">
                                       <span className={`text-sm block truncate ${getChecklistTextStyle(item.concluido ?? false)}`}>
-                                        {item.texto}
+                                        {itemNumberLabel} {item.texto}
                                       </span>
                                     </div>
                                     {/* Grupo fixo: status + ações na mesma ordem para todos os itens */}
@@ -953,6 +1001,7 @@ export default function MyTasks() {
                                             );
                                             const statusSubitem = entregaSubitem?.status ?? 'PENDENTE';
                                             const podeEnviarSubitem = podeInteragir && (statusSubitem === 'PENDENTE' || statusSubitem === 'REPROVADO');
+                                            const subItemNumberLabel = `${etapaIndex + 1}.${index + 1}.${subIndex + 1}`;
                                             
                                             return (
                                               <div key={subIndex} className="space-y-1">
@@ -978,7 +1027,7 @@ export default function MyTasks() {
                                                     )}
                                                   </div>
                                                   <span className={`flex-1 min-w-0 text-xs truncate ${subitem.concluido ? 'text-emerald-300/70 line-through' : 'text-white/80'}`}>
-                                                    {subitem.texto}
+                                                    {subItemNumberLabel} {subitem.texto}
                                                   </span>
                                                   <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
                                                     <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold border whitespace-nowrap ${getChecklistItemStatusColor(statusSubitem)}`}>
@@ -1300,6 +1349,45 @@ export default function MyTasks() {
             </div>
 
             <div className="p-6 space-y-4">
+              {(() => {
+                // Usuário pode editar se for executor ou integrante da etapa
+                const executorId = selectedViewEntrega.etapa.executorId;
+                const integrantesIds =
+                  selectedViewEntrega.etapa.integrantes?.map((i) => i.usuario.id).filter(Boolean) || [];
+                const userId = user?.id ? Number(user.id) : null;
+                const canEditFromModal =
+                  !!userId &&
+                  (userId === Number(executorId) ||
+                    integrantesIds.some((id) => Number(id) === userId));
+
+                return (
+                  canEditFromModal && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Abrir modal de envio/edição de objetivo com os dados atuais
+                          setShowViewEntregaModal(false);
+                          setSelectedChecklistEtapa(selectedViewEntrega.etapa);
+                          setSelectedChecklistIndex(selectedViewEntrega.index);
+                          setSelectedSubitemIndex(selectedViewEntrega.entrega.subitemIndex ?? null);
+                          setObjetivoDescricao(selectedViewEntrega.entrega.descricao || '');
+                          setObjetivoImagens([]);
+                          setObjetivoDocumentos([]);
+                          setObjetivoPreviews([]);
+                          setObjetivoError(null);
+                          setObjetivoLoading(false);
+                          setShowChecklistModal(true);
+                        }}
+                        className={btn.primarySoft}
+                      >
+                        Editar entrega
+                      </button>
+                    </div>
+                  )
+                );
+              })()}
+
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">
                   Descrição

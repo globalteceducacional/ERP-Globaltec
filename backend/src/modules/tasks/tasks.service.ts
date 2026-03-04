@@ -56,7 +56,9 @@ export class TasksService {
           include: {
             executor: true,
             avaliadoPor: true,
-          },
+            // editadoPor será reconhecido após rodar `prisma generate`
+            editadoPor: true,
+          } as any,
         },
         checklistEntregas: {
           orderBy: { checklistIndex: 'asc' },
@@ -172,7 +174,8 @@ export class TasksService {
           include: {
             executor: true,
             avaliadoPor: true,
-          },
+            editadoPor: true,
+          } as any,
         },
         checklistEntregas: {
           orderBy: { checklistIndex: 'asc' },
@@ -202,14 +205,15 @@ export class TasksService {
     const proximaOrdem = (maxOrdem._max?.ordem ?? -1) + 1;
 
     const createData: any = {
-        ordem: proximaOrdem,
-        nome: data.nome,
-        descricao: data.descricao,
-        projeto: { connect: { id: data.projetoId } },
-        executor: { connect: { id: data.executorId } },
-        dataInicio: data.dataInicio ? new Date(data.dataInicio) : undefined,
-        dataFim: data.dataFim ? new Date(data.dataFim) : undefined,
-        valorInsumos: data.valorInsumos ?? 0,
+      ordem: proximaOrdem,
+      nome: data.nome,
+      descricao: data.descricao,
+      aba: data.aba?.trim() || undefined,
+      projeto: { connect: { id: data.projetoId } },
+      executor: { connect: { id: data.executorId } },
+      dataInicio: data.dataInicio ? new Date(data.dataInicio) : undefined,
+      dataFim: data.dataFim ? new Date(data.dataFim) : undefined,
+      valorInsumos: data.valorInsumos ?? 0,
     };
 
     if (data.checklist && Array.isArray(data.checklist) && data.checklist.length > 0) {
@@ -269,6 +273,7 @@ export class TasksService {
     const payload: any = {
       nome: data.nome,
       descricao: data.descricao,
+      aba: data.aba?.trim(),
       status: data.status,
       valorInsumos: data.valorInsumos,
     };
@@ -553,27 +558,20 @@ export class TasksService {
       throw new UnauthorizedException('Somente o executor ou integrantes podem editar a entrega');
     }
 
-    // Verificar se a entrega está em análise
-    if (entrega.status !== EtapaEntregaStatus.EM_ANALISE) {
-      throw new BadRequestException('Apenas entregas em análise podem ser editadas');
-    }
-
-    // Verificar se a etapa está em análise
-    if (etapa.status !== EtapaStatus.EM_ANALISE) {
-      throw new BadRequestException('A etapa deve estar em análise para editar a entrega');
-    }
-
     if (!data.descricao || data.descricao.trim().length < 5) {
       throw new BadRequestException('Descrição da entrega é obrigatória e deve ter pelo menos 5 caracteres');
     }
 
-    // Atualizar a entrega
+    // Atualizar a entrega e marcar quem editou
     await this.prisma.etapaEntrega.update({
       where: { id: entregaId },
       data: {
         descricao: data.descricao.trim(),
         imagemUrl: data.imagem ? data.imagem.trim() : entrega.imagemUrl,
-      },
+        foiEditada: true,
+        editadoPorId: userId,
+        dataEdicao: new Date(),
+      } as any,
     });
 
     const updated = await this.prisma.etapa.findUnique({
@@ -585,7 +583,7 @@ export class TasksService {
         integrantes: { include: { usuario: true } },
         entregas: {
           orderBy: { dataEnvio: 'desc' },
-          include: { executor: true, avaliadoPor: true },
+          include: { executor: true, avaliadoPor: true, editadoPor: true } as any,
         },
       },
     });
@@ -944,16 +942,16 @@ export class TasksService {
       try {
         entrega = await this.prisma.checklistItemEntrega.create({
           data: {
-        etapaId,
-        checklistIndex,
+            etapaId,
+            checklistIndex,
             ...(subitemIndex !== undefined && subitemIndex !== null ? { subitemIndex } : { subitemIndex: null }),
-        descricao: data.descricao.trim(),
+            descricao: data.descricao.trim(),
             imagemUrl: imagensUrls && imagensUrls.length > 0 ? imagensUrls[0] : null,
             documentoUrl: documentosUrls && documentosUrls.length > 0 ? documentosUrls[0] : null,
-        imagensUrls: imagensUrls && imagensUrls.length > 0 ? imagensUrls : undefined,
-        documentosUrls: documentosUrls && documentosUrls.length > 0 ? documentosUrls : undefined,
-        status: ChecklistItemStatus.EM_ANALISE,
-        executorId: userId,
+            imagensUrls: imagensUrls && imagensUrls.length > 0 ? imagensUrls : undefined,
+            documentosUrls: documentosUrls && documentosUrls.length > 0 ? documentosUrls : undefined,
+            status: ChecklistItemStatus.EM_ANALISE,
+            executorId: userId,
           } as any,
           include: {
             executor: true,
@@ -962,7 +960,11 @@ export class TasksService {
         });
       } catch (error: any) {
         // Se der erro de constraint única, buscar novamente e atualizar
-        if (error.code === 'P2002' || error.message?.includes('Unique constraint') || error.message?.includes('etapaId') && error.message?.includes('checklistIndex')) {
+        if (
+          error.code === 'P2002' ||
+          error.message?.includes('Unique constraint') ||
+          (error.message?.includes('etapaId') && error.message?.includes('checklistIndex'))
+        ) {
           // Buscar qualquer entrega existente para este (etapaId, checklistIndex)
           // independente do subitemIndex (para compatibilidade com constraint antiga)
           const todasEntregas = await this.prisma.checklistItemEntrega.findMany({
@@ -974,21 +976,22 @@ export class TasksService {
           
           if (todasEntregas.length > 0) {
             // Usar a primeira encontrada (ou a que tem subitemIndex correspondente se existir)
-            const entregaEncontrada = todasEntregas.find((e: any) => 
-              subitemIndex !== undefined && subitemIndex !== null 
-                ? e.subitemIndex === subitemIndex 
-                : (e.subitemIndex === null || e.subitemIndex === undefined)
-            ) || todasEntregas[0];
+            const entregaEncontrada =
+              todasEntregas.find((e: any) =>
+                subitemIndex !== undefined && subitemIndex !== null
+                  ? e.subitemIndex === subitemIndex
+                  : e.subitemIndex === null || e.subitemIndex === undefined,
+              ) || todasEntregas[0];
             
             if (entregaEncontrada) {
               entrega = await this.prisma.checklistItemEntrega.update({
                 where: { id: (entregaEncontrada as any).id },
                 data: prepareUpdateData(entregaEncontrada as any),
-      include: {
-        executor: true,
-        avaliadoPor: true,
-      },
-    });
+                include: {
+                  executor: true,
+                  avaliadoPor: true,
+                },
+              });
             } else {
               throw error;
             }
@@ -998,6 +1001,40 @@ export class TasksService {
         } else {
           throw error;
         }
+      }
+    }
+
+    // Ao reenviar uma entrega (especialmente depois de aprovada),
+    // o item deve voltar para análise: limpar o "concluido" do checklist
+    // e, se apropriado, colocar a etapa em EM_ANALISE novamente.
+    if (checklist.length > 0 && checklistIndex >= 0 && checklistIndex < checklist.length) {
+      const item = checklist[checklistIndex];
+      if (item) {
+        if (subitemIndex !== undefined && subitemIndex !== null && item.subitens && item.subitens[subitemIndex]) {
+          item.subitens[subitemIndex].concluido = false;
+        } else {
+          item.concluido = false;
+        }
+
+        const updateData: any = {
+          checklistJson: checklist as any,
+        };
+
+        const statusAtual = etapa.status as EtapaStatus;
+        if (statusAtual !== EtapaStatus.REPROVADA) {
+          updateData.status = EtapaStatus.EM_ANALISE;
+        }
+        if (statusAtual === EtapaStatus.APROVADA) {
+          updateData.dataFim = null;
+        }
+
+        await this.prisma.etapa.update({
+          where: { id: etapaId },
+          data: updateData,
+        });
+
+        // Atualizar o status agregado do projeto
+        await this.updateProjetoStatus(etapa.projetoId);
       }
     }
 

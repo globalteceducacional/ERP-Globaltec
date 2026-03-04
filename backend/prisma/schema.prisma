@@ -119,6 +119,7 @@ model Usuario {
   notificacoes                Notificacao[]
   entregasExecutadas          EtapaEntrega[]         @relation("EtapaEntregaExecutor")
   entregasAvaliadas           EtapaEntrega[]         @relation("EtapaEntregaAvaliador")
+  entregasEditadas            EtapaEntrega[]         @relation("EtapaEntregaEditor")
   checklistEntregasExecutadas ChecklistItemEntrega[] @relation("ChecklistItemEntregaExecutor")
   checklistEntregasAvaliadas  ChecklistItemEntrega[] @relation("ChecklistItemEntregaAvaliador")
   estoqueAlocacoes            EstoqueAlocacao[]
@@ -167,6 +168,7 @@ model Etapa {
   ordem             Int                    @default(0) // Ordem de exibição no projeto
   nome              String
   descricao         String?
+  aba               String?                // Nome da aba/grupo (ex.: "Software", "Hardware")
   status            EtapaStatus            @default(PENDENTE)
   dataInicio        DateTime?
   dataFim           DateTime?
@@ -200,10 +202,14 @@ model EtapaEntrega {
   executorId    Int
   avaliadoPorId Int?
   dataAvaliacao DateTime?
+  foiEditada    Boolean            @default(false)
+  editadoPorId  Int?
+  dataEdicao    DateTime?
 
   etapa       Etapa    @relation(fields: [etapaId], references: [id], onDelete: Cascade)
   executor    Usuario  @relation("EtapaEntregaExecutor", fields: [executorId], references: [id])
   avaliadoPor Usuario? @relation("EtapaEntregaAvaliador", fields: [avaliadoPorId], references: [id])
+  editadoPor  Usuario? @relation("EtapaEntregaEditor", fields: [editadoPorId], references: [id])
 }
 
 model ChecklistItemEntrega {

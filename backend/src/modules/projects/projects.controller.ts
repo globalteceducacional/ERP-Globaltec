@@ -21,6 +21,7 @@ import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
 import { UpdateResponsiblesDto } from './dto/update-responsibles.dto';
 import { ReorderEtapasDto } from './dto/reorder-etapas.dto';
+import { DeleteAbaDto, RenameAbaDto } from './dto/update-aba.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -82,6 +83,24 @@ export class ProjectsController {
     @Body() body: ReorderEtapasDto,
   ) {
     return this.projectsService.reorderEtapas(id, body);
+  }
+
+  @Patch(':id/abas/rename')
+  @Permissions('projetos:editar')
+  renameAba(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: RenameAbaDto,
+  ) {
+    return this.projectsService.renameAba(id, body);
+  }
+
+  @Patch(':id/abas/delete')
+  @Permissions('projetos:editar')
+  deleteAba(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: DeleteAbaDto,
+  ) {
+    return this.projectsService.deleteAba(id, body);
   }
 
   @Patch(':id/finalize')
