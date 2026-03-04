@@ -11,6 +11,8 @@ import {
   Post,
   Query,
   UseGuards,
+  UseInterceptors,
+  UploadedFiles,
 } from '@nestjs/common';
 import { TasksService } from './tasks.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -29,6 +31,10 @@ import { SubmitDeliveryDto } from './dto/submit-delivery.dto';
 import { ReviewDeliveryDto } from './dto/review-delivery.dto';
 import { SubmitChecklistItemDto } from './dto/submit-checklist-item.dto';
 import { ReviewChecklistItemDto } from './dto/review-checklist-item.dto';
+import { FilesInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer';
+import * as fs from 'fs';
+import { join, extname } from 'path';
 
 @Controller('tasks')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -44,6 +50,45 @@ export class TasksController {
   @Permissions('projetos:editar')
   create(@Body() body: CreateTaskDto) {
     return this.tasksService.create(body);
+  }
+
+  @Post('uploads')
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      storage: diskStorage({
+        destination: (req, file, cb) => {
+          const uploadPath = join(process.cwd(), 'uploads', 'tasks');
+          if (!fs.existsSync(uploadPath)) {
+            fs.mkdirSync(uploadPath, { recursive: true });
+          }
+          cb(null, uploadPath);
+        },
+        filename: (req, file, cb) => {
+          const timestamp = Date.now();
+          const random = Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname) || '';
+          cb(null, `${timestamp}-${random}${ext}`);
+        },
+      }),
+      limits: {
+        fileSize: 20 * 1024 * 1024, // 20MB por arquivo
+        files: 10,
+      },
+    }),
+  )
+  async uploadFiles(@UploadedFiles() files: Express.Multer.File[]) {
+    if (!files || files.length === 0) {
+      return [];
+    }
+
+    const baseUrl = '/uploads/tasks';
+
+    return files.map((file) => ({
+      originalName: file.originalname,
+      url: `${baseUrl}/${file.filename}`,
+      mimeType: file.mimetype,
+      size: file.size,
+    }));
   }
 
   @Patch(':id')

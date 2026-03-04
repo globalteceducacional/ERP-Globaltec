@@ -222,6 +222,7 @@ model ChecklistItemEntrega {
   documentoUrl   String? // Mantido para compatibilidade (deprecated)
   imagensUrls    Json? // Array de URLs/imagens (base64 ou URLs)
   documentosUrls Json? // Array de URLs/documentos (base64 ou URLs)
+  arquivosRemovidos Json? // Array de URLs de arquivos antigos para apagar do storage após aprovação
   status         ChecklistItemStatus @default(PENDENTE)
   dataEnvio      DateTime            @default(now())
   comentario     String?

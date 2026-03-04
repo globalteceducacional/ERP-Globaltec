@@ -263,6 +263,15 @@ export default function ProjectDetails() {
   const [showDeleteAbaModal, setShowDeleteAbaModal] = useState(false);
   const [abaModalLoading, setAbaModalLoading] = useState(false);
 
+  const resolveFileUrl = (url: string | null | undefined) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+      return url;
+    }
+    const base = (api.defaults.baseURL || '').replace(/\/$/, '');
+    return `${base}${url}`;
+  };
+
   const [updatingChecklist, setUpdatingChecklist] = useState<number | null>(null);
   
   // Estado para controlar expansão de detalhes dos itens do checklist
@@ -1401,7 +1410,7 @@ export default function ProjectDetails() {
                       )}
                       {latestEntrega.imagemUrl && (
                         <img
-                          src={latestEntrega.imagemUrl}
+                          src={resolveFileUrl(latestEntrega.imagemUrl)}
                           alt={`Entrega da etapa ${etapa.nome}`}
                           className="mt-3 rounded-md border border-white/10 max-h-64 object-cover"
                         />
@@ -2404,7 +2413,7 @@ export default function ProjectDetails() {
                       {imagens.map((url: string, index: number) => (
                         <img
                           key={index}
-                          src={url}
+                          src={resolveFileUrl(url)}
                           alt={`Imagem ${index + 1} da entrega`}
                           className="w-full rounded-md border border-white/20 max-h-96 object-contain bg-white/5"
                         />
@@ -2434,9 +2443,10 @@ export default function ProjectDetails() {
                           type="button"
                           onClick={() => {
                             try {
-                              if (url.startsWith('data:')) {
+                              const resolvedUrl = resolveFileUrl(url);
+                              if (resolvedUrl.startsWith('data:')) {
                                 // Base64 - criar blob e abrir
-                                const parts = url.split(',');
+                                const parts = resolvedUrl.split(',');
                                 if (parts.length < 2) {
                                   toast.error('Formato de documento inválido');
                                   return;
@@ -2460,7 +2470,7 @@ export default function ProjectDetails() {
                                 setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
                               } else {
                                 // URL externa - abrir diretamente
-                                window.open(url, '_blank');
+                                window.open(resolvedUrl, '_blank');
                               }
                             } catch (error) {
                               console.error('Erro ao abrir documento:', error);

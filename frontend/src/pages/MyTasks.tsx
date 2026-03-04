@@ -107,6 +107,15 @@ export default function MyTasks() {
   const [stageReviewLoading, setStageReviewLoading] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
   const [selectedAbasByProject, setSelectedAbasByProject] = useState<Record<number, string>>({});
+
+  const resolveFileUrl = (url: string | null | undefined) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+      return url;
+    }
+    const base = (api.defaults.baseURL || '').replace(/\/$/, '');
+    return `${base}${url}`;
+  };
   
   // Estado para controlar expansão de detalhes dos itens do checklist
   // Chave: "etapaId-itemIndex" ou "etapaId-itemIndex-subIndex" para subitens
@@ -347,42 +356,66 @@ export default function MyTasks() {
     const MAX_SIZE_MB = 10;
     const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
 
-    const newImages: string[] = [];
-    const newDocuments: string[] = [];
-    const newPreviews: { url: string; name: string; type: 'image' | 'document' }[] = [];
-
-    for (const file of files) {
+    const validFiles = files.filter((file) => {
       if (file.size > MAX_SIZE_BYTES) {
         setObjetivoError(`O arquivo "${file.name}" excede o limite de ${MAX_SIZE_MB}MB.`);
-        continue;
+        return false;
       }
+      return true;
+    });
 
-      const reader = new FileReader();
-      await new Promise<void>((resolve, reject) => {
-        reader.onload = () => {
-          const result = typeof reader.result === 'string' ? reader.result : null;
-          if (result) {
-            if (file.type.startsWith('image/')) {
-              newImages.push(result);
-              newPreviews.push({ url: result, name: file.name, type: 'image' });
-            } else {
-            newDocuments.push(result);
-            newPreviews.push({ url: result, name: file.name, type: 'document' });
-            }
-          }
-          resolve();
-        };
-        reader.onerror = () => {
-          setObjetivoError(`Falha ao carregar o arquivo "${file.name}".`);
-          reject();
-        };
-        reader.readAsDataURL(file);
-      });
+    if (validFiles.length === 0) {
+      return;
     }
 
-    setObjetivoImagens(prev => [...prev, ...newImages]);
-    setObjetivoDocumentos(prev => [...prev, ...newDocuments]);
-    setObjetivoPreviews(prev => [...prev, ...newPreviews]);
+    try {
+      setObjetivoLoading(true);
+      setObjetivoError(null);
+
+      const formData = new FormData();
+      validFiles.forEach((file) => formData.append('files', file));
+
+      const { data } = await api.post<
+        { originalName: string; url: string; mimeType: string; size: number }[]
+      >('/tasks/uploads', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+
+      const newImages: string[] = [];
+      const newDocuments: string[] = [];
+      const newPreviews: { url: string; name: string; type: 'image' | 'document' }[] = [];
+
+      (data || []).forEach((file, index) => {
+        const isImage = file.mimeType?.startsWith('image/');
+        if (isImage) {
+          newImages.push(file.url);
+          newPreviews.push({
+            url: file.url,
+            name: file.originalName || `imagem-${index + 1}`,
+            type: 'image',
+          });
+        } else {
+          newDocuments.push(file.url);
+          newPreviews.push({
+            url: file.url,
+            name: file.originalName || `arquivo-${index + 1}`,
+            type: 'document',
+          });
+        }
+      });
+
+      setObjetivoImagens((prev) => [...prev, ...newImages]);
+      setObjetivoDocumentos((prev) => [...prev, ...newDocuments]);
+      setObjetivoPreviews((prev) => [...prev, ...newPreviews]);
+    } catch (err: any) {
+      const errorMessage = formatApiError(err);
+      setObjetivoError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setObjetivoLoading(false);
+    }
   }
 
   function removeObjetivoPreview(index: number) {
@@ -416,8 +449,8 @@ export default function MyTasks() {
       }`;
       await api.post(url, {
         descricao: objetivoDescricao.trim(),
-        imagens: objetivoImagens.length > 0 ? objetivoImagens : undefined,
-        documentos: objetivoDocumentos.length > 0 ? objetivoDocumentos : undefined,
+        imagens: objetivoImagens,
+        documentos: objetivoDocumentos,
       });
       handleCloseChecklistModal();
       await fetchTasks();
@@ -845,7 +878,7 @@ export default function MyTasks() {
                             )}
                             {latestEntrega.imagemUrl && (
                               <img
-                                src={latestEntrega.imagemUrl}
+                              src={resolveFileUrl(latestEntrega.imagemUrl)}
                                 alt={`Entrega etapa ${etapa.nome}`}
                                 className="mt-3 rounded-md border border-white/10 max-h-48 object-cover"
                               />
@@ -1276,7 +1309,7 @@ export default function MyTasks() {
                         <div key={index} className="flex items-start gap-2 p-2 bg-white/5 rounded-md border border-white/10">
                           {preview.type === 'image' ? (
                             <img 
-                              src={preview.url} 
+                              src={resolveFileUrl(preview.url)} 
                               alt={preview.name} 
                               className="w-16 h-16 rounded object-cover border border-white/20"
                             />
@@ -1366,15 +1399,48 @@ export default function MyTasks() {
                       <button
                         type="button"
                         onClick={() => {
+                          const entrega = selectedViewEntrega.entrega;
+
+                          // Montar arrays de imagens/documentos a partir da entrega existente
+                          const existingImages =
+                            entrega.imagensUrls && Array.isArray(entrega.imagensUrls) && entrega.imagensUrls.length > 0
+                              ? (entrega.imagensUrls as string[])
+                              : entrega.imagemUrl
+                                ? [entrega.imagemUrl]
+                                : [];
+
+                          const existingDocs =
+                            entrega.documentosUrls && Array.isArray(entrega.documentosUrls) && entrega.documentosUrls.length > 0
+                              ? (entrega.documentosUrls as string[])
+                              : entrega.documentoUrl
+                                ? [entrega.documentoUrl]
+                                : [];
+
+                          const previews: { url: string; name: string; type: 'image' | 'document' }[] = [];
+                          existingImages.forEach((url, index) => {
+                            previews.push({
+                              url,
+                              name: `Imagem ${index + 1}`,
+                              type: 'image',
+                            });
+                          });
+                          existingDocs.forEach((url, index) => {
+                            previews.push({
+                              url,
+                              name: `Documento ${index + 1}`,
+                              type: 'document',
+                            });
+                          });
+
                           // Abrir modal de envio/edição de objetivo com os dados atuais
                           setShowViewEntregaModal(false);
                           setSelectedChecklistEtapa(selectedViewEntrega.etapa);
                           setSelectedChecklistIndex(selectedViewEntrega.index);
-                          setSelectedSubitemIndex(selectedViewEntrega.entrega.subitemIndex ?? null);
-                          setObjetivoDescricao(selectedViewEntrega.entrega.descricao || '');
-                          setObjetivoImagens([]);
-                          setObjetivoDocumentos([]);
-                          setObjetivoPreviews([]);
+                          setSelectedSubitemIndex(entrega.subitemIndex ?? null);
+                          setObjetivoDescricao(entrega.descricao || '');
+                          setObjetivoImagens(existingImages);
+                          setObjetivoDocumentos(existingDocs);
+                          setObjetivoPreviews(previews);
                           setObjetivoError(null);
                           setObjetivoLoading(false);
                           setShowChecklistModal(true);
@@ -1414,7 +1480,7 @@ export default function MyTasks() {
                       {imagens.map((url, index) => (
                         <img
                           key={index}
-                          src={url}
+                          src={resolveFileUrl(url)}
                           alt={`Imagem ${index + 1} da entrega`}
                           className="w-full rounded-md border border-white/20 max-h-96 object-contain bg-white/5"
                         />
@@ -1444,9 +1510,10 @@ export default function MyTasks() {
                           type="button"
                           onClick={() => {
                             try {
-                              if (url.startsWith('data:')) {
+                              const resolvedUrl = resolveFileUrl(url);
+                              if (resolvedUrl.startsWith('data:')) {
                                 // Base64 - criar blob e abrir
-                                const parts = url.split(',');
+                                const parts = resolvedUrl.split(',');
                                 if (parts.length < 2) {
                                   toast.error('Formato de documento inválido');
                                   return;
@@ -1470,7 +1537,7 @@ export default function MyTasks() {
                                 setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
                               } else {
                                 // URL externa - abrir diretamente
-                                window.open(url, '_blank');
+                                window.open(resolvedUrl, '_blank');
                               }
                             } catch (error) {
                               console.error('Erro ao abrir documento:', error);

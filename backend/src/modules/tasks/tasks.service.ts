@@ -7,10 +7,12 @@ import { FilterMyTasksDto } from './dto/filter-my-tasks.dto';
 import { CreateSubtaskDto } from './dto/create-subtask.dto';
 import { UpdateSubtaskDto } from './dto/update-subtask.dto';
 import { SubmitDeliveryDto } from './dto/submit-delivery.dto';
-import { ChecklistItemStatus, EtapaEntregaStatus, EtapaStatus, ProjetoStatus, SubetapaStatus } from '@prisma/client';
+import { ChecklistItemStatus, EtapaEntregaStatus, EtapaStatus, ProjetoStatus, SubetapaStatus, Prisma } from '@prisma/client';
 import { SubmitChecklistItemDto } from './dto/submit-checklist-item.dto';
 import { ReviewChecklistItemDto } from './dto/review-checklist-item.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import * as fs from 'fs';
+import { join } from 'path';
 
 @Injectable()
 export class TasksService {
@@ -811,18 +813,20 @@ export class TasksService {
     }
 
     // Processar imagens: usar array se fornecido, senão usar campo único (compatibilidade)
+    const imagensFieldProvided = data.imagens !== undefined || data.imagem !== undefined;
     let imagensUrls: string[] | null = null;
-    if (data.imagens && Array.isArray(data.imagens) && data.imagens.length > 0) {
-      imagensUrls = data.imagens.filter(img => img && img.trim().length > 0);
+    if (Array.isArray(data.imagens)) {
+      imagensUrls = data.imagens.filter((img) => img && img.trim().length > 0);
     } else if (data.imagem && data.imagem.trim().length > 0) {
       // Compatibilidade com formato antigo
       imagensUrls = [data.imagem.trim()];
     }
 
     // Processar documentos: usar array se fornecido, senão usar campo único (compatibilidade)
+    const documentosFieldProvided = data.documentos !== undefined || data.documento !== undefined;
     let documentosUrls: string[] | null = null;
-    if (data.documentos && Array.isArray(data.documentos) && data.documentos.length > 0) {
-      documentosUrls = data.documentos.filter(doc => doc && doc.trim().length > 0);
+    if (Array.isArray(data.documentos)) {
+      documentosUrls = data.documentos.filter((doc) => doc && doc.trim().length > 0);
     } else if (data.documento && data.documento.trim().length > 0) {
       // Compatibilidade com formato antigo
       documentosUrls = [data.documento.trim()];
@@ -873,49 +877,88 @@ export class TasksService {
 
     // Função auxiliar para preparar dados de update
     const prepareUpdateData = (existent: any) => {
-      // Imagens: ao reenviar, acrescentar às existentes em vez de substituir
-      let mergedImagens: string[] | undefined;
-      if (imagensUrls && imagensUrls.length > 0) {
-        const existentesArray =
-          (Array.isArray(existent.imagensUrls)
-            ? (existent.imagensUrls as string[])
-            : []) ?? [];
-        const existentesSingle = existent.imagemUrl
-          ? [existent.imagemUrl]
-          : [];
-        const existentes =
-          existentesArray.length > 0 ? existentesArray : existentesSingle;
-        mergedImagens = [...existentes, ...imagensUrls];
+      // Ao reenviar, substituir completamente as listas de arquivos
+      // Regras:
+      // - Se o campo foi enviado (imagens/documentos definidos), mesmo vazio -> limpar/definir conforme enviado
+      // - Se o campo não foi enviado -> manter o que já existia
+      let novasImagens: string[] | undefined;
+      if (imagensFieldProvided) {
+        // Se veio array (mesmo vazio), usamos exatamente o que veio
+        novasImagens = imagensUrls && imagensUrls.length > 0 ? imagensUrls : [];
+      } else if (Array.isArray(existent.imagensUrls) && existent.imagensUrls.length > 0) {
+        novasImagens = existent.imagensUrls as string[];
       }
 
-      // Documentos: mesmo comportamento (acrescentar)
-      let mergedDocumentos: string[] | undefined;
-      if (documentosUrls && documentosUrls.length > 0) {
-        const existentesArray =
-          (Array.isArray(existent.documentosUrls)
-            ? (existent.documentosUrls as string[])
-            : []) ?? [];
-        const existentesSingle = existent.documentoUrl
-          ? [existent.documentoUrl]
-          : [];
-        const existentes =
-          existentesArray.length > 0 ? existentesArray : existentesSingle;
-        mergedDocumentos = [...existentes, ...documentosUrls];
+      let novosDocumentos: string[] | undefined;
+      if (documentosFieldProvided) {
+        novosDocumentos = documentosUrls && documentosUrls.length > 0 ? documentosUrls : [];
+      } else if (Array.isArray(existent.documentosUrls) && existent.documentosUrls.length > 0) {
+        novosDocumentos = existent.documentosUrls as string[];
+      }
+
+      // Calcular arquivos antigos que foram removidos nesta edição
+      const arquivosRemovidosExistentes: string[] = Array.isArray(existent.arquivosRemovidos)
+        ? (existent.arquivosRemovidos as string[])
+        : [];
+
+      const imagensAntigas: string[] = [];
+      if (Array.isArray(existent.imagensUrls)) {
+        imagensAntigas.push(...(existent.imagensUrls as string[]));
+      }
+      if (existent.imagemUrl) {
+        imagensAntigas.push(existent.imagemUrl as string);
+      }
+
+      const documentosAntigos: string[] = [];
+      if (Array.isArray(existent.documentosUrls)) {
+        documentosAntigos.push(...(existent.documentosUrls as string[]));
+      }
+      if (existent.documentoUrl) {
+        documentosAntigos.push(existent.documentoUrl as string);
+      }
+
+      const imagensFinais = novasImagens ?? imagensAntigas;
+      const documentosFinais = novosDocumentos ?? documentosAntigos;
+
+      const removidasImagens = imagensAntigas.filter((url) => !imagensFinais.includes(url));
+      const removidosDocumentos = documentosAntigos.filter((url) => !documentosFinais.includes(url));
+
+      const arquivosRemovidos: string[] = [...arquivosRemovidosExistentes];
+      [...removidasImagens, ...removidosDocumentos].forEach((url) => {
+        if (url && typeof url === 'string' && !arquivosRemovidos.includes(url)) {
+          arquivosRemovidos.push(url);
+        }
+      });
+
+      // Controlar também os campos legados imagemUrl/documentoUrl:
+      // - Se o campo foi enviado e a nova lista está vazia -> limpar (null)
+      // - Se o campo foi enviado e há itens -> usar o primeiro da lista
+      // - Se o campo não foi enviado -> manter o valor atual
+      let imagemUrl = existent.imagemUrl as string | null | undefined;
+      if (imagensFieldProvided) {
+        if (imagensFinais && imagensFinais.length > 0) {
+          imagemUrl = imagensFinais[0];
+        } else {
+          imagemUrl = null;
+        }
+      }
+
+      let documentoUrl = existent.documentoUrl as string | null | undefined;
+      if (documentosFieldProvided) {
+        if (documentosFinais && documentosFinais.length > 0) {
+          documentoUrl = documentosFinais[0];
+        } else {
+          documentoUrl = null;
+        }
       }
 
       return {
         descricao: data.descricao.trim(),
-        // Manter primeira imagem/documento para compatibilidade, ou usar primeira da lista mesclada
-        imagemUrl:
-          mergedImagens && mergedImagens.length > 0
-            ? mergedImagens[0]
-            : existent.imagemUrl,
-        documentoUrl:
-          mergedDocumentos && mergedDocumentos.length > 0
-            ? mergedDocumentos[0]
-            : existent.documentoUrl,
-        imagensUrls: mergedImagens,
-        documentosUrls: mergedDocumentos,
+        imagemUrl,
+        documentoUrl,
+        imagensUrls: imagensFinais,
+        documentosUrls: documentosFinais,
+        arquivosRemovidos: arquivosRemovidos.length > 0 ? (arquivosRemovidos as any) : Prisma.DbNull,
         status: ChecklistItemStatus.EM_ANALISE,
         dataEnvio: new Date(),
         comentario: null,
@@ -1188,6 +1231,18 @@ export class TasksService {
       
       // Atualizar status do projeto se necessário
       await this.updateProjetoStatus(etapa.projetoId);
+
+      // Após aprovação, remover do storage os arquivos antigos marcados para remoção
+      const arquivosRemovidos: string[] = Array.isArray((entrega as any).arquivosRemovidos)
+        ? ((entrega as any).arquivosRemovidos as string[])
+        : [];
+      if (arquivosRemovidos.length > 0) {
+        await this.deleteFilesFromStorage(arquivosRemovidos);
+        await this.prisma.checklistItemEntrega.update({
+          where: { id: entrega.id },
+          data: { arquivosRemovidos: Prisma.DbNull },
+        });
+      }
     }
 
     return updatedEntrega;
@@ -1347,6 +1402,39 @@ export class TasksService {
     }
 
     return updated;
+  }
+
+  private async deleteFilesFromStorage(urls: string[] | null | undefined) {
+    if (!urls || !Array.isArray(urls)) {
+      return;
+    }
+
+    for (const url of urls) {
+      if (!url || typeof url !== 'string') {
+        continue;
+      }
+
+      // Só tentar remover arquivos locais do diretório /uploads
+      if (!url.startsWith('/uploads/')) {
+        continue;
+      }
+
+      const relativePath = url.replace(/^\/+/, '');
+      const absolutePath = join(process.cwd(), relativePath);
+
+      try {
+        await fs.promises.stat(absolutePath);
+      } catch {
+        // Arquivo já não existe mais
+        continue;
+      }
+
+      try {
+        await fs.promises.unlink(absolutePath);
+      } catch (error) {
+        this.logger.warn(`Falha ao excluir arquivo de upload "${absolutePath}": ${error}`);
+      }
+    }
   }
 
   private async updateProjetoStatus(projetoId: number) {
