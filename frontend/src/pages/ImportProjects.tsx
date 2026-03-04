@@ -1,10 +1,10 @@
 import React, { useState, FormEvent, useRef } from 'react';
-import * as XLSX from 'xlsx-js-style';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { toast, formatApiError } from '../utils/toast';
 import { btn } from '../utils/buttonStyles';
 import { ExcelDownloadButton } from '../components/ExcelDownloadButton';
+import { buildProjectsTemplateWorkbook } from '../utils/projectsExcelTemplate';
 
 export default function ImportProjects() {
   const navigate = useNavigate();
@@ -12,165 +12,6 @@ export default function ImportProjects() {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const buildTemplateWorkbook = () => {
-    const wb = XLSX.utils.book_new();
-
-    const maxRows = 50; // número de linhas "pre-bordadas" para o usuário preencher
-
-    const headerStyle: XLSX.CellStyle = {
-      fill: {
-        patternType: 'solid',
-        fgColor: { rgb: '1F4E78' }, // azul escuro parecido com o print
-      },
-      font: {
-        bold: true,
-        color: { rgb: 'FFFFFF' },
-      },
-      alignment: {
-        horizontal: 'center',
-        vertical: 'center',
-        wrapText: true,
-      },
-      border: {
-        top: { style: 'thin', color: { rgb: '000000' } },
-        bottom: { style: 'thin', color: { rgb: '000000' } },
-        left: { style: 'thin', color: { rgb: '000000' } },
-        right: { style: 'thin', color: { rgb: '000000' } },
-      },
-    };
-
-    const bodyCellStyle: XLSX.CellStyle = {
-      border: {
-        top: { style: 'thin', color: { rgb: '000000' } },
-        bottom: { style: 'thin', color: { rgb: '000000' } },
-        left: { style: 'thin', color: { rgb: '000000' } },
-        right: { style: 'thin', color: { rgb: '000000' } },
-      },
-    };
-
-    const createSheetWithStyledHeader = (
-      headers: string[],
-      sheetName: string,
-      colWidths?: number[],
-      dateColumns: number[] = [],
-    ) => {
-      const sheet = XLSX.utils.aoa_to_sheet([headers]);
-
-      // Estilo do cabeçalho
-      headers.forEach((_, index) => {
-        const cellRef = XLSX.utils.encode_cell({ r: 0, c: index });
-        const cell = sheet[cellRef];
-        if (cell) {
-          cell.s = headerStyle;
-        }
-      });
-
-      // Bordas em todas as células de algumas linhas iniciais (tabela visual completa)
-      for (let r = 1; r <= maxRows; r += 1) {
-        headers.forEach((_, c) => {
-          const cellRef = XLSX.utils.encode_cell({ r, c });
-          let cell = sheet[cellRef];
-          if (!cell) {
-            cell = { t: 's', v: '' };
-            sheet[cellRef] = cell;
-          }
-
-          const isDateCol = dateColumns.includes(c);
-
-          const baseStyle = isDateCol ? { ...bodyCellStyle, numFmt: 'yyyy-mm-dd' } : bodyCellStyle;
-
-          cell.s = cell.s ? { ...cell.s, ...baseStyle } : baseStyle;
-        });
-      }
-
-      // Garantir que o range da planilha cubra todas as linhas/colunas geradas
-      const range = {
-        s: { r: 0, c: 0 },
-        e: { r: maxRows, c: headers.length - 1 },
-      };
-      sheet['!ref'] = XLSX.utils.encode_range(range);
-
-      // Largura das colunas (opcional, para ficar mais legível)
-      if (colWidths && colWidths.length > 0) {
-        sheet['!cols'] = colWidths.map((w) => ({ wch: w }));
-      }
-
-      XLSX.utils.book_append_sheet(wb, sheet, sheetName);
-    };
-
-    // Aba Projetos
-    const projetosHeaders = ['nome', 'resumo', 'objetivo', 'valorTotal', 'supervisorEmail', 'responsaveisEmails'];
-    createSheetWithStyledHeader(projetosHeaders, 'Projetos', [25, 30, 30, 18, 30, 35]);
-
-    // Aba Etapas
-    const etapasHeaders = [
-      'projetoNome',
-      'nome',
-      'descricao',
-      'dataInicio',
-      'dataFim',
-      'valorInsumos',
-      'executorEmail',
-      'responsavelEmail',
-      'integrantesEmails',
-    ];
-    // dataInicio (índice 3) e dataFim (índice 4) formatadas como data (yyyy-mm-dd)
-    createSheetWithStyledHeader(etapasHeaders, 'Etapas', [25, 25, 35, 14, 14, 18, 28, 28, 32], [3, 4]);
-
-    // Aba Checklist
-    const checklistHeaders = ['projetoNome', 'etapaNome', 'itemTexto', 'itemDescricao', 'subitemTexto', 'subitemDescricao'];
-    createSheetWithStyledHeader(checklistHeaders, 'Checklist', [25, 25, 35, 35, 30, 35]);
-
-    // Preenchimento automático entre abas
-    const etapasSheet = wb.Sheets.Etapas;
-    const projetosSheetName = 'Projetos';
-
-    if (etapasSheet) {
-      for (let r = 1; r <= maxRows; r += 1) {
-        const excelRow = r + 1; // linha real no Excel (começa em 2)
-
-        // Coluna projetoNome (A) da aba Etapas = coluna nome (A) da aba Projetos
-        const etapaProjetoCellRef = XLSX.utils.encode_cell({ r, c: 0 });
-        const etapaProjetoCell: any = {
-          t: 'n',
-          f: `${projetosSheetName}!A${excelRow}`,
-          s: bodyCellStyle,
-        };
-        etapasSheet[etapaProjetoCellRef] = etapaProjetoCell;
-      }
-    }
-
-    const checklistSheet = wb.Sheets.Checklist;
-
-    if (checklistSheet && wb.Sheets.Etapas) {
-      const etapasSheetName = 'Etapas';
-
-      for (let r = 1; r <= maxRows; r += 1) {
-        const excelRow = r + 1;
-
-        // projetoNome na Checklist (A) = projetoNome em Etapas (A)
-        const chkProjetoCellRef = XLSX.utils.encode_cell({ r, c: 0 });
-        const chkProjetoCell: any = {
-          t: 'n',
-          f: `${etapasSheetName}!A${excelRow}`,
-          s: bodyCellStyle,
-        };
-        checklistSheet[chkProjetoCellRef] = chkProjetoCell;
-
-        // etapaNome na Checklist (B) = nome da etapa em Etapas (B)
-        const chkEtapaCellRef = XLSX.utils.encode_cell({ r, c: 1 });
-        const chkEtapaCell: any = {
-          t: 'n',
-          f: `${etapasSheetName}!B${excelRow}`,
-          s: bodyCellStyle,
-        };
-        checklistSheet[chkEtapaCellRef] = chkEtapaCell;
-      }
-    }
-
-    return wb;
-  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -257,7 +98,7 @@ export default function ImportProjects() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold">Formato da Planilha</h2>
             <ExcelDownloadButton
-              buildWorkbook={buildTemplateWorkbook}
+              buildWorkbook={buildProjectsTemplateWorkbook}
               fileName="modelo-importacao-projetos.xlsx"
               label="Baixar modelo Excel"
               disabled={uploading}
@@ -293,6 +134,7 @@ export default function ImportProjects() {
               <ul className="list-disc list-inside text-sm space-y-1 ml-4">
                 <li><strong>projetoNome</strong> (obrigatório) - Nome do projeto (da aba Projetos ou de projeto já existente)</li>
                 <li><strong>nome</strong> (obrigatório) - Nome da etapa</li>
+                <li><strong>aba</strong> (opcional) - Nome da aba/categoria da etapa (ex.: "Software", "Hardware")</li>
                 <li><strong>descricao</strong> (opcional) - Descrição da etapa</li>
                 <li><strong>dataInicio</strong> (opcional) - Data de início (formato: YYYY-MM-DD)</li>
                 <li><strong>dataFim</strong> (opcional) - Data de fim (formato: YYYY-MM-DD)</li>
@@ -304,7 +146,7 @@ export default function ImportProjects() {
             </div>
 
             <div>
-              <h3 className="font-semibold text-white mb-2">Aba "Checklist" (opcional)</h3>
+              <h3 className="font-semibold text-white mb-2">Aba "Checklist" (itens - opcional)</h3>
               <p className="text-sm mb-2">
                 <strong>projetoNome</strong> e <strong>etapaNome</strong> podem ser de um projeto e uma etapa criados nesta importação ou de projeto e etapa já existentes no sistema. Os itens são adicionados à etapa (sem remover os já existentes).
               </p>
@@ -314,7 +156,23 @@ export default function ImportProjects() {
                 <li><strong>etapaNome</strong> (obrigatório) - Nome da etapa (existente ou criada nesta planilha)</li>
                 <li><strong>itemTexto</strong> (obrigatório) - Texto do item do checklist</li>
                 <li><strong>itemDescricao</strong> (opcional) - Descrição do item</li>
-                <li><strong>subitemTexto</strong> (opcional) - Texto do subitem (se houver)</li>
+              </ul>
+            </div>
+
+            <div>
+              <h3 className="font-semibold text-white mb-2">Aba "ChecklistSubitens" (subitens - opcional)</h3>
+              <p className="text-sm mb-2">
+                Use esta aba apenas se quiser cadastrar subitens separados para os itens do checklist.
+              </p>
+              <p className="text-sm mb-2">
+                Cada linha representa um subitem vinculado a um item já definido na aba <strong>Checklist</strong>.
+              </p>
+              <p className="text-sm mb-2">Colunas:</p>
+              <ul className="list-disc list-inside text-sm space-y-1 ml-4">
+                <li><strong>projetoNome</strong> (obrigatório) - Mesmo valor usado na aba Checklist</li>
+                <li><strong>etapaNome</strong> (obrigatório) - Mesmo valor usado na aba Checklist</li>
+                <li><strong>itemTexto</strong> (obrigatório) - Deve ser exatamente o mesmo texto do item na aba Checklist</li>
+                <li><strong>subitemTexto</strong> (obrigatório) - Texto do subitem</li>
                 <li><strong>subitemDescricao</strong> (opcional) - Descrição do subitem</li>
               </ul>
             </div>

@@ -105,6 +105,7 @@ export default function MyTasks() {
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewComentario, setReviewComentario] = useState('');
   const [stageReviewLoading, setStageReviewLoading] = useState(false);
+  const [stageReviewComments, setStageReviewComments] = useState<Record<number, string>>({});
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
   const [selectedAbasByProject, setSelectedAbasByProject] = useState<Record<number, string>>({});
 
@@ -264,6 +265,11 @@ export default function MyTasks() {
     try {
       await api.post(`/tasks/${etapaId}/approve`, { comentario: comentario?.trim() || undefined });
       toast.success('Etapa aprovada.');
+      setStageReviewComments((prev) => {
+        const next = { ...prev };
+        delete next[etapaId];
+        return next;
+      });
       await fetchTasks();
     } catch (err: any) {
       toast.error(formatApiError(err));
@@ -277,6 +283,11 @@ export default function MyTasks() {
     try {
       await api.post(`/tasks/${etapaId}/reject`, { reason: reason?.trim() || undefined });
       toast.success('Etapa reprovada.');
+      setStageReviewComments((prev) => {
+        const next = { ...prev };
+        delete next[etapaId];
+        return next;
+      });
       await fetchTasks();
     } catch (err: any) {
       toast.error(formatApiError(err));
@@ -848,24 +859,38 @@ export default function MyTasks() {
                                       </button>
                                     )}
                                     {podeAprovarReprovar && latestEntrega.status === 'EM_ANALISE' && (
-                                      <>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleApproveStage(etapa.id)}
-                                          disabled={stageReviewLoading}
-                                          className={`${btn.success} shrink-0`}
-                                        >
-                                          {stageReviewLoading ? '...' : 'Aprovar etapa'}
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleRejectStage(etapa.id)}
-                                          disabled={stageReviewLoading}
-                                          className={`${btn.danger} shrink-0`}
-                                        >
-                                          {stageReviewLoading ? '...' : 'Reprovar etapa'}
-                                        </button>
-                                      </>
+                                      <div className="flex flex-col gap-2 w-full">
+                                        <textarea
+                                          value={stageReviewComments[etapa.id] ?? ''}
+                                          onChange={(e) =>
+                                            setStageReviewComments((prev) => ({
+                                              ...prev,
+                                              [etapa.id]: e.target.value,
+                                            }))
+                                          }
+                                          rows={2}
+                                          placeholder="Comentário (opcional) para aprovação/reprovação da etapa"
+                                          className="w-full bg-white/5 border border-white/20 rounded-md px-2 py-1 text-xs text-white placeholder:text-white/50 focus:outline-none focus:ring-1 focus:ring-primary"
+                                        />
+                                        <div className="flex flex-wrap gap-2 justify-end">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleApproveStage(etapa.id, stageReviewComments[etapa.id])}
+                                            disabled={stageReviewLoading}
+                                            className={`${btn.success} shrink-0`}
+                                          >
+                                            {stageReviewLoading ? '...' : 'Aprovar etapa'}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRejectStage(etapa.id, stageReviewComments[etapa.id])}
+                                            disabled={stageReviewLoading}
+                                            className={`${btn.danger} shrink-0`}
+                                          >
+                                            {stageReviewLoading ? '...' : 'Reprovar etapa'}
+                                          </button>
+                                        </div>
+                                      </div>
                                     )}
                                   </div>
           </div>

@@ -13,6 +13,7 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ProjectsService } from './projects.service';
@@ -27,6 +28,7 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { ProjetoStatus } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { Response } from 'express';
 
 @Controller('projects')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -48,6 +50,39 @@ export class ProjectsController {
     @Query('search') search?: string,
   ) {
     return this.projectsService.findAll({ status, search });
+  }
+
+  @Get('export')
+  @Permissions('projetos:visualizar', 'projetos:editar', 'projetos:aprovar')
+  async export(@Res() res: Response) {
+    const buffer = await this.projectsImportService.exportToExcel();
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      'attachment; filename="projetos.xlsx"',
+    );
+    res.send(buffer);
+  }
+
+  @Get(':id/export')
+  @Permissions('projetos:visualizar', 'projetos:editar', 'projetos:aprovar')
+  async exportOne(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
+    const buffer = await this.projectsImportService.exportToExcel(id);
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="projeto-${id}.xlsx"`,
+    );
+    res.send(buffer);
   }
 
   @Get(':id')

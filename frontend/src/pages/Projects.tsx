@@ -1,10 +1,12 @@
 import { useEffect, useState, FormEvent, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import * as XLSX from 'xlsx-js-style';
 import { api } from '../services/api';
-import { Projeto } from '../types';
+import { Projeto, ChecklistItem } from '../types';
 import { btn } from '../utils/buttonStyles';
 import { DataTable, DataTableColumn } from '../components/DataTable';
 import { toast, formatApiError } from '../utils/toast';
+import { buildProjectsTemplateWorkbook } from '../utils/projectsExcelTemplate';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
 
 interface SimpleUser {
@@ -88,6 +90,172 @@ export default function Projects() {
       setUsers(data);
     } catch (err) {
       console.error('Erro ao carregar usuários:', err);
+    }
+  }
+
+  const setCell = (
+    sheet: XLSX.WorkSheet,
+    r: number,
+    c: number,
+    value: string | number,
+  ) => {
+    const cellRef = XLSX.utils.encode_cell({ r, c });
+    const existing: any = (sheet as any)[cellRef] || {};
+    const cell: any = {
+      ...existing,
+      v: value,
+      t: typeof value === 'number' ? 'n' : 's',
+    };
+    (sheet as any)[cellRef] = cell;
+  };
+
+  async function handleExportAllExcel() {
+    try {
+      const response = await api.get('/projects/export', {
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([response.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'projetos.xlsx';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      toast.success('Arquivo Excel exportado com sucesso!');
+    } catch (err: any) {
+      const errorMessage = formatApiError(err);
+      toast.error(errorMessage);
+    }
+  }
+
+  async function handleExportProjectExcel(id: number) {
+    try {
+      const { data } = await api.get(`/projects/${id}`);
+
+      const wb = buildProjectsTemplateWorkbook();
+
+      const projetoNome: string = data.nome;
+      const resumo: string = data.resumo ?? '';
+      const objetivo: string = data.objetivo ?? '';
+      const valorTotal: number = data.valorTotal ?? 0;
+      const supervisorEmail: string = data.supervisor?.email ?? '';
+      const responsaveisEmails: string = Array.isArray(data.responsaveis)
+        ? data.responsaveis.map((r: any) => r.usuario?.email).filter(Boolean).join(', ')
+        : '';
+
+      // Aba Projetos - linha 2 (r = 1)
+      const projetosSheet = wb.Sheets.Projetos;
+      if (projetosSheet) {
+        setCell(projetosSheet, 1, 0, projetoNome);
+        setCell(projetosSheet, 1, 1, resumo);
+        setCell(projetosSheet, 1, 2, objetivo);
+        setCell(projetosSheet, 1, 3, valorTotal);
+        setCell(projetosSheet, 1, 4, supervisorEmail);
+        setCell(projetosSheet, 1, 5, responsaveisEmails);
+      }
+
+      // Aba Etapas
+      const etapasSheet = wb.Sheets.Etapas;
+      const etapas: any[] = Array.isArray(data.etapas) ? data.etapas : [];
+      if (etapasSheet && etapas.length > 0) {
+        let row = 1; // começa na linha 2
+        for (const etapa of etapas) {
+          const integrantesEmails = Array.isArray(etapa.integrantes)
+            ? etapa.integrantes
+                .map((i: any) => i.usuario?.email)
+                .filter((e: string | undefined) => !!e)
+                .join(', ')
+            : '';
+
+          setCell(etapasSheet, row, 0, projetoNome);
+          setCell(etapasSheet, row, 1, etapa.nome ?? '');
+          setCell(etapasSheet, row, 2, etapa.aba ?? '');
+          setCell(etapasSheet, row, 3, etapa.descricao ?? '');
+          setCell(
+            etapasSheet,
+            row,
+            4,
+            etapa.dataInicio ? String(etapa.dataInicio).slice(0, 10) : '',
+          );
+          setCell(
+            etapasSheet,
+            row,
+            5,
+            etapa.dataFim ? String(etapa.dataFim).slice(0, 10) : '',
+          );
+          setCell(etapasSheet, row, 6, etapa.valorInsumos ?? 0);
+          setCell(etapasSheet, row, 7, etapa.executor?.email ?? '');
+          setCell(etapasSheet, row, 8, etapa.responsavel?.email ?? '');
+          setCell(etapasSheet, row, 9, integrantesEmails);
+          row += 1;
+        }
+      }
+
+      // Aba Checklist e ChecklistSubitens
+      const checklistSheet = wb.Sheets.Checklist;
+      const checklistSubSheet = wb.Sheets.ChecklistSubitens;
+
+      if ((checklistSheet || checklistSubSheet) && etapas.length > 0) {
+        let rowItem = 1; // linha 2
+        let rowSub = 1;
+
+        for (const etapa of etapas) {
+          const checklist: ChecklistItem[] = Array.isArray(etapa.checklistJson)
+            ? (etapa.checklistJson as ChecklistItem[])
+            : [];
+
+          for (const item of checklist) {
+            const itemTexto = (item.texto ?? '').trim();
+            const itemDescricao = (item.descricao ?? '').trim();
+
+            if (!itemTexto && (!item.subitens || item.subitens.length === 0)) {
+              continue;
+            }
+
+            if (checklistSheet) {
+              setCell(checklistSheet, rowItem, 0, projetoNome);
+              setCell(checklistSheet, rowItem, 1, etapa.nome ?? '');
+              setCell(checklistSheet, rowItem, 2, itemTexto);
+              setCell(checklistSheet, rowItem, 3, itemDescricao);
+              rowItem += 1;
+            }
+
+            if (checklistSubSheet && item.subitens && item.subitens.length > 0) {
+              for (const sub of item.subitens) {
+                const subTexto = (sub.texto ?? '').trim();
+                if (!subTexto) continue;
+                setCell(checklistSubSheet, rowSub, 0, projetoNome);
+                setCell(checklistSubSheet, rowSub, 1, etapa.nome ?? '');
+                setCell(checklistSubSheet, rowSub, 2, itemTexto);
+                setCell(checklistSubSheet, rowSub, 3, subTexto);
+                setCell(
+                  checklistSubSheet,
+                  rowSub,
+                  4,
+                  (sub.descricao ?? '').trim(),
+                );
+                rowSub += 1;
+              }
+            }
+          }
+        }
+      }
+
+      const fileName =
+        projetoNome && typeof projetoNome === 'string'
+          ? `projeto-${projetoNome}.xlsx`
+          : `projeto-${id}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      toast.success('Projeto exportado para Excel com sucesso!');
+    } catch (err: any) {
+      const errorMessage = formatApiError(err);
+      toast.error(errorMessage);
     }
   }
 
@@ -269,6 +437,12 @@ export default function Projects() {
           >
             Importar do Excel
           </button>
+          <button
+            onClick={handleExportAllExcel}
+            className={`${btn.secondary} flex-1 sm:flex-none`}
+          >
+            Exportar todos (Excel)
+          </button>
           <button onClick={openCreateModal} className={`${btn.primary} flex-1 sm:flex-none`}>
             Novo Projeto
           </button>
@@ -419,6 +593,12 @@ export default function Projects() {
               <div className="flex items-center gap-1.5 flex-nowrap">
                 <button onClick={() => openEditModal(p)} className={btn.editSm}>
                   Editar
+                </button>
+                <button
+                  onClick={() => handleExportProjectExcel(p.id)}
+                  className={btn.primarySoft}
+                >
+                  Exportar
                 </button>
                 <button
                   onClick={() => handleDeleteProject(p.id)}

@@ -15,6 +15,7 @@ interface ExcelProjectRow {
 interface ExcelEtapaRow {
   projetoNome?: string;
   nome?: string;
+  aba?: string;
   descricao?: string;
   dataInicio?: string;
   dataFim?: string;
@@ -29,6 +30,15 @@ interface ExcelChecklistRow {
   etapaNome?: string;
   itemTexto?: string;
   itemDescricao?: string;
+  // Campos abaixo são mantidos para compatibilidade com planilhas antigas
+  subitemTexto?: string;
+  subitemDescricao?: string;
+}
+
+interface ExcelChecklistSubitemRow {
+  projetoNome?: string;
+  etapaNome?: string;
+  itemTexto?: string;
   subitemTexto?: string;
   subitemDescricao?: string;
 }
@@ -217,6 +227,7 @@ export class ProjectsImportService {
             projetoId,
             executorId,
             nome: etapaRow.nome.trim(),
+            aba: etapaRow.aba?.trim(),
             descricao: etapaRow.descricao?.trim(),
             dataInicio: parseDateFromExcel(etapaRow.dataInicio) || undefined,
             dataFim: parseDateFromExcel(etapaRow.dataFim) || undefined,
@@ -250,6 +261,29 @@ export class ProjectsImportService {
         const checklistSheet = workbook.Sheets['Checklist'];
         const checklistData: ExcelChecklistRow[] = XLSX.utils.sheet_to_json(checklistSheet);
         checklistRowCount = checklistData.length;
+
+        const hasChecklistSubitens = sheetNames.includes('ChecklistSubitens');
+        const subitensByEtapa = new Map<string, ExcelChecklistSubitemRow[]>();
+
+        if (hasChecklistSubitens) {
+          const subitensSheet = workbook.Sheets['ChecklistSubitens'];
+          const subitensData: ExcelChecklistSubitemRow[] = XLSX.utils.sheet_to_json(subitensSheet);
+          checklistRowCount += subitensData.length;
+
+          for (const row of subitensData) {
+            if (
+              !row.projetoNome?.trim() ||
+              !row.etapaNome?.trim() ||
+              !row.itemTexto?.trim() ||
+              !row.subitemTexto?.trim()
+            ) {
+              continue;
+            }
+            const key = `${row.projetoNome.trim()}|${row.etapaNome.trim()}`;
+            if (!subitensByEtapa.has(key)) subitensByEtapa.set(key, []);
+            subitensByEtapa.get(key)!.push(row);
+          }
+        }
 
         const byEtapa = new Map<string, ExcelChecklistRow[]>();
         for (const row of checklistData) {
@@ -291,6 +325,7 @@ export class ProjectsImportService {
             });
           }
 
+          // Processar itens (aba Checklist)
           for (const row of rows) {
             const itemKey = row.itemTexto!.trim();
             if (!itensMap.has(itemKey)) {
@@ -300,11 +335,42 @@ export class ProjectsImportService {
                 concluido: false,
                 subitens: [],
               });
+            } else if (row.itemDescricao?.trim()) {
+              // Atualizar descrição se vier preenchida na planilha
+              const existing = itensMap.get(itemKey);
+              if (!existing.descricao) {
+                existing.descricao = row.itemDescricao.trim();
+              }
             }
-            if (row.subitemTexto?.trim()) {
+
+            // Compatibilidade: se NÃO existir aba ChecklistSubitens,
+            // ainda aceitar subitemTexto/subitemDescricao na mesma aba Checklist
+            if (!hasChecklistSubitens && row.subitemTexto?.trim()) {
               const item = itensMap.get(itemKey);
               item.subitens.push({
                 texto: row.subitemTexto.trim(),
+                descricao: row.subitemDescricao?.trim() || '',
+                concluido: false,
+              });
+            }
+          }
+
+          // Se existir aba ChecklistSubitens, processar subitens separados
+          if (hasChecklistSubitens) {
+            const subRows = subitensByEtapa.get(key) ?? [];
+            for (const row of subRows) {
+              const itemKey = row.itemTexto!.trim();
+              if (!itensMap.has(itemKey)) {
+                itensMap.set(itemKey, {
+                  texto: itemKey,
+                  descricao: '',
+                  concluido: false,
+                  subitens: [],
+                });
+              }
+              const item = itensMap.get(itemKey);
+              item.subitens.push({
+                texto: row.subitemTexto!.trim(),
                 descricao: row.subitemDescricao?.trim() || '',
                 concluido: false,
               });
@@ -330,5 +396,157 @@ export class ProjectsImportService {
       if (error instanceof BadRequestException) throw error;
       throw new BadRequestException(`Erro ao processar arquivo Excel: ${error.message}`);
     }
+  }
+
+  async exportToExcel(projetoId?: number) {
+    const projetos = await this.prisma.projeto.findMany({
+      where: projetoId ? { id: projetoId } : undefined,
+      include: {
+        supervisor: true,
+        responsaveis: { include: { usuario: true } },
+        etapas: {
+          include: {
+            executor: true,
+            responsavel: true,
+            integrantes: { include: { usuario: true } },
+          },
+        },
+      },
+    });
+
+    const wb = XLSX.utils.book_new();
+
+    // Aba Projetos (mesma estrutura da importação)
+    const projetosRows = projetos.map((projeto) => ({
+      nome: projeto.nome,
+      resumo: projeto.resumo ?? '',
+      objetivo: projeto.objetivo ?? '',
+      valorTotal: projeto.valorTotal,
+      supervisorEmail: projeto.supervisor?.email ?? '',
+      responsaveisEmails: projeto.responsaveis
+        .map((r) => r.usuario.email)
+        .join(', '),
+    }));
+    const projetosHeaders = ['nome', 'resumo', 'objetivo', 'valorTotal', 'supervisorEmail', 'responsaveisEmails'];
+    const projetosSheet = XLSX.utils.json_to_sheet(projetosRows, {
+      header: projetosHeaders,
+      skipHeader: false,
+    });
+    XLSX.utils.book_append_sheet(wb, projetosSheet, 'Projetos');
+
+    const etapasRows: any[] = [];
+    const checklistItemRows: any[] = [];
+    const checklistSubitemRows: any[] = [];
+
+    for (const projeto of projetos) {
+      for (const etapa of projeto.etapas as any[]) {
+        etapasRows.push({
+          projetoNome: projeto.nome,
+          nome: etapa.nome,
+          aba: etapa.aba ?? '',
+          descricao: etapa.descricao ?? '',
+          dataInicio: etapa.dataInicio ? etapa.dataInicio.toISOString().slice(0, 10) : '',
+          dataFim: etapa.dataFim ? etapa.dataFim.toISOString().slice(0, 10) : '',
+          valorInsumos: etapa.valorInsumos,
+          executorEmail: etapa.executor?.email ?? '',
+          responsavelEmail: etapa.responsavel?.email ?? '',
+          integrantesEmails: Array.isArray(etapa.integrantes)
+            ? etapa.integrantes
+                .map((i: any) => i.usuario?.email)
+                .filter((email: string | undefined) => !!email)
+                .join(', ')
+            : '',
+        });
+
+        if (Array.isArray(etapa.checklistJson)) {
+          const checklist = etapa.checklistJson as Array<{
+            texto?: string;
+            descricao?: string;
+            subitens?: Array<{ texto?: string; descricao?: string }>;
+          }>;
+
+          for (const item of checklist) {
+            const itemTexto = (item.texto ?? '').trim();
+            const itemDescricao = (item.descricao ?? '').trim();
+
+            if (!itemTexto && (!item.subitens || item.subitens.length === 0)) {
+              continue;
+            }
+
+            // Sempre criar linha de item (aba Checklist)
+            checklistItemRows.push({
+              projetoNome: projeto.nome,
+              etapaNome: etapa.nome,
+              itemTexto,
+              itemDescricao,
+            });
+
+            // Criar linhas de subitens (aba ChecklistSubitens)
+            if (item.subitens && item.subitens.length > 0) {
+              for (const sub of item.subitens) {
+                const subTexto = (sub.texto ?? '').trim();
+                if (!subTexto) continue;
+                checklistSubitemRows.push({
+                  projetoNome: projeto.nome,
+                  etapaNome: etapa.nome,
+                  itemTexto,
+                  subitemTexto: subTexto,
+                  subitemDescricao: (sub.descricao ?? '').trim(),
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Aba Etapas (mesma estrutura da importação)
+    const etapasHeaders = [
+      'projetoNome',
+      'nome',
+      'aba',
+      'descricao',
+      'dataInicio',
+      'dataFim',
+      'valorInsumos',
+      'executorEmail',
+      'responsavelEmail',
+      'integrantesEmails',
+    ];
+    const etapasSheet = XLSX.utils.json_to_sheet(etapasRows, {
+      header: etapasHeaders,
+      skipHeader: false,
+    });
+    XLSX.utils.book_append_sheet(wb, etapasSheet, 'Etapas');
+
+    if (checklistItemRows.length > 0) {
+      const checklistHeaders = ['projetoNome', 'etapaNome', 'itemTexto', 'itemDescricao'];
+      const checklistSheet = XLSX.utils.json_to_sheet(checklistItemRows, {
+        header: checklistHeaders,
+        skipHeader: false,
+      });
+      XLSX.utils.book_append_sheet(wb, checklistSheet, 'Checklist');
+    } else {
+      // Criar aba vazia apenas com cabeçalho para manter o padrão do modelo
+      const checklistHeaders = ['projetoNome', 'etapaNome', 'itemTexto', 'itemDescricao'];
+      const emptyChecklistSheet = XLSX.utils.aoa_to_sheet([checklistHeaders]);
+      XLSX.utils.book_append_sheet(wb, emptyChecklistSheet, 'Checklist');
+    }
+
+    // Sempre criar aba ChecklistSubitens para manter compatibilidade com o modelo
+    const checklistSubHeaders = ['projetoNome', 'etapaNome', 'itemTexto', 'subitemTexto', 'subitemDescricao'];
+    let checklistSubitensSheet;
+    if (checklistSubitemRows.length > 0) {
+      checklistSubitensSheet = XLSX.utils.json_to_sheet(checklistSubitemRows, {
+        header: checklistSubHeaders,
+        skipHeader: false,
+      });
+    } else {
+      checklistSubitensSheet = XLSX.utils.aoa_to_sheet([checklistSubHeaders]);
+    }
+    XLSX.utils.book_append_sheet(wb, checklistSubitensSheet, 'ChecklistSubitens');
+
+    const buffer = XLSX.write(wb, { bookType: 'xlsx', type: 'buffer' }) as Buffer;
+    return buffer;
   }
 }
