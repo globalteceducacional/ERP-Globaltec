@@ -32,10 +32,18 @@ interface Subetapa {
   status: string;
 }
 
+interface Sessao {
+  id: number;
+  projetoId: number;
+  nome: string;
+  ordem: number;
+}
+
 interface Etapa {
   id: number;
   nome: string;
   descricao?: string | null;
+  sessaoId?: number | null;
   aba?: string | null;
   status: 'PENDENTE' | 'EM_ANDAMENTO' | 'EM_ANALISE' | 'APROVADA' | 'REPROVADA';
   dataInicio?: string | null;
@@ -44,6 +52,7 @@ interface Etapa {
   checklistJson?: ChecklistItem[] | null;
   executor: Usuario;
   responsavel?: Usuario | null;
+  sessao?: Sessao | null;
   integrantes?: Array<{ usuario: Usuario }>;
   subetapas: Subetapa[];
   entregas?: EtapaEntrega[];
@@ -94,6 +103,7 @@ interface ProjectDetails {
   dataCriacao: string;
   supervisor?: Usuario | null;
   responsaveis: Responsavel[];
+  sessoes?: Sessao[];
   etapas: Etapa[];
   compras: Compra[];
 }
@@ -147,10 +157,13 @@ export default function ProjectDetails() {
   const canReview = isDiretor || isSupervisor || permissionKeys.has('trabalhos:avaliar');
   const canEditProject = isDiretor || permissionKeys.has('projetos:editar');
   const [reorderingEtapas, setReorderingEtapas] = useState(false);
+  const [openEtapaMenuId, setOpenEtapaMenuId] = useState<number | null>(null);
   /** IDs das etapas expandidas (conteúdo visível). Inicializado com todas ao carregar o projeto. */
   const [expandedEtapas, setExpandedEtapas] = useState<Set<number>>(new Set());
   const [extraAbas, setExtraAbas] = useState<string[]>([]);
   const [selectedAba, setSelectedAba] = useState<string>('Todas');
+  // Sessão: 'all' = todas, null = sem sessão, number = id da sessão
+  const [selectedSessaoId, setSelectedSessaoId] = useState<number | null | 'all'>('all');
 
   useEffect(() => {
     if (project?.etapas?.length) {
@@ -158,34 +171,55 @@ export default function ProjectDetails() {
     }
   }, [project?.id, project?.etapas?.length]);
 
+  // Projeto novo: uma sessão "Geral" → selecionar essa sessão por padrão (evita "Sem sessão" / "Todas")
+  useEffect(() => {
+    if (!project?.sessoes?.length || project.sessoes.length !== 1) return;
+    const hasEtapaSemSessao = (project?.etapas ?? []).some((e) => e.sessaoId == null);
+    if (!hasEtapaSemSessao) {
+      setSelectedSessaoId(project.sessoes[0].id);
+    }
+  }, [project?.id, project?.sessoes, project?.etapas]);
+
+  // Ao trocar de sessão, voltar aba para "Todas" para que as abas exibidas sejam só as dessa sessão
+  useEffect(() => {
+    setSelectedAba('Todas');
+  }, [selectedSessaoId]);
+
+  // Etapas filtradas pela sessão selecionada (Sessão → Abas → Etapas)
+  const etapasPorSessao = useMemo(() => {
+    if (!project?.etapas) return [];
+    if (selectedSessaoId === 'all') return project.etapas;
+    return project.etapas.filter((etapa) => {
+      if (selectedSessaoId === null) return etapa.sessaoId == null;
+      return etapa.sessaoId === selectedSessaoId;
+    });
+  }, [project?.etapas, selectedSessaoId]);
+
+  // Abas apenas da sessão selecionada — cada sessão tem suas próprias abas
   const abas = useMemo(() => {
     const set = new Set<string>();
-
-    if (project?.etapas && project.etapas.length > 0) {
-      project.etapas.forEach((etapa) => {
-        const nomeAba = (etapa.aba && etapa.aba.trim()) || 'Geral';
-        set.add(nomeAba);
+    etapasPorSessao.forEach((etapa) => {
+      const nomeAba = (etapa.aba && etapa.aba.trim()) || 'Geral';
+      set.add(nomeAba);
+    });
+    // extraAbas só na visão "Todas" as sessões, para não misturar abas de outras sessões
+    if (selectedSessaoId === 'all') {
+      extraAbas.forEach((aba) => {
+        if (aba && aba.trim().length > 0) set.add(aba.trim());
       });
     }
-
-    extraAbas.forEach((aba) => {
-      if (aba && aba.trim().length > 0) {
-        set.add(aba.trim());
-      }
-    });
-
     const nomesOrdenados = Array.from(set).sort((a, b) => a.localeCompare(b, 'pt-BR'));
     return ['Todas', ...nomesOrdenados];
-  }, [project?.etapas, extraAbas]);
+  }, [etapasPorSessao, extraAbas, selectedSessaoId]);
 
   const etapasFiltradas = useMemo(() => {
-    if (!project?.etapas) return [];
-    if (selectedAba === 'Todas') return project.etapas;
-    return project.etapas.filter((etapa) => {
+    if (etapasPorSessao.length === 0) return [];
+    if (selectedAba === 'Todas') return etapasPorSessao;
+    return etapasPorSessao.filter((etapa) => {
       const nomeAba = (etapa.aba && etapa.aba.trim()) || 'Geral';
       return nomeAba === selectedAba;
     });
-  }, [project?.etapas, selectedAba]);
+  }, [etapasPorSessao, selectedAba]);
 
   function handleAddAba() {
     if (!project) return;
@@ -228,6 +262,67 @@ export default function ProjectDetails() {
     toast.success('Aba criada com sucesso. Agora você pode adicionar etapas nela.');
   }
 
+  async function handleCreateSessao(e: FormEvent) {
+    e.preventDefault();
+    if (!project) return;
+    const nome = novaSessaoNome.trim();
+    if (!nome || nome.length < 2) {
+      toast.warning('Informe um nome de sessão com pelo menos 2 caracteres.');
+      return;
+    }
+    setSessaoModalLoading(true);
+    try {
+      await api.post(`/projects/${project.id}/sessoes`, { nome, ordem: (project.sessoes?.length ?? 0) });
+      setNovaSessaoNome('');
+      setShowSessaoModal(false);
+      await refreshProject(false);
+      toast.success('Sessão criada.');
+    } catch (err: any) {
+      toast.error(formatApiError(err));
+    } finally {
+      setSessaoModalLoading(false);
+    }
+  }
+
+  async function handleUpdateSessao(e: FormEvent) {
+    e.preventDefault();
+    if (!project || !editingSessao) return;
+    const nome = editSessaoNome.trim();
+    if (!nome || nome.length < 2) {
+      toast.warning('Informe um nome com pelo menos 2 caracteres.');
+      return;
+    }
+    setSessaoModalLoading(true);
+    try {
+      await api.patch(`/projects/${project.id}/sessoes/${editingSessao.id}`, { nome });
+      setEditingSessao(null);
+      setEditSessaoNome('');
+      await refreshProject(false);
+      toast.success('Sessão atualizada.');
+    } catch (err: any) {
+      toast.error(formatApiError(err));
+    } finally {
+      setSessaoModalLoading(false);
+    }
+  }
+
+  async function handleDeleteSessao() {
+    if (!project || !sessaoToDelete) return;
+    setSessaoModalLoading(true);
+    try {
+      await api.delete(`/projects/${project.id}/sessoes/${sessaoToDelete.id}`);
+      setShowDeleteSessaoModal(false);
+      setSessaoToDelete(null);
+      if (selectedSessaoId === sessaoToDelete.id) setSelectedSessaoId('all');
+      await refreshProject(false);
+      toast.success('Sessão excluída.');
+    } catch (err: any) {
+      toast.error(formatApiError(err));
+    } finally {
+      setSessaoModalLoading(false);
+    }
+  }
+
   function toggleEtapa(etapaId: number) {
     setExpandedEtapas((prev) => {
       const next = new Set(prev);
@@ -240,6 +335,7 @@ export default function ProjectDetails() {
   const [etapaForm, setEtapaForm] = useState({
     nome: '',
     descricao: '',
+    sessaoId: undefined as number | undefined,
     aba: '',
     executorId: 0,
     responsavelId: 0 as number | undefined,
@@ -262,6 +358,13 @@ export default function ProjectDetails() {
   const [renameAbaNome, setRenameAbaNome] = useState('');
   const [showDeleteAbaModal, setShowDeleteAbaModal] = useState(false);
   const [abaModalLoading, setAbaModalLoading] = useState(false);
+  const [showSessaoModal, setShowSessaoModal] = useState(false);
+  const [novaSessaoNome, setNovaSessaoNome] = useState('');
+  const [editingSessao, setEditingSessao] = useState<Sessao | null>(null);
+  const [editSessaoNome, setEditSessaoNome] = useState('');
+  const [showDeleteSessaoModal, setShowDeleteSessaoModal] = useState(false);
+  const [sessaoToDelete, setSessaoToDelete] = useState<Sessao | null>(null);
+  const [sessaoModalLoading, setSessaoModalLoading] = useState(false);
 
   const resolveFileUrl = (url: string | null | undefined) => {
     if (!url) return '';
@@ -464,6 +567,30 @@ export default function ProjectDetails() {
     loadUsers();
   }, [id]);
 
+  // Projetos criados sem sessão (ex.: antes do backend criar "Geral"): criar sessão padrão ao abrir
+  useEffect(() => {
+    if (
+      !project ||
+      !id ||
+      (project.sessoes?.length ?? 0) > 0 ||
+      (project.etapas?.length ?? 0) > 0
+    ) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        await api.post(`/projects/${id}/sessoes`, { nome: 'Geral', ordem: 0 });
+        if (!cancelled) await refreshProject(false);
+      } catch (e) {
+        if (!cancelled) console.error('Erro ao criar sessão padrão:', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, project?.id, project?.sessoes?.length, project?.etapas?.length]);
+
   useEffect(() => {
     if (project?.etapas) {
       project.etapas.forEach((etapa) => {
@@ -495,9 +622,9 @@ export default function ProjectDetails() {
       };
 
       const abaTrim = etapaForm.aba?.trim();
-      if (abaTrim) {
-        payload.aba = abaTrim;
-      }
+      if (abaTrim) payload.aba = abaTrim;
+      if (etapaForm.sessaoId != null && etapaForm.sessaoId > 0) payload.sessaoId = etapaForm.sessaoId;
+      if (editingEtapa && (etapaForm.sessaoId == null || etapaForm.sessaoId === 0)) payload.sessaoId = null;
 
       if (etapaForm.descricao && etapaForm.descricao.trim().length > 0) {
         payload.descricao = etapaForm.descricao.trim();
@@ -632,6 +759,7 @@ export default function ProjectDetails() {
       setEtapaForm({
         nome: '',
         descricao: '',
+        sessaoId: undefined,
         aba: '',
         executorId: 0,
         responsavelId: undefined,
@@ -745,6 +873,7 @@ export default function ProjectDetails() {
     setEtapaForm({
       nome: etapa.nome || '',
       descricao: etapa.descricao || '',
+      sessaoId: etapa.sessaoId ?? undefined,
       aba: etapa.aba || '',
       executorId: etapa.executor?.id || 0,
       // Executor e responsável passam a ser sempre o mesmo usuário
@@ -1132,38 +1261,155 @@ export default function ProjectDetails() {
       )}
 
       {/* Etapas */}
-      <div className="bg-neutral/80 border border-white/10 rounded-xl p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold border-b border-white/10 pb-2">
-            Etapas ({totalEtapas})
-          </h3>
-          {canEditProject && (
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={handleAddAba}
-                className={btn.secondary}
-              >
-                + Nova aba
-              </button>
-              {selectedAba !== 'Todas' && (
-                <>
+      <div className="bg-neutral/80 border border-white/10 rounded-xl p-4 sm:p-6">
+        <div className="flex flex-col gap-3">
+          {/* Linha de Sessões – identidade visual violeta (diferente das abas em azul) */}
+          {(totalEtapas > 0 || canEditProject) && (project != null) && (() => {
+            const hasEtapaSemSessao = (project?.etapas ?? []).some((e) => e.sessaoId == null);
+            const sessaoGroupsCount = (hasEtapaSemSessao ? 1 : 0) + (project?.sessoes?.length ?? 0);
+            return (
+            <div className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 rounded-lg bg-slate-800/60 border border-violet-500/25">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-violet-200/90">Sessão |</span>
+                {sessaoGroupsCount > 1 && (
                   <button
                     type="button"
-                    onClick={handleOpenRenameAba}
-                    className={btn.secondary}
+                    onClick={() => setSelectedSessaoId('all')}
+                    className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-colors border focus:outline-none focus:ring-2 focus:ring-violet-400/50 ${
+                      selectedSessaoId === 'all'
+                        ? 'bg-violet-600 text-white border-violet-500'
+                        : 'bg-slate-700/80 text-white/80 border-slate-600/80 hover:bg-violet-900/40 hover:border-violet-700/60'
+                    }`}
                   >
-                    Renomear aba
+                    Todas
                   </button>
+                )}
+                {hasEtapaSemSessao && (
                   <button
                     type="button"
-                    onClick={handleOpenDeleteAba}
-                    className={btn.dangerSm}
+                    onClick={() => setSelectedSessaoId(null)}
+                    className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-colors border focus:outline-none focus:ring-2 focus:ring-violet-400/50 ${
+                      selectedSessaoId === null
+                        ? 'bg-violet-600 text-white border-violet-500'
+                        : 'bg-slate-700/80 text-white/80 border-slate-600/80 hover:bg-violet-900/40 hover:border-violet-700/60'
+                    }`}
                   >
-                    Excluir aba
+                    Sem sessão
                   </button>
-                </>
+                )}
+                {project?.sessoes?.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onClick={() => setSelectedSessaoId(s.id)}
+                    className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-colors border focus:outline-none focus:ring-2 focus:ring-violet-400/50 ${
+                      selectedSessaoId === s.id
+                        ? 'bg-violet-600 text-white border-violet-500'
+                        : 'bg-slate-700/80 text-white/80 border-slate-600/80 hover:bg-violet-900/40 hover:border-violet-700/60'
+                    }`}
+                  >
+                    {s.nome}
+                  </button>
+                ))}
+              </div>
+              {canEditProject && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNovaSessaoNome('');
+                      setShowSessaoModal(true);
+                    }}
+                    className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold bg-slate-700/80 text-white/80 border border-slate-600/80 hover:bg-slate-600/80 transition-colors focus:outline-none focus:ring-2 focus:ring-white/20"
+                  >
+                    + Nova sessão
+                  </button>
+                  {typeof selectedSessaoId === 'number' && project?.sessoes?.some((s) => s.id === selectedSessaoId) && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const sessao = project.sessoes!.find((s) => s.id === selectedSessaoId);
+                          if (!sessao) return;
+                          setEditingSessao(sessao);
+                          setEditSessaoNome(sessao.nome);
+                        }}
+                        className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold bg-slate-700/80 text-white/80 border border-slate-600/80 hover:bg-slate-600/80 transition-colors focus:outline-none focus:ring-2 focus:ring-white/20"
+                      >
+                        Renomear sessão
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const sessao = project.sessoes!.find((s) => s.id === selectedSessaoId);
+                          if (!sessao) return;
+                          setSessaoToDelete(sessao);
+                          setShowDeleteSessaoModal(true);
+                        }}
+                        className={btn.dangerSm}
+                      >
+                        Excluir sessão
+                      </button>
+                    </>
+                  )}
+                </div>
               )}
+            </div>
+            );
+          })()}
+
+          {/* Linha de Abas – identidade visual azul (primary), distinta das sessões em violeta */}
+          {(totalEtapas > 0 || canEditProject) && (
+            <div className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 rounded-lg bg-slate-800/60 border border-primary/25">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-sky-200/90">Aba |</span>
+                {abas.map((aba) => (
+                  <button
+                    key={aba}
+                    type="button"
+                    onClick={() => setSelectedAba(aba)}
+                    className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-colors border focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+                      selectedAba === aba
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-slate-700/80 text-white/80 border-slate-600/80 hover:bg-primary/20 hover:border-primary/40'
+                    }`}
+                  >
+                    {aba === 'Todas' ? 'Todas' : aba}
+                  </button>
+                ))}
+              </div>
+              {canEditProject && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAddAba}
+                    className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold bg-slate-700/80 text-white/80 border border-slate-600/80 hover:bg-slate-600/80 transition-colors focus:outline-none focus:ring-2 focus:ring-white/20"
+                  >
+                    + Nova aba
+                  </button>
+                  {selectedAba !== 'Todas' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleOpenRenameAba}
+                        className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold bg-slate-700/80 text-white/80 border border-slate-600/80 hover:bg-slate-600/80 transition-colors focus:outline-none focus:ring-2 focus:ring-white/20"
+                      >
+                        Renomear aba
+                      </button>
+                      <button type="button" onClick={handleOpenDeleteAba} className={btn.dangerSm}>
+                        Excluir aba
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Linha de Etapas (abaixo) */}
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-white">Etapas ({totalEtapas})</h3>
+            {canEditProject && (
               <button
                 type="button"
                 onClick={async () => {
@@ -1171,7 +1417,16 @@ export default function ProjectDetails() {
                   setEtapaForm({
                     nome: '',
                     descricao: '',
-                    aba: selectedAba !== 'Todas' ? selectedAba : '',
+                    sessaoId:
+                      selectedSessaoId !== 'all' &&
+                      selectedSessaoId !== null &&
+                      typeof selectedSessaoId === 'number'
+                        ? selectedSessaoId
+                        : (project?.sessoes?.length === 1 ? project.sessoes[0].id : undefined),
+                    aba:
+                      selectedAba !== 'Todas'
+                        ? selectedAba
+                        : (project?.sessoes?.length === 1 ? 'Geral' : ''),
                     executorId: 0,
                     responsavelId: undefined,
                     integrantesIds: [],
@@ -1182,7 +1437,6 @@ export default function ProjectDetails() {
                     status: 'PENDENTE',
                     estoqueItems: [],
                   });
-                  // Carregar itens de estoque disponíveis
                   await loadAvailableStockItems();
                   setShowEtapaModal(true);
                 }}
@@ -1190,35 +1444,17 @@ export default function ProjectDetails() {
               >
                 + Adicionar Etapa
               </button>
-            </div>
-          )}
-        </div>
-        {(totalEtapas > 0 || canEditProject) && (
-          <div className="flex flex-wrap items-center gap-2 mb-4">
-            <div className="flex flex-wrap gap-2">
-              {abas.map((aba) => (
-                <button
-                  key={aba}
-                  type="button"
-                  onClick={() => setSelectedAba(aba)}
-                  className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                    selectedAba === aba
-                      ? 'bg-primary text-white border-primary'
-                      : 'bg-white/5 text-white/70 border-white/20 hover:bg-white/10'
-                  }`}
-                >
-                  {aba === 'Todas' ? 'Todas as abas' : aba}
-                </button>
-              ))}
-            </div>
+            )}
           </div>
-        )}
-        {totalEtapas === 0 ? (
-          <p className="text-white/50 text-center py-8">Nenhuma etapa cadastrada</p>
-        ) : etapasFiltradas.length === 0 ? (
-          <p className="text-white/50 text-center py-8">Nenhuma etapa nesta aba.</p>
-        ) : (
-          <div className="space-y-4">
+
+          {/* Cards de etapas */}
+          <section className="space-y-4">
+            {totalEtapas === 0 ? (
+              <p className="text-white/50 text-center py-8">Nenhuma etapa cadastrada</p>
+            ) : etapasFiltradas.length === 0 ? (
+              <p className="text-white/50 text-center py-8">Nenhuma etapa nesta aba.</p>
+            ) : (
+              <div className="space-y-4">
             {etapasFiltradas.map((etapa, etapaIndex) => {
               const latestEntrega = etapa.entregas && etapa.entregas.length > 0 ? etapa.entregas[0] : null;
               // Comparar convertendo ambos para número para evitar problemas de tipo
@@ -1242,8 +1478,14 @@ export default function ProjectDetails() {
               const reviewValue = reviewNotes[String(etapa.id)] ?? '';
               const isReviewing = reviewLoading[String(etapa.id)] ?? false;
 
+              const progressoChecklist =
+                totalItens > 0 ? Math.round((itensMarcados / totalItens) * 100) : 0;
+
               return (
-                <div key={etapa.id} className="bg-neutral/60 border border-white/10 rounded-lg p-4">
+                <div
+                  key={etapa.id}
+                  className="bg-slate-950/80 border border-white/10 rounded-xl p-4 sm:p-5 shadow-xl shadow-black/40"
+                >
                   <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
                     <div
                       className="flex-1 flex items-start gap-2 cursor-pointer min-w-0"
@@ -1272,10 +1514,17 @@ export default function ProjectDetails() {
                         )}
                       </div>
                     </div>
-                      <div className="flex flex-col items-start md:items-end gap-2">
+                    <div className="flex flex-col items-start md:items-end gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-xs font-semibold border ${getStatusColor(
+                            etapa.status,
+                          )}`}
+                        >
+                          {getStatusLabel(etapa.status)}
+                        </span>
                         {canEditProject && (
-                          <span className="flex items-center gap-0.5 mr-1" title="Ordem da etapa">
+                          <span className="flex items-center gap-1" title="Ordem da etapa">
                             <button
                               type="button"
                               onClick={() => handleReorderEtapas('up', etapaIndex)}
@@ -1296,32 +1545,53 @@ export default function ProjectDetails() {
                             </button>
                           </span>
                         )}
-                        <span className={`px-2 py-1 rounded text-xs ${getStatusColor(etapa.status)}`}>
-                          {getStatusLabel(etapa.status)}
-                        </span>
                         {isDiretor && (
-                          <>
-                            <button onClick={() => handleEditEtapa(etapa)} className={btn.editSm}>
-                              Editar
-                            </button>
-                            <button 
-                              onClick={() => handleDeleteEtapa(etapa)} 
-                              className={btn.dangerSm}
+                          <div className="relative">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setOpenEtapaMenuId((current) => (current === etapa.id ? null : etapa.id))
+                              }
+                              className="px-2 py-1 rounded-full text-xs bg-white/10 hover:bg-white/20 text-white flex items-center gap-1"
+                              aria-haspopup="menu"
+                              aria-expanded={openEtapaMenuId === etapa.id}
                             >
-                              Deletar
+                              ⋯
                             </button>
-                          </>
+                            {openEtapaMenuId === etapa.id && (
+                              <div
+                                className="absolute right-0 mt-1 w-32 rounded-md bg-slate-900 border border-white/10 shadow-lg z-10"
+                                role="menu"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleEditEtapa(etapa);
+                                    setOpenEtapaMenuId(null);
+                                  }}
+                                  className="w-full text-left px-3 py-1.5 text-xs text-white/90 hover:bg-white/10"
+                                  role="menuitem"
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    handleDeleteEtapa(etapa);
+                                    setOpenEtapaMenuId(null);
+                                  }}
+                                  className="w-full text-left px-3 py-1.5 text-xs text-danger hover:bg-danger/20"
+                                  role="menuitem"
+                                >
+                                  Excluir
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                       {isExecutor && etapa.status === 'EM_ANALISE' && (
-                        <span className="text-xs text-white/60">Aguardando avaliação do supervisor</span>
-                      )}
-                      {isExecutor && 
-                       ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) && 
-                       !temItensMarcados && 
-                       totalItens > 0 && (
-                        <span>
-                        </span>
+                        <span className="text-xs text-amber-300/80">Aguardando avaliação do supervisor</span>
                       )}
                     </div>
                   </div>
@@ -1335,7 +1605,7 @@ export default function ProjectDetails() {
                     className="min-h-0"
                   >
                     <div className="overflow-hidden min-h-0">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-sm text-white/70">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 text-sm text-slate-200/80">
                     {etapa.executor && (
                       <div>
                         <span className="font-medium">Responsável:</span> {etapa.executor.nome}
@@ -1355,23 +1625,29 @@ export default function ProjectDetails() {
                       </div>
                     )}
                     {etapa.dataInicio && (
-                      <div>
-                        <span className="font-medium">Data Início:</span>{' '}
-                        {new Date(etapa.dataInicio).toLocaleDateString('pt-BR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                        })}
+                      <div className="flex items-center gap-1">
+                        <span className="font-medium">Data Início:</span>
+                        <span className="inline-flex items-center gap-1">
+                          <span className="text-xs">📅</span>
+                          {new Date(etapa.dataInicio).toLocaleDateString('pt-BR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                          })}
+                        </span>
                       </div>
                     )}
                     {etapa.dataFim && (
-                      <div>
-                        <span className="font-medium">Data Fim:</span>{' '}
-                        {new Date(etapa.dataFim).toLocaleDateString('pt-BR', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                        })}
+                      <div className="flex items-center gap-1">
+                        <span className="font-medium">Data Fim:</span>
+                        <span className="inline-flex items-center gap-1">
+                          <span className="text-xs">📅</span>
+                          {new Date(etapa.dataFim).toLocaleDateString('pt-BR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                          })}
+                        </span>
                       </div>
                     )}
                     {etapa.valorInsumos && etapa.valorInsumos > 0 && (
@@ -1469,19 +1745,28 @@ export default function ProjectDetails() {
 
                   {etapa.checklistJson && Array.isArray(etapa.checklistJson) && etapa.checklistJson.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-white/10">
-                      <div className="flex items-center justify-between mb-3">
-                        <label className="text-xs text-white/70 block font-medium">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs text-white/80 block font-medium">
                           Checklist de Objetos ({etapa.checklistJson.length})
                           {podeMarcarChecklist && (
                             <span className="text-white/50 text-xs ml-2">(Você pode marcar os itens)</span>
                           )}
                         </label>
-                        {podeMarcarChecklist && totalItens > 0 && (
-                          <span className="text-xs text-white/60">
-                            {itensMarcados} de {totalItens} marcado{itensMarcados !== 1 ? 's' : ''}
-                          </span>
-                        )}
                       </div>
+                      {totalItens > 0 && (
+                        <div className="mb-3">
+                          <div className="w-full bg-white/10 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="bg-emerald-400 h-2 rounded-full transition-all"
+                              style={{ width: `${progressoChecklist}%` }}
+                            />
+                          </div>
+                          <div className="mt-1 text-[11px] text-white/60 text-right">
+                            {itensMarcados} de {totalItens} marcado{itensMarcados !== 1 ? 's' : ''} ({progressoChecklist}
+                            %)
+                          </div>
+                        </div>
+                      )}
 
                       {/* Cabeçalho de colunas (desktop) */}
                       <div className="hidden md:grid md:grid-cols-[auto_1fr_7rem_7rem_8rem] md:items-center gap-2 text-[11px] uppercase tracking-wide text-white/70 bg-slate-900/80 border border-white/15 rounded-md px-3 py-2 mb-1">
@@ -2048,6 +2333,8 @@ export default function ProjectDetails() {
             })}
           </div>
         )}
+          </section>
+        </div>
       </div>
 
       {/* Compras */}
@@ -2898,6 +3185,88 @@ export default function ProjectDetails() {
         </div>
       )}
 
+      {/* Modal Nova Sessão */}
+      {showSessaoModal && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
+            <div className="px-6 py-4 border-b border-white/20 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-white">Nova sessão</h2>
+              <button type="button" onClick={() => setShowSessaoModal(false)} className="text-white/50 hover:text-white text-2xl">✕</button>
+            </div>
+            <form onSubmit={handleCreateSessao} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Nome da sessão</label>
+                <input
+                  type="text"
+                  value={novaSessaoNome}
+                  onChange={(e) => setNovaSessaoNome(e.target.value)}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Ex: Módulo 1, Fase Inicial..."
+                  maxLength={120}
+                  autoFocus
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => setShowSessaoModal(false)} className={btn.secondary}>Cancelar</button>
+                <button type="submit" disabled={sessaoModalLoading || !novaSessaoNome.trim()} className={btn.primary}>
+                  {sessaoModalLoading ? 'Criando...' : 'Criar sessão'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Editar Sessão */}
+      {editingSessao && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
+            <div className="px-6 py-4 border-b border-white/20 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-white">Editar sessão</h2>
+              <button type="button" onClick={() => { setEditingSessao(null); setEditSessaoNome(''); }} className="text-white/50 hover:text-white text-2xl">✕</button>
+            </div>
+            <form onSubmit={handleUpdateSessao} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Nome</label>
+                <input
+                  type="text"
+                  value={editSessaoNome}
+                  onChange={(e) => setEditSessaoNome(e.target.value)}
+                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="Nome da sessão"
+                  maxLength={120}
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <button type="button" onClick={() => { setEditingSessao(null); setEditSessaoNome(''); }} className={btn.secondary}>Cancelar</button>
+                <button type="submit" disabled={sessaoModalLoading || !editSessaoNome.trim()} className={btn.primary}>
+                  {sessaoModalLoading ? 'Salvando...' : 'Salvar'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Excluir Sessão */}
+      {showDeleteSessaoModal && sessaoToDelete && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full p-6">
+            <h2 className="text-xl font-semibold text-white mb-2">Excluir sessão</h2>
+            <p className="text-white/80 mb-4">
+              Tem certeza que deseja excluir a sessão <span className="font-semibold">{sessaoToDelete.nome}</span>?
+              As etapas desta sessão ficarão sem sessão (podem ser reatribuídas depois).
+            </p>
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => { setShowDeleteSessaoModal(false); setSessaoToDelete(null); }} className={btn.secondary}>Cancelar</button>
+              <button type="button" onClick={handleDeleteSessao} disabled={sessaoModalLoading} className={btn.danger}>
+                {sessaoModalLoading ? 'Excluindo...' : 'Excluir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Modal Adicionar Etapa */}
       {showEtapaModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -2914,6 +3283,7 @@ export default function ProjectDetails() {
                   setEtapaForm({
                     nome: '',
                     descricao: '',
+                    sessaoId: undefined,
                     aba: '',
                     executorId: 0,
                     responsavelId: undefined,
@@ -2956,6 +3326,24 @@ export default function ProjectDetails() {
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
                   placeholder="Descreva os objetivos e detalhes desta etapa..."
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Sessão</label>
+                <select
+                  value={etapaForm.sessaoId ?? ''}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setEtapaForm({ ...etapaForm, sessaoId: v === '' ? undefined : Number(v) });
+                  }}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                >
+                  <option value="">Nenhuma</option>
+                  {project?.sessoes?.map((s) => (
+                    <option key={s.id} value={s.id}>{s.nome}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-white/50 mt-1">Hierarquia: Sessão → Aba → Etapa</p>
               </div>
 
               <div>
@@ -3670,6 +4058,7 @@ export default function ProjectDetails() {
                     setEtapaForm({
                       nome: '',
                       descricao: '',
+                      sessaoId: undefined,
                       aba: '',
                       executorId: 0,
                       responsavelId: undefined,
@@ -4004,4 +4393,3 @@ export default function ProjectDetails() {
     </div>
   );
 }
-

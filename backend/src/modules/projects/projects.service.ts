@@ -5,6 +5,8 @@ import { UpdateProjectDto } from './dto/update-project.dto';
 import { UpdateResponsiblesDto } from './dto/update-responsibles.dto';
 import { ReorderEtapasDto } from './dto/reorder-etapas.dto';
 import { DeleteAbaDto, RenameAbaDto } from './dto/update-aba.dto';
+import { CreateSessaoDto } from './dto/create-sessao.dto';
+import { UpdateSessaoDto } from './dto/update-sessao.dto';
 import { EtapaStatus, ProjetoStatus, NotificacaoTipo, RequerimentoTipo, Prisma } from '@prisma/client';
 
 @Injectable()
@@ -158,9 +160,11 @@ export class ProjectsService {
       include: {
         supervisor: { include: { cargo: true } },
         responsaveis: { include: { usuario: { include: { cargo: true } } } },
+        sessoes: { orderBy: { ordem: 'asc' } },
         etapas: {
           orderBy: [{ ordem: 'asc' }, { id: 'asc' }],
           include: {
+            sessao: true,
             executor: true,
             responsavel: true,
             integrantes: { include: { usuario: true } },
@@ -246,7 +250,7 @@ export class ProjectsService {
       responsaveisData = { create: data.responsavelIds.map((usuarioId) => ({ usuarioId })) };
     }
 
-    return this.prisma.projeto.create({
+    const projeto = await this.prisma.projeto.create({
       data: {
         ...payload,
         responsaveis: responsaveisData,
@@ -256,6 +260,13 @@ export class ProjectsService {
         responsaveis: { include: { usuario: { include: { cargo: true } } } },
       },
     });
+
+    // Criar sessão e "aba" padrão (Geral) para novos projetos — não aplicar na importação
+    await this.prisma.sessao.create({
+      data: { projetoId: projeto.id, nome: 'Geral', ordem: 0 },
+    });
+
+    return this.findOne(projeto.id);
   }
 
   async update(id: number, data: UpdateProjectDto) {
@@ -566,5 +577,55 @@ export class ProjectsService {
     } as any);
 
     return this.findOne(projetoId);
+  }
+
+  async createSessao(projetoId: number, dto: CreateSessaoDto) {
+    await this.findOne(projetoId);
+    const nome = dto.nome?.trim();
+    if (!nome || nome.length < 2) {
+      throw new BadRequestException('Nome da sessão deve ter pelo menos 2 caracteres.');
+    }
+    const ordem = dto.ordem ?? 0;
+    return this.prisma.sessao.create({
+      data: { projetoId, nome, ordem },
+    });
+  }
+
+  async updateSessao(projetoId: number, sessaoId: number, dto: UpdateSessaoDto) {
+    await this.findOne(projetoId);
+    const sessao = await this.prisma.sessao.findFirst({
+      where: { id: sessaoId, projetoId },
+    });
+    if (!sessao) {
+      throw new NotFoundException('Sessão não encontrada neste projeto.');
+    }
+    const data: { nome?: string; ordem?: number } = {};
+    if (dto.nome !== undefined) {
+      const nome = String(dto.nome).trim();
+      if (nome.length < 2) throw new BadRequestException('Nome da sessão deve ter pelo menos 2 caracteres.');
+      data.nome = nome;
+    }
+    if (dto.ordem !== undefined) data.ordem = dto.ordem;
+    if (Object.keys(data).length === 0) return sessao;
+    return this.prisma.sessao.update({
+      where: { id: sessaoId },
+      data,
+    });
+  }
+
+  async deleteSessao(projetoId: number, sessaoId: number) {
+    await this.findOne(projetoId);
+    const sessao = await this.prisma.sessao.findFirst({
+      where: { id: sessaoId, projetoId },
+    });
+    if (!sessao) {
+      throw new NotFoundException('Sessão não encontrada neste projeto.');
+    }
+    // Desvincular etapas da sessão (SET NULL) e depois excluir a sessão
+    await this.prisma.etapa.updateMany({
+      where: { sessaoId },
+      data: { sessaoId: null },
+    });
+    await this.prisma.sessao.delete({ where: { id: sessaoId } });
   }
 }

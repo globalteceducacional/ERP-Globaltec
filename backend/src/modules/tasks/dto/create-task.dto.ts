@@ -56,6 +56,11 @@ export class CreateTaskDto {
   nome: string;
 
   @IsOptional()
+  @IsInt()
+  @Transform(({ value }) => (value !== undefined && value !== null && value !== '' ? Number(value) : undefined))
+  sessaoId?: number;
+
+  @IsOptional()
   @IsString()
   @MaxLength(60)
   aba?: string;

@@ -34,10 +34,17 @@ interface Usuario {
   email: string;
 }
 
+interface Sessao {
+  id: number;
+  nome: string;
+  ordem: number;
+}
+
 interface Etapa {
   id: number;
   nome: string;
   descricao?: string | null;
+  sessaoId?: number | null;
   aba?: string | null;
   status: 'PENDENTE' | 'EM_ANDAMENTO' | 'EM_ANALISE' | 'APROVADA' | 'REPROVADA';
   dataInicio?: string | null;
@@ -47,6 +54,7 @@ interface Etapa {
   responsavelId?: number | null;
   executor?: { nome: string; cargo: string } | null;
   responsavel?: { nome: string } | null;
+  sessao?: Sessao | null;
   integrantes?: Array<{ usuario: Usuario }>;
   projeto: Projeto;
   subetapas: any[];
@@ -107,7 +115,11 @@ export default function MyTasks() {
   const [stageReviewLoading, setStageReviewLoading] = useState(false);
   const [stageReviewComments, setStageReviewComments] = useState<Record<number, string>>({});
   const [expandedProjects, setExpandedProjects] = useState<Set<number>>(new Set());
-  const [selectedAbasByProject, setSelectedAbasByProject] = useState<Record<number, string>>({});
+  // abas selecionadas por projeto + sessão (chave: `${projetoId}-${sessaoKey}`)
+  const [selectedAbasByProject, setSelectedAbasByProject] = useState<Record<string, string>>({});
+  const [selectedSessoesByProject, setSelectedSessoesByProject] = useState<
+    Record<number, number | null | 'all'>
+  >({});
 
   const resolveFileUrl = (url: string | null | undefined) => {
     if (!url) return '';
@@ -631,20 +643,68 @@ export default function MyTasks() {
           <div className="space-y-4">
             {projetosComEtapas.map(({ projeto, etapas, temEtapasPendentes }) => {
               const isExpanded = expandedProjects.has(projeto.id);
-              const stats = getProjetoStats(projeto, etapas);
-              const hasEtapas = etapas.length > 0;
+
+              // Mesma lógica da etapa: só considerar etapas em que o usuário está (executor, integrante ou responsável)
+              const etapasDoUsuario = etapas.filter((etapa) => {
+                const executorId = etapa.executorId;
+                const isExecutor = user?.id && executorId && Number(user.id) === Number(executorId);
+                const integrantesIds = etapa.integrantes?.map((i) => i.usuario?.id).filter(Boolean) || [];
+                const isIntegrante = user?.id && integrantesIds.some((id) => Number(user.id) === Number(id));
+                const isResponsavel = user?.id && etapa.responsavelId != null && Number(user.id) === Number(etapa.responsavelId);
+                return isExecutor || isIntegrante || isResponsavel;
+              });
+
+              const stats = getProjetoStats(projeto, etapasDoUsuario);
+              const hasEtapas = etapasDoUsuario.length > 0;
+
+              // Sessões e abas apenas das etapas em que o usuário está
+              const sessoesMap = new Map<number, Sessao>();
+              etapasDoUsuario.forEach((etapa) => {
+                if (etapa.sessao) {
+                  sessoesMap.set(etapa.sessao.id, etapa.sessao);
+                }
+              });
+              const sessoes = Array.from(sessoesMap.values()).sort(
+                (a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome, 'pt-BR'),
+              );
+              const hasEtapaSemSessao = etapasDoUsuario.some((etapa) => etapa.sessaoId == null);
+              const sessaoGroupsCount = (hasEtapaSemSessao ? 1 : 0) + sessoes.length;
+              const selectedSessao =
+                (selectedSessoesByProject[projeto.id] ?? 'all') as number | null | 'all';
+
+              const etapasPorSessao =
+                selectedSessao === 'all'
+                  ? etapasDoUsuario
+                  : etapasDoUsuario.filter((etapa) => {
+                      if (selectedSessao === null) return etapa.sessaoId == null;
+                      return etapa.sessaoId === selectedSessao;
+                    });
 
               const abasSet = new Set<string>();
-              etapas.forEach((etapa) => {
+              etapasPorSessao.forEach((etapa) => {
                 const nomeAba = (etapa.aba && etapa.aba.trim()) || 'Geral';
                 abasSet.add(nomeAba);
               });
-              const abas = ['Todas', ...Array.from(abasSet).sort((a, b) => a.localeCompare(b, 'pt-BR'))];
-              const selectedAba = selectedAbasByProject[projeto.id] ?? 'Todas';
+              const abasReal = Array.from(abasSet).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+              const abas =
+                abasReal.length > 1 ? (['Todas', ...abasReal] as string[]) : abasReal;
+
+              // chave de aba por projeto + sessão (all / none / id)
+              const sessaoKey =
+                selectedSessao === 'all'
+                  ? 'all'
+                  : selectedSessao === null
+                  ? 'none'
+                  : String(selectedSessao);
+              const abaStateKey = `${projeto.id}-${sessaoKey}`;
+
+              const selectedAba =
+                selectedAbasByProject[abaStateKey] ??
+                (abasReal.length > 1 ? 'Todas' : abasReal[0] ?? 'Todas');
               const etapasFiltradas =
                 selectedAba === 'Todas'
-                  ? etapas
-                  : etapas.filter((etapa) => {
+                  ? etapasPorSessao
+                  : etapasPorSessao.filter((etapa) => {
                       const nomeAba = (etapa.aba && etapa.aba.trim()) || 'Geral';
                       return nomeAba === selectedAba;
                     });
@@ -752,27 +812,93 @@ export default function MyTasks() {
                   {/* Etapas do Projeto (Colapsável) */}
                   {hasEtapas && isExpanded && (
                     <div className="border-t border-white/10 p-5 pt-4 space-y-4">
-                      {abas.length > 1 && (
-                        <div className="flex flex-wrap items-center gap-2 mb-3">
-                          {abas.map((aba) => (
-                            <button
-                              key={aba}
-                              type="button"
-                              onClick={() =>
-                                setSelectedAbasByProject((prev) => ({ ...prev, [projeto.id]: aba }))
-                              }
-                              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                                selectedAba === aba
-                                  ? 'bg-primary text-white border-primary'
-                                  : 'bg-white/5 text-white/70 border-white/20 hover:bg-white/10'
-                              }`}
-                            >
-                              {aba === 'Todas' ? 'Todas as abas' : aba}
-                            </button>
-                          ))}
+                      {/* Filtro de Sessões – mesmo layout dos projetos (violeta, distinto das abas) */}
+                      {(sessoes.length > 0 || hasEtapas) && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 rounded-lg bg-slate-800/60 border border-violet-500/25 mb-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold text-violet-200/90">Sessão |</span>
+                            {sessaoGroupsCount > 1 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedSessoesByProject((prev) => ({ ...prev, [projeto.id]: 'all' }))
+                                }
+                                className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-colors border focus:outline-none focus:ring-2 focus:ring-violet-400/50 ${
+                                  selectedSessao === 'all'
+                                    ? 'bg-violet-600 text-white border-violet-500'
+                                    : 'bg-slate-700/80 text-white/80 border-slate-600/80 hover:bg-violet-900/40 hover:border-violet-700/60'
+                                }`}
+                              >
+                                Todas
+                              </button>
+                            )}
+                            {hasEtapaSemSessao && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSelectedSessoesByProject((prev) => ({ ...prev, [projeto.id]: null }))
+                                }
+                                className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-colors border focus:outline-none focus:ring-2 focus:ring-violet-400/50 ${
+                                  selectedSessao === null
+                                    ? 'bg-violet-600 text-white border-violet-500'
+                                    : 'bg-slate-700/80 text-white/80 border-slate-600/80 hover:bg-violet-900/40 hover:border-violet-700/60'
+                                }`}
+                              >
+                                Sem sessão
+                              </button>
+                            )}
+                            {sessoes.map((sessao) => (
+                              <button
+                                key={sessao.id}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedSessoesByProject((prev) => ({
+                                    ...prev,
+                                    [projeto.id]: sessao.id,
+                                  }))
+                                }
+                                className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-colors border focus:outline-none focus:ring-2 focus:ring-violet-400/50 ${
+                                  selectedSessao === sessao.id
+                                    ? 'bg-violet-600 text-white border-violet-500'
+                                    : 'bg-slate-700/80 text-white/80 border-slate-600/80 hover:bg-violet-900/40 hover:border-violet-700/60'
+                                }`}
+                              >
+                                {sessao.nome}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
-                  {etapasFiltradas.map((etapa, etapaIndex) => {
+
+                      {/* Filtro de Abas – mesmo layout dos projetos: container e pills em azul (primary) */}
+                      {abas.length > 1 && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 py-3 px-4 rounded-lg bg-slate-800/60 border border-primary/25 mb-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-sm font-semibold text-sky-200/90">Aba |</span>
+                            {abas.map((aba) => (
+                              <button
+                                key={aba}
+                                type="button"
+                                onClick={() =>
+                                  setSelectedAbasByProject((prev) => ({
+                                    ...prev,
+                                    [abaStateKey]: aba,
+                                  }))
+                                }
+                                className={`inline-flex items-center justify-center rounded px-3 py-1.5 text-xs font-medium transition-colors border focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+                                  selectedAba === aba
+                                    ? 'bg-primary text-white border-primary'
+                                    : 'bg-slate-700/80 text-white/80 border-slate-600/80 hover:bg-primary/20 hover:border-primary/40'
+                                }`}
+                              >
+                                {aba === 'Todas' ? 'Todas' : aba}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {etapasFiltradas.map((etapa, etapaIndex) => {
                         // Verificar se o usuário é executor usando executorId
                         const executorId = etapa.executorId;
                     // Comparar convertendo ambos para número para evitar problemas de tipo

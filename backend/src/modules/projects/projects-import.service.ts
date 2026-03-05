@@ -12,8 +12,15 @@ interface ExcelProjectRow {
   responsaveisEmails?: string;
 }
 
+interface ExcelSessaoRow {
+  projetoNome?: string;
+  nome?: string;
+  ordem?: number;
+}
+
 interface ExcelEtapaRow {
   projetoNome?: string;
+  sessaoNome?: string;
   nome?: string;
   aba?: string;
   descricao?: string;
@@ -158,6 +165,34 @@ export class ProjectsImportService {
         }
       }
 
+      // Mapa (projetoNome|sessaoNome) -> sessaoId para vincular etapas às sessões na importação
+      const sessaoMap = new Map<string, number>();
+
+      if (sheetNames.includes('Sessoes')) {
+        const sessoesSheet = workbook.Sheets['Sessoes'];
+        const sessoesData: ExcelSessaoRow[] = XLSX.utils.sheet_to_json(sessoesSheet);
+        for (const row of sessoesData) {
+          if (!row.projetoNome?.trim() || !row.nome?.trim()) continue;
+          const projetoId = projectMap.get(row.projetoNome.trim());
+          if (projetoId == null) continue;
+          const ordem = row.ordem != null && !Number.isNaN(Number(row.ordem)) ? Number(row.ordem) : 0;
+          const sessao = await this.prisma.sessao.create({
+            data: { projetoId, nome: row.nome.trim(), ordem },
+          });
+          sessaoMap.set(`${row.projetoNome.trim()}|${row.nome.trim()}`, sessao.id);
+        }
+      }
+
+      // Projetos sem nenhuma sessão na aba Sessoes: criar sessão "Geral" para cada um
+      const projetosComSessao = new Set(Array.from(sessaoMap.keys()).map((k) => k.split('|')[0]));
+      for (const [nomeProjeto, idProjeto] of projectMap) {
+        if (projetosComSessao.has(nomeProjeto)) continue;
+        const sessao = await this.prisma.sessao.create({
+          data: { projetoId: idProjeto, nome: 'Geral', ordem: 0 },
+        });
+        sessaoMap.set(`${nomeProjeto}|Geral`, sessao.id);
+      }
+
       const resultados: { projeto?: string; etapa?: string; id?: number; status: string }[] = [];
 
       const resolveProjectId = async (projetoNome: string): Promise<number | null> => {
@@ -223,10 +258,14 @@ export class ProjectsImportService {
             }
           }
 
+          const sessaoNomeNorm = (etapaRow.sessaoNome ?? '').trim() || 'Geral';
+          const sessaoId = sessaoMap.get(`${etapaRow.projetoNome!.trim()}|${sessaoNomeNorm}`) ?? undefined;
+
           const etapa = await this.tasksService.create({
             projetoId,
             executorId,
             nome: etapaRow.nome.trim(),
+            sessaoId,
             aba: etapaRow.aba?.trim(),
             descricao: etapaRow.descricao?.trim(),
             dataInicio: parseDateFromExcel(etapaRow.dataInicio) || undefined,
@@ -383,9 +422,11 @@ export class ProjectsImportService {
       }
 
       const totalProjetos = projectMap.size;
+      const totalSessoes = sessaoMap.size;
       const totalEtapas = etapaMap.size;
       const msg: string[] = [];
       if (totalProjetos > 0) msg.push(`${totalProjetos} projeto(s) criado(s)`);
+      if (totalSessoes > 0) msg.push(`${totalSessoes} sessão(ões) criada(s)`);
       if (totalEtapas > 0) msg.push(`${totalEtapas} etapa(s) criada(s)`);
       if (checklistRowCount > 0) msg.push('checklist atualizado(s)');
       return {
@@ -404,8 +445,10 @@ export class ProjectsImportService {
       include: {
         supervisor: true,
         responsaveis: { include: { usuario: true } },
+        sessoes: { orderBy: { ordem: 'asc' } },
         etapas: {
           include: {
+            sessao: true,
             executor: true,
             responsavel: true,
             integrantes: { include: { usuario: true } },
@@ -415,6 +458,25 @@ export class ProjectsImportService {
     });
 
     const wb = XLSX.utils.book_new();
+
+    // Aba Sessões (projetoNome, nome, ordem) — antes de Projetos para referência
+    const sessoesRows: { projetoNome: string; nome: string; ordem: number }[] = [];
+    for (const projeto of projetos) {
+      const sessoes = (projeto as any).sessoes ?? [];
+      for (const sessao of sessoes) {
+        sessoesRows.push({
+          projetoNome: projeto.nome,
+          nome: sessao.nome,
+          ordem: sessao.ordem ?? 0,
+        });
+      }
+    }
+    const sessoesHeaders = ['projetoNome', 'nome', 'ordem'];
+    const sessoesSheet =
+      sessoesRows.length > 0
+        ? XLSX.utils.json_to_sheet(sessoesRows, { header: sessoesHeaders, skipHeader: false })
+        : XLSX.utils.aoa_to_sheet([sessoesHeaders]);
+    XLSX.utils.book_append_sheet(wb, sessoesSheet, 'Sessoes');
 
     // Aba Projetos (mesma estrutura da importação)
     const projetosRows = projetos.map((projeto) => ({
@@ -442,6 +504,7 @@ export class ProjectsImportService {
       for (const etapa of projeto.etapas as any[]) {
         etapasRows.push({
           projetoNome: projeto.nome,
+          sessaoNome: etapa.sessao?.nome ?? '',
           nome: etapa.nome,
           aba: etapa.aba ?? '',
           descricao: etapa.descricao ?? '',
@@ -500,9 +563,10 @@ export class ProjectsImportService {
       }
     }
 
-    // Aba Etapas (mesma estrutura da importação)
+    // Aba Etapas (mesma estrutura da importação; sessaoNome para vincular à sessão)
     const etapasHeaders = [
       'projetoNome',
+      'sessaoNome',
       'nome',
       'aba',
       'descricao',

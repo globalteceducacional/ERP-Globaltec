@@ -23,6 +23,8 @@ import { UpdateProjectDto } from './dto/update-project.dto';
 import { UpdateResponsiblesDto } from './dto/update-responsibles.dto';
 import { ReorderEtapasDto } from './dto/reorder-etapas.dto';
 import { DeleteAbaDto, RenameAbaDto } from './dto/update-aba.dto';
+import { CreateSessaoDto } from './dto/create-sessao.dto';
+import { UpdateSessaoDto } from './dto/update-sessao.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -83,6 +85,35 @@ export class ProjectsController {
       `attachment; filename="projeto-${id}.xlsx"`,
     );
     res.send(buffer);
+  }
+
+  @Post(':id/sessoes')
+  @Permissions('projetos:editar')
+  createSessao(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: CreateSessaoDto,
+  ) {
+    return this.projectsService.createSessao(id, body);
+  }
+
+  @Patch(':id/sessoes/:sessaoId')
+  @Permissions('projetos:editar')
+  updateSessao(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('sessaoId', ParseIntPipe) sessaoId: number,
+    @Body() body: UpdateSessaoDto,
+  ) {
+    return this.projectsService.updateSessao(id, sessaoId, body);
+  }
+
+  @Delete(':id/sessoes/:sessaoId')
+  @Permissions('projetos:editar')
+  @HttpCode(204)
+  deleteSessao(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('sessaoId', ParseIntPipe) sessaoId: number,
+  ) {
+    return this.projectsService.deleteSessao(id, sessaoId);
   }
 
   @Get(':id')

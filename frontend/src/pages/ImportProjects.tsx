@@ -126,6 +126,19 @@ export default function ImportProjects() {
             </div>
 
             <div>
+              <h3 className="font-semibold text-white mb-2">Aba "Sessoes" (opcional)</h3>
+              <p className="text-sm mb-2">
+                Define as sessões de cada projeto. Se não existir ou estiver vazia, cada projeto criado recebe uma sessão padrão "Geral". Na aba Etapas, use <strong>sessaoNome</strong> para vincular a etapa a uma dessas sessões.
+              </p>
+              <p className="text-sm mb-2">Colunas:</p>
+              <ul className="list-disc list-inside text-sm space-y-1 ml-4">
+                <li><strong>projetoNome</strong> (obrigatório) - Nome do projeto (igual ao da aba Projetos)</li>
+                <li><strong>nome</strong> (obrigatório) - Nome da sessão (ex.: "Geral", "Módulo 1")</li>
+                <li><strong>ordem</strong> (opcional) - Ordem de exibição (número; padrão 0)</li>
+              </ul>
+            </div>
+
+            <div>
               <h3 className="font-semibold text-white mb-2">Aba "Etapas" (opcional)</h3>
               <p className="text-sm mb-2">
                 <strong>projetoNome</strong> pode ser o nome de um projeto criado na aba Projetos desta planilha ou o nome exato de um projeto já existente no sistema. Assim você pode inserir novas etapas em projetos existentes sem precisar preencher a aba Projetos.
@@ -133,6 +146,7 @@ export default function ImportProjects() {
               <p className="text-sm mb-2">Colunas:</p>
               <ul className="list-disc list-inside text-sm space-y-1 ml-4">
                 <li><strong>projetoNome</strong> (obrigatório) - Nome do projeto (da aba Projetos ou de projeto já existente)</li>
+                <li><strong>sessaoNome</strong> (opcional) - Nome da sessão (da aba Sessoes). Se vazio, usa "Geral"</li>
                 <li><strong>nome</strong> (obrigatório) - Nome da etapa</li>
                 <li><strong>aba</strong> (opcional) - Nome da aba/categoria da etapa (ex.: "Software", "Hardware")</li>
                 <li><strong>descricao</strong> (opcional) - Descrição da etapa</li>

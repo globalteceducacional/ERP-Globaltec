@@ -49,6 +49,7 @@ export class TasksService {
       where: whereEtapas,
       include: {
         projeto: true,
+        sessao: true,
         subetapas: true,
         executor: true,
         responsavel: true,
@@ -213,6 +214,9 @@ export class TasksService {
       aba: data.aba?.trim() || undefined,
       projeto: { connect: { id: data.projetoId } },
       executor: { connect: { id: data.executorId } },
+      ...(data.sessaoId != null && data.sessaoId > 0
+        ? { sessao: { connect: { id: data.sessaoId } } }
+        : {}),
       dataInicio: data.dataInicio ? new Date(data.dataInicio) : undefined,
       dataFim: data.dataFim ? new Date(data.dataFim) : undefined,
       valorInsumos: data.valorInsumos ?? 0,
@@ -240,7 +244,7 @@ export class TasksService {
 
     const created = await this.prisma.etapa.create({
       data: createData,
-      include: { executor: true, responsavel: true, projeto: true, integrantes: { include: { usuario: true } } },
+      include: { executor: true, responsavel: true, projeto: true, sessao: true, integrantes: { include: { usuario: true } } },
     });
 
     await this.updateProjetoStatus(created.projetoId);
@@ -279,6 +283,13 @@ export class TasksService {
       status: data.status,
       valorInsumos: data.valorInsumos,
     };
+    if (data.sessaoId !== undefined) {
+      if (data.sessaoId == null || data.sessaoId === 0) {
+        payload.sessao = { disconnect: true };
+      } else {
+        payload.sessao = { connect: { id: data.sessaoId } };
+      }
+    }
 
     // Tratar checklist
     if (data.checklist !== undefined) {

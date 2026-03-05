@@ -138,11 +138,24 @@ model Projeto {
   planilhaJson     Json?
   supervisorId     Int?
   supervisor       Usuario?             @relation("Supervisor", fields: [supervisorId], references: [id])
+  sessoes          Sessao[]
   etapas           Etapa[]
   responsaveis     ProjetoResponsavel[]
   compras          Compra[]
   estoqueItems     Estoque[]
   estoqueAlocacoes EstoqueAlocacao[]
+}
+
+model Sessao {
+  id        Int     @id @default(autoincrement())
+  projetoId Int
+  nome      String  // Ex.: "Módulo 1", "Fase Inicial"
+  ordem     Int     @default(0) // Ordem de exibição no projeto
+  projeto   Projeto @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  etapas    Etapa[]
+
+  @@index([projetoId])
+  @@map("Sessao")
 }
 
 model ProjetoResponsavel {
@@ -168,6 +181,7 @@ model Etapa {
   ordem             Int                    @default(0) // Ordem de exibição no projeto
   nome              String
   descricao         String?
+  sessaoId          Int?                   // Sessão (ex.: Módulo 1) -> abas -> etapas
   aba               String?                // Nome da aba/grupo (ex.: "Software", "Hardware")
   status            EtapaStatus            @default(PENDENTE)
   dataInicio        DateTime?
@@ -177,6 +191,7 @@ model Etapa {
   checklistJson     Json? // Array de itens do checklist: [{ texto: string, concluido: boolean }]
   projetoId         Int
   projeto           Projeto                @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  sessao            Sessao?                @relation(fields: [sessaoId], references: [id], onDelete: SetNull)
   executorId        Int
   executor          Usuario                @relation("Executor", fields: [executorId], references: [id])
   responsavelId     Int?

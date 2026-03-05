@@ -86,13 +86,18 @@ export function buildProjectsTemplateWorkbook(maxRows = 50): XLSX.WorkBook {
     XLSX.utils.book_append_sheet(wb, sheet, sheetName);
   };
 
+  // Aba Sessões (projetoNome, nome da sessão, ordem)
+  const sessoesHeaders = ['projetoNome', 'nome', 'ordem'];
+  createSheetWithStyledHeader(sessoesHeaders, 'Sessoes', [25, 25, 12]);
+
   // Aba Projetos
   const projetosHeaders = ['nome', 'resumo', 'objetivo', 'valorTotal', 'supervisorEmail', 'responsaveisEmails'];
   createSheetWithStyledHeader(projetosHeaders, 'Projetos', [25, 30, 30, 18, 30, 35]);
 
-  // Aba Etapas
+  // Aba Etapas (sessaoNome vincula a etapa à sessão da aba Sessoes)
   const etapasHeaders = [
     'projetoNome',
+    'sessaoNome',
     'nome',
     'aba',
     'descricao',
@@ -103,8 +108,8 @@ export function buildProjectsTemplateWorkbook(maxRows = 50): XLSX.WorkBook {
     'responsavelEmail',
     'integrantesEmails',
   ];
-  // dataInicio (índice 4) e dataFim (índice 5)
-  createSheetWithStyledHeader(etapasHeaders, 'Etapas', [25, 25, 20, 35, 14, 14, 18, 28, 28, 32], [4, 5]);
+  // dataInicio (índice 5) e dataFim (índice 6)
+  createSheetWithStyledHeader(etapasHeaders, 'Etapas', [25, 20, 25, 20, 35, 14, 14, 18, 28, 28, 32], [5, 6]);
 
   // Aba Checklist (itens)
   const checklistHeaders = ['projetoNome', 'etapaNome', 'itemTexto', 'itemDescricao'];
@@ -142,6 +147,7 @@ export function buildProjectsTemplateWorkbook(maxRows = 50): XLSX.WorkBook {
     for (let r = 1; r <= maxRows; r += 1) {
       const excelRow = r + 1;
 
+      // Etapas: A=projetoNome, B=sessaoNome, C=nome (etapa)
       if (checklistSheet) {
         const chkProjetoCellRef = XLSX.utils.encode_cell({ r, c: 0 });
         const chkProjetoCell: any = {
@@ -154,7 +160,7 @@ export function buildProjectsTemplateWorkbook(maxRows = 50): XLSX.WorkBook {
         const chkEtapaCellRef = XLSX.utils.encode_cell({ r, c: 1 });
         const chkEtapaCell: any = {
           t: 'n',
-          f: `${etapasSheetName}!B${excelRow}`,
+          f: `${etapasSheetName}!C${excelRow}`,
           s: bodyCellStyle,
         };
         (checklistSheet as any)[chkEtapaCellRef] = chkEtapaCell;
@@ -172,7 +178,7 @@ export function buildProjectsTemplateWorkbook(maxRows = 50): XLSX.WorkBook {
         const subEtapaCellRef = XLSX.utils.encode_cell({ r, c: 1 });
         const subEtapaCell: any = {
           t: 'n',
-          f: `${etapasSheetName}!B${excelRow}`,
+          f: `${etapasSheetName}!C${excelRow}`,
           s: bodyCellStyle,
         };
         (checklistSubSheet as any)[subEtapaCellRef] = subEtapaCell;
