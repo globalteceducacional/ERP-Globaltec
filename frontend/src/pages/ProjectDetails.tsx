@@ -2,7 +2,7 @@ import { useEffect, useState, FormEvent, useRef, ChangeEvent, useMemo } from 're
 import { useParams, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
-import { ChecklistItemEntrega, ChecklistItem, ChecklistSubItem } from '../types';
+import { ChecklistItemEntrega, ChecklistItem, ChecklistSubItem, ProjetoArquivo } from '../types';
 import { btn } from '../utils/buttonStyles';
 import { DataTable, DataTableColumn } from '../components/DataTable';
 import { toast, formatApiError } from '../utils/toast';
@@ -97,6 +97,8 @@ interface ProjectDetails {
   nome: string;
   resumo?: string | null;
   objetivo?: string | null;
+  descricaoLonga?: string | null;
+  descricaoArquivos?: ProjetoArquivo[] | null;
   status: 'EM_ANDAMENTO' | 'FINALIZADO';
   valorTotal: number;
   valorInsumos: number;
@@ -106,6 +108,16 @@ interface ProjectDetails {
   sessoes?: Sessao[];
   etapas: Etapa[];
   compras: Compra[];
+}
+
+interface EditProjectForm {
+  nome: string;
+  resumo?: string;
+  objetivo?: string;
+  valorTotal?: number;
+  supervisorId?: number;
+  responsavelIds: number[];
+  status?: 'EM_ANDAMENTO' | 'FINALIZADO';
 }
 
 export default function ProjectDetails() {
@@ -120,6 +132,22 @@ export default function ProjectDetails() {
   const [submitting, setSubmitting] = useState(false);
   const [editingEtapa, setEditingEtapa] = useState<Etapa | null>(null);
   const integrantesSelectRef = useRef<HTMLSelectElement>(null);
+  const [projectDescricaoTexto, setProjectDescricaoTexto] = useState<string>('');
+  const [projectDescricaoArquivos, setProjectDescricaoArquivos] = useState<ProjetoArquivo[]>([]);
+  const [projectDescricaoSaving, setProjectDescricaoSaving] = useState(false);
+  const [projectDescricaoError, setProjectDescricaoError] = useState<string | null>(null);
+  const [showEditProjectModal, setShowEditProjectModal] = useState(false);
+  const [editProjectForm, setEditProjectForm] = useState<EditProjectForm>({
+    nome: '',
+    resumo: '',
+    objetivo: '',
+    valorTotal: undefined,
+    supervisorId: undefined,
+    responsavelIds: [],
+    status: 'EM_ANDAMENTO',
+  });
+  const [editProjectSubmitting, setEditProjectSubmitting] = useState(false);
+  const [editProjectError, setEditProjectError] = useState<string | null>(null);
   // Nota: a edição de entregas de checklist é feita pela tela Meu Trabalho.
   // Este componente não possui o fluxo completo de envio/edição de objetivos,
   // portanto qualquer tentativa de editar a entrega a partir daqui é desabilitada.
@@ -170,6 +198,86 @@ export default function ProjectDetails() {
       setExpandedEtapas(new Set(project.etapas.map((e) => e.id)));
     }
   }, [project?.id, project?.etapas?.length]);
+
+  useEffect(() => {
+    if (!project) return;
+    setProjectDescricaoTexto(project.descricaoLonga ?? '');
+    const arquivos = Array.isArray(project.descricaoArquivos) ? project.descricaoArquivos : [];
+    setProjectDescricaoArquivos(arquivos);
+  }, [project?.id]);
+
+  function openEditProjectModal() {
+    if (!project) return;
+    setEditProjectForm({
+      nome: project.nome,
+      resumo: project.resumo ?? '',
+      objetivo: project.objetivo ?? '',
+      valorTotal: project.valorTotal ?? undefined,
+      supervisorId: project.supervisor?.id ?? undefined,
+      responsavelIds: project.responsaveis
+        ? project.responsaveis
+            .filter((r) => !!r.usuario)
+            .map((r) => r.usuario.id)
+        : [],
+      status: project.status,
+    });
+    setEditProjectError(null);
+    setShowEditProjectModal(true);
+  }
+
+  async function handleSubmitEditProject(event: FormEvent) {
+    event.preventDefault();
+    if (!project) return;
+
+    try {
+      setEditProjectSubmitting(true);
+      setEditProjectError(null);
+
+      const payload: any = {
+        nome: editProjectForm.nome.trim(),
+      };
+
+      if (typeof editProjectForm.resumo === 'string') {
+        payload.resumo = editProjectForm.resumo?.trim() ?? '';
+      }
+      if (typeof editProjectForm.objetivo === 'string') {
+        payload.objetivo = editProjectForm.objetivo?.trim() ?? '';
+      }
+      if (typeof editProjectForm.valorTotal === 'number') {
+        payload.valorTotal = editProjectForm.valorTotal;
+      }
+      if (typeof editProjectForm.supervisorId !== 'undefined') {
+        payload.supervisorId = editProjectForm.supervisorId;
+      }
+      if (editProjectForm.status) {
+        payload.status = editProjectForm.status;
+      }
+
+      payload.descricaoLonga = projectDescricaoTexto?.trim() || null;
+      // descricaoArquivos agora é gerenciado separadamente pelos endpoints específicos
+
+      // eslint-disable-next-line no-console
+      console.log('[ProjectDetails] handleSubmitEditProject payload', {
+        id: project.id,
+      });
+
+      await api.patch(`/projects/${project.id}`, payload);
+
+      await api.patch(`/projects/${project.id}/responsibles`, {
+        responsavelIds: editProjectForm.responsavelIds,
+      });
+
+      await refreshProject(false);
+      toast.success('Projeto atualizado com sucesso!');
+      setShowEditProjectModal(false);
+    } catch (err: any) {
+      const message = formatApiError(err);
+      setEditProjectError(message);
+      toast.error(message);
+    } finally {
+      setEditProjectSubmitting(false);
+    }
+  }
 
   // Projeto novo: uma sessão "Geral" → selecionar essa sessão por padrão (evita "Sem sessão" / "Todas")
   useEffect(() => {
@@ -371,8 +479,54 @@ export default function ProjectDetails() {
     if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
       return url;
     }
-    const base = (api.defaults.baseURL || '').replace(/\/$/, '');
-    return `${base}${url}`;
+
+    const base = api.defaults.baseURL || '';
+    try {
+      const baseUrl = new URL(base, window.location.origin);
+      const origin = baseUrl.origin; // ex.: http://localhost:3000
+      const path = url.startsWith('/') ? url : `/${url}`;
+      return `${origin}${path}`;
+    } catch {
+      return url;
+    }
+  };
+
+  const getFileExtension = (file: ProjetoArquivo): string => {
+    const nameOrUrl = (file.originalName || file.url || '').toLowerCase();
+    const match = nameOrUrl.match(/\.([a-z0-9]+)(?:\?|#|$)/);
+    return match ? match[1] : '';
+  };
+
+  const getFileKind = (file: ProjetoArquivo): 'image' | 'pdf' | 'excel' | 'word' | 'ppt' | 'text' | 'other' => {
+    const mime = (file.mimeType || '').toLowerCase();
+    const ext = getFileExtension(file);
+
+    if (mime.startsWith('image/') || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'].includes(ext)) return 'image';
+    if (mime === 'application/pdf' || ext === 'pdf') return 'pdf';
+    if (
+      mime.includes('excel') ||
+      mime === 'application/vnd.ms-excel' ||
+      mime === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      ['xls', 'xlsx', 'xlsm', 'csv'].includes(ext)
+    ) return 'excel';
+    if (
+      mime === 'application/msword' ||
+      mime === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      ['doc', 'docx', 'rtf'].includes(ext)
+    ) return 'word';
+    if (
+      mime === 'application/vnd.ms-powerpoint' ||
+      mime === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+      ['ppt', 'pptx'].includes(ext)
+    ) return 'ppt';
+    if (mime.startsWith('text/') || ['txt', 'md', 'log'].includes(ext)) return 'text';
+    return 'other';
+  };
+
+  const getFileBadgeLabel = (file: ProjetoArquivo): string => {
+    const ext = getFileExtension(file);
+    if (!ext) return 'arquivo';
+    return ext.toUpperCase();
   };
 
   const [updatingChecklist, setUpdatingChecklist] = useState<number | null>(null);
@@ -1143,19 +1297,32 @@ export default function ProjectDetails() {
         >
           ← Voltar
         </button>
-        <div className="min-w-0 flex-1 text-right">
-          <h2 className="text-xl font-bold truncate sm:text-2xl">{project.nome}</h2>
-          <span className={`inline-block mt-1 px-2 py-1 rounded text-xs ${projectStatusColor}`}>
-            {projectStatusLabel}
-          </span>
+        <div className="min-w-0 flex-1 flex items-center justify-end">
+          <div className="min-w-0 text-right">
+            <h2 className="text-xl font-bold truncate sm:text-2xl">{project.nome}</h2>
+            <span className={`inline-block mt-1 px-2 py-1 rounded text-xs ${projectStatusColor}`}>
+              {projectStatusLabel}
+            </span>
+          </div>
         </div>
       </div>
 
       {/* Informações Gerais */}
       <div className="grid md:grid-cols-2 gap-4 sm:gap-6">
         <div className="bg-neutral/80 border border-white/10 rounded-xl p-4 space-y-4 sm:p-6">
-          <h3 className="text-lg font-semibold border-b border-white/10 pb-2">Informações Gerais</h3>
-          
+          <div className="flex items-center justify-between gap-3 border-b border-white/10 pb-2">
+            <h3 className="text-lg font-semibold">Informações Gerais</h3>
+            {canEditProject && (
+              <button
+                type="button"
+                onClick={openEditProjectModal}
+                className={`${btn.primarySoft} text-xs px-3 py-1.5`}
+              >
+                Editar Projeto
+              </button>
+            )}
+          </div>
+
           <div>
             <label className="text-sm text-white/70">Resumo</label>
             <p className="mt-1 text-white/90">{project.resumo || '—'}</p>
@@ -1164,6 +1331,113 @@ export default function ProjectDetails() {
           <div>
             <label className="text-sm text-white/70">Objetivo</label>
             <p className="mt-1 text-white/90">{project.objetivo || '—'}</p>
+          </div>
+
+          <div>
+            <label className="text-sm text-white/70 flex items-center justify-between">
+              <span>Descrição do Projeto</span>
+            </label>
+            <p className="mt-1 text-white/90 whitespace-pre-wrap break-words">
+              {project.descricaoLonga?.trim() || '—'}
+            </p>
+            {Array.isArray(project.descricaoArquivos) && project.descricaoArquivos.length > 0 && (
+              <div className="mt-3 space-y-2">
+                {/* Galeria de imagens */}
+                {project.descricaoArquivos.some((f) => getFileKind(f) === 'image') && (
+                  <div>
+                    <p className="text-xs text-white/60 mb-1">Imagens do projeto</p>
+                    <div className="flex flex-wrap gap-2">
+                      {project.descricaoArquivos
+                        .filter((file) => getFileKind(file) === 'image')
+                        .map((file, index) => {
+                          const url = resolveFileUrl(file.url);
+                          const displayName = file.originalName || file.url;
+                          return (
+                            <a
+                              key={`${file.url}-${index}`}
+                              href={url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="w-20 h-20 rounded-md overflow-hidden border border-white/15 hover:border-primary/80 transition-colors bg-black/40 flex items-center justify-center"
+                              title={displayName}
+                            >
+                              <img
+                                src={url}
+                                alt={displayName}
+                                className="w-full h-full object-cover"
+                              />
+                            </a>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Documentos e outros arquivos */}
+                {project.descricaoArquivos.some((f) => getFileKind(f) !== 'image') && (
+                  <div>
+                    <p className="text-xs text-white/60 mb-1">Arquivos e documentos</p>
+                    <div className="space-y-1 max-h-40 overflow-y-auto bg-black/10 rounded-md p-2">
+                      {project.descricaoArquivos
+                        .filter((file) => getFileKind(file) !== 'image')
+                        .map((file, index) => {
+                          const kind = getFileKind(file);
+                          const url = resolveFileUrl(file.url);
+                          const displayName = file.originalName || file.url;
+                          const badge = getFileBadgeLabel(file);
+                          const icon =
+                            kind === 'pdf'
+                              ? '📄'
+                              : kind === 'excel'
+                                ? '📊'
+                                : kind === 'word'
+                                  ? '📝'
+                                  : kind === 'ppt'
+                                    ? '📽️'
+                                    : kind === 'text'
+                                      ? '📃'
+                                      : '📎';
+                          return (
+                            <div
+                              key={`${file.url}-${index}`}
+                              className="flex items-center gap-3 text-xs text-white/80"
+                            >
+                              <span className="inline-flex items-center justify-center px-1.5 py-0.5 rounded border border-white/20 text-[10px] text-white/70 shrink-0">
+                                {badge}
+                              </span>
+                              <div className="flex-1 min-w-0">
+                                <p className="truncate">
+                                  {icon}{' '}
+                                  <span className="align-middle">
+                                    {displayName}
+                                  </span>
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <a
+                                  href={url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center px-2 py-0.5 rounded border border-white/25 text-[11px] hover:border-primary hover:text-primary transition-colors"
+                                >
+                                  Abrir
+                                </a>
+                                <a
+                                  href={url}
+                                  download
+                                  className="inline-flex items-center px-2 py-0.5 rounded border border-white/15 text-[11px] text-white/80 hover:border-white/40 transition-colors"
+                                >
+                                  Download
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/10">
@@ -4387,6 +4661,359 @@ export default function ProjectDetails() {
                 {deletingEtapa ? 'Deletando...' : 'Deletar'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Edição de Projeto */}
+      {showEditProjectModal && project && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/10 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-neutral border-b border-white/10 px-6 py-4 flex items-center justify-between">
+              <h3 className="text-xl font-semibold">
+                Editar Projeto
+              </h3>
+              <button
+                onClick={() => {
+                  setShowEditProjectModal(false);
+                  setEditProjectError(null);
+                }}
+                className="text-white/50 hover:text-white transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitEditProject} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm text-white/70 mb-1">
+                  Nome do Projeto <span className="text-danger">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={editProjectForm.nome}
+                  onChange={(e) =>
+                    setEditProjectForm((prev) => ({ ...prev, nome: e.target.value }))
+                  }
+                  className="w-full bg-neutral/60 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 border-white/10 focus:ring-primary"
+                  required
+                  maxLength={120}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-white/70 mb-1">Resumo</label>
+                <textarea
+                  value={editProjectForm.resumo}
+                  onChange={(e) =>
+                    setEditProjectForm((prev) => ({ ...prev, resumo: e.target.value }))
+                  }
+                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 h-20 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-white/70 mb-1">Objetivo</label>
+                <textarea
+                  value={editProjectForm.objetivo}
+                  onChange={(e) =>
+                    setEditProjectForm((prev) => ({ ...prev, objetivo: e.target.value }))
+                  }
+                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 h-20 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-white/70 mb-1">
+                  Descrição detalhada do projeto
+                </label>
+                <textarea
+                  value={projectDescricaoTexto}
+                  onChange={(e) => setProjectDescricaoTexto(e.target.value)}
+                  placeholder="Descreva o projeto, contexto, escopo, observações gerais..."
+                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 h-24 focus:outline-none focus:ring-2 focus:ring-primary text-sm"
+                />
+                <div className="mt-2 space-y-2">
+                  <div>
+                    <label className="block text-xs text-white/60 mb-1">
+                      Arquivos e imagens do projeto
+                    </label>
+                    <input
+                      type="file"
+                      multiple
+                      onChange={async (e) => {
+                        const files = Array.from(e.target.files || []);
+                        if (!files.length) return;
+                        try {
+                          setProjectDescricaoSaving(true);
+                          setProjectDescricaoError(null);
+                          const formData = new FormData();
+                          files.forEach((file) => formData.append('files', file));
+                          const { data } = await api.post<ProjetoArquivo[]>(
+                            `/projects/${project.id}/descricao-files`,
+                            formData,
+                            { headers: { 'Content-Type': 'multipart/form-data' } },
+                          );
+                          if (Array.isArray(data)) {
+                            setProjectDescricaoArquivos(data);
+                          }
+                        } catch (err: any) {
+                          const message = formatApiError(err);
+                          setProjectDescricaoError(message);
+                          toast.error(message);
+                        } finally {
+                          setProjectDescricaoSaving(false);
+                          if (e.target) {
+                            e.target.value = '';
+                          }
+                        }
+                      }}
+                      className="mt-1 block w-full text-sm text-white/80 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary/80 file:text-white hover:file:bg-primary transition-colors cursor-pointer"
+                    />
+                  </div>
+                  {projectDescricaoArquivos.length > 0 && (
+                    <div className="mt-1 space-y-2 max-h-40 overflow-y-auto bg-black/10 rounded-md p-2">
+                      {projectDescricaoArquivos.map((file, index) => {
+                        const isImage = file.mimeType?.startsWith('image/');
+                        const displayName = file.originalName || file.url;
+                        return (
+                          <div
+                            key={`${file.url}-${index}`}
+                            className="flex items-center gap-3 text-xs text-white/80"
+                          >
+                            {isImage && (
+                              <a
+                                href={resolveFileUrl(file.url)}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="shrink-0 w-12 h-12 rounded-md overflow-hidden border border-white/10 hover:border-primary/80 transition-colors"
+                                title="Abrir imagem"
+                              >
+                                <img
+                                  src={resolveFileUrl(file.url)}
+                                  alt={displayName}
+                                  className="w-full h-full object-cover"
+                                />
+                              </a>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <p className="truncate">
+                                {!isImage && '📎 '}{displayName}
+                              </p>
+                              <div className="mt-1 flex items-center gap-2">
+                                <a
+                                  href={resolveFileUrl(file.url)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center px-2 py-0.5 rounded border border-white/20 text-[11px] hover:border-primary hover:text-primary transition-colors"
+                                >
+                                  Abrir
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    try {
+                                      const { data } = await api.delete<ProjetoArquivo[]>(
+                                        `/projects/${project.id}/descricao-files`,
+                                        { data: { url: file.url } },
+                                      );
+                                      if (Array.isArray(data)) {
+                                        setProjectDescricaoArquivos(data);
+                                      }
+                                    } catch (err: any) {
+                                      const message = formatApiError(err);
+                                      setProjectDescricaoError(message);
+                                      toast.error(message);
+                                    }
+                                  }}
+                                  className="inline-flex items-center px-2 py-0.5 rounded border border-danger/60 text-[11px] text-danger hover:bg-danger/10 transition-colors"
+                                >
+                                  Remover
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {projectDescricaoError && (
+                    <p className="text-xs text-danger mt-1">{projectDescricaoError}</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm text-white/70 mb-1">Valor Total (R$)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={
+                    typeof editProjectForm.valorTotal === 'number'
+                      ? editProjectForm.valorTotal
+                      : ''
+                  }
+                  onChange={(e) => {
+                    const value = e.target.value ? Number(e.target.value) : undefined;
+                    setEditProjectForm((prev) => ({ ...prev, valorTotal: value }));
+                  }}
+                  className="w-full bg-neutral/60 border rounded-md px-3 py-2 focus:outline-none focus:ring-2 border-white/10 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-white/70 mb-1">Status</label>
+                <select
+                  value={editProjectForm.status}
+                  onChange={(e) =>
+                    setEditProjectForm((prev) => ({
+                      ...prev,
+                      status: e.target.value as 'EM_ANDAMENTO' | 'FINALIZADO',
+                    }))
+                  }
+                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="EM_ANDAMENTO">Em Andamento</option>
+                  <option value="FINALIZADO">Finalizado</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Supervisor *</label>
+                <select
+                  required
+                  value={editProjectForm.supervisorId ?? ''}
+                  onChange={(e) => {
+                    const newSupervisorId = e.target.value ? Number(e.target.value) : undefined;
+                    setEditProjectForm((prev) => ({
+                      ...prev,
+                      supervisorId: newSupervisorId,
+                      responsavelIds: prev.responsavelIds.filter((id) => id !== newSupervisorId),
+                    }));
+                  }}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem',
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">
+                    Selecione um supervisor...
+                  </option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id} className="bg-neutral text-white">
+                      {u.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Responsáveis</label>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    const selectedUserId = Number(e.target.value);
+                    if (
+                      selectedUserId &&
+                      !editProjectForm.responsavelIds.includes(selectedUserId)
+                    ) {
+                      setEditProjectForm((prev) => ({
+                        ...prev,
+                        responsavelIds: [...prev.responsavelIds, selectedUserId],
+                      }));
+                    }
+                  }}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem',
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">
+                    Selecione um responsável...
+                  </option>
+                  {users
+                    .filter(
+                      (u) =>
+                        !editProjectForm.responsavelIds.includes(u.id) &&
+                        u.id !== editProjectForm.supervisorId,
+                    )
+                    .map((u) => (
+                      <option key={u.id} value={u.id} className="bg-neutral text-white">
+                        {u.nome}
+                      </option>
+                    ))}
+                </select>
+                {editProjectForm.responsavelIds.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {editProjectForm.responsavelIds.map((responsavelId) => {
+                      const responsavel = users.find((u) => u.id === responsavelId);
+                      if (!responsavel) return null;
+                      return (
+                        <div
+                          key={responsavelId}
+                          className="flex items-center justify-between bg-white/5 border border-white/10 rounded-md px-3 py-2"
+                        >
+                          <span className="text-sm text-white/90">{responsavel.nome}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditProjectForm((prev) => ({
+                                ...prev,
+                                responsavelIds: prev.responsavelIds.filter(
+                                  (id) => id !== responsavelId,
+                                ),
+                              }))
+                            }
+                            className="text-danger hover:text-danger/80 text-sm font-medium transition-colors"
+                          >
+                            Remover
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {editProjectForm.responsavelIds.length === 0 && (
+                  <p className="text-xs text-white/50 mt-2">
+                    Nenhum responsável adicionado ainda
+                  </p>
+                )}
+              </div>
+
+              {editProjectError && (
+                <div className="bg-danger/20 border border-danger/50 text-danger px-4 py-3 rounded-md text-sm">
+                  {editProjectError}
+                </div>
+              )}
+
+              <div className="flex justify-end space-x-3 pt-4 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditProjectModal(false);
+                    setEditProjectError(null);
+                  }}
+                  className={btn.secondaryLg}
+                  disabled={editProjectSubmitting}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className={btn.primaryLg}
+                  disabled={editProjectSubmitting}
+                >
+                  {editProjectSubmitting ? 'Salvando...' : 'Salvar Alterações'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

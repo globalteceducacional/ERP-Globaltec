@@ -12,10 +12,11 @@ import {
   ParseIntPipe,
   UseInterceptors,
   UploadedFile,
+  UploadedFiles,
   BadRequestException,
   Res,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { ProjectsService } from './projects.service';
 import { ProjectsImportService } from './projects-import.service';
 import { CreateProjectDto } from './dto/create-project.dto';
@@ -31,6 +32,9 @@ import { Permissions } from '../../common/decorators/permissions.decorator';
 import { ProjetoStatus } from '@prisma/client';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { Response } from 'express';
+import { diskStorage } from 'multer';
+import * as fs from 'fs';
+import { join, extname } from 'path';
 
 @Controller('projects')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -130,6 +134,16 @@ export class ProjectsController {
   @Patch(':id')
   @Permissions('projetos:editar')
   update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateProjectDto) {
+    // Debug: verificar se descricaoArquivos está chegando no controller
+    // eslint-disable-next-line no-console
+    console.log('[ProjectsController] update body.descricaoArquivos', {
+      id,
+      hasDescricaoArquivos: !!body.descricaoArquivos,
+      isArray: Array.isArray(body.descricaoArquivos),
+      length: Array.isArray(body.descricaoArquivos)
+        ? body.descricaoArquivos.length
+        : null,
+    });
     return this.projectsService.update(id, body);
   }
 
@@ -207,5 +221,51 @@ export class ProjectsController {
       file.buffer,
       user.userId,
     );
+  }
+  /**
+   * Novo fluxo de anexos de projeto:
+   * - Upload já vincula diretamente no projeto (campo descricaoArquivos).
+   * - O frontend NÃO precisa mais mandar descricaoArquivos no PATCH/POST do projeto.
+   */
+
+  @Post(':id/descricao-files')
+  @Permissions('projetos:editar')
+  @UseInterceptors(
+    FilesInterceptor('files', 10, {
+      storage: diskStorage({
+        destination: (req, file, cb) => {
+          const uploadPath = join(process.cwd(), 'uploads', 'projects');
+          if (!fs.existsSync(uploadPath)) {
+            fs.mkdirSync(uploadPath, { recursive: true });
+          }
+          cb(null, uploadPath);
+        },
+        filename: (req, file, cb) => {
+          const timestamp = Date.now();
+          const random = Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname) || '';
+          cb(null, `${timestamp}-${random}${ext}`);
+        },
+      }),
+      limits: {
+        fileSize: 20 * 1024 * 1024, // 20MB por arquivo
+        files: 10,
+      },
+    }),
+  )
+  async uploadDescricaoFiles(
+    @Param('id', ParseIntPipe) id: number,
+    @UploadedFiles() files: Express.Multer.File[],
+  ) {
+    return this.projectsService.addDescricaoArquivos(id, files);
+  }
+
+  @Delete(':id/descricao-files')
+  @Permissions('projetos:editar')
+  async deleteDescricaoFile(
+    @Param('id', ParseIntPipe) id: number,
+    @Body('url') url: string,
+  ) {
+    return this.projectsService.removeDescricaoArquivo(id, url);
   }
 }

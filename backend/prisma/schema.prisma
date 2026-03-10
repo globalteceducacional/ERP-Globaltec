@@ -130,6 +130,8 @@ model Projeto {
   nome             String               @unique
   resumo           String?
   objetivo         String?
+  descricaoLonga   String?
+  descricaoArquivos Json?
   valorTotal       Float                @default(0)
   valorInsumos     Float                @default(0)
   status           ProjetoStatus        @default(EM_ANDAMENTO)

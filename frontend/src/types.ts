@@ -31,12 +31,21 @@ export interface Usuario {
   dataNascimento?: string | null;
 }
 
+export interface ProjetoArquivo {
+  originalName: string;
+  url: string;
+  mimeType?: string;
+  size?: number;
+}
+
 export interface Projeto {
   id: number;
   nome: string;
   status: 'EM_ANDAMENTO' | 'FINALIZADO';
   resumo?: string | null;
   objetivo?: string | null;
+  descricaoLonga?: string | null;
+  descricaoArquivos?: ProjetoArquivo[] | null;
   valorTotal: number;
   valorInsumos: number;
   supervisor?: Usuario | null;

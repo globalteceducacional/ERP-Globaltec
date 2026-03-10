@@ -22,6 +22,10 @@ export class CreateProjectDto {
   objetivo?: string;
 
   @IsOptional()
+  @IsString()
+  descricaoLonga?: string;
+
+  @IsOptional()
   @IsNumber()
   @IsPositive()
   valorTotal?: number;
@@ -41,4 +45,12 @@ export class CreateProjectDto {
 
   @IsOptional()
   planilhaJson?: Record<string, unknown>;
+
+  @IsOptional()
+  descricaoArquivos?: {
+    originalName: string;
+    url: string;
+    mimeType?: string;
+    size?: number;
+  }[];
 }

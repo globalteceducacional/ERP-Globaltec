@@ -40,3 +40,5 @@ docker-compose.override.yml
 # Prisma
 prisma/migrations/
 
+# storage
+backend/uploads/

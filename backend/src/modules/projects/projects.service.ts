@@ -8,6 +8,8 @@ import { DeleteAbaDto, RenameAbaDto } from './dto/update-aba.dto';
 import { CreateSessaoDto } from './dto/create-sessao.dto';
 import { UpdateSessaoDto } from './dto/update-sessao.dto';
 import { EtapaStatus, ProjetoStatus, NotificacaoTipo, RequerimentoTipo, Prisma } from '@prisma/client';
+import * as fs from 'fs';
+import { join } from 'path';
 
 @Injectable()
 export class ProjectsService {
@@ -195,6 +197,27 @@ export class ProjectsService {
       throw new NotFoundException('Projeto não encontrado');
     }
 
+    // Debug: conferir o que está salvo em descricaoArquivos
+    // eslint-disable-next-line no-console
+    console.log('[ProjectsService] findOne descricaoArquivos', {
+      id,
+      hasDescricaoArquivos: Object.prototype.hasOwnProperty.call(
+        project,
+        'descricaoArquivos',
+      ),
+      isArray: Array.isArray(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (project as any).descricaoArquivos,
+      ),
+      length: Array.isArray(
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (project as any).descricaoArquivos,
+      )
+        ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (project as any).descricaoArquivos.length
+        : null,
+    });
+
     // Calcular valorInsumos como soma das etapas
     const valorInsumosCalculado = project.etapas.reduce((sum, etapa) => {
       return sum + (etapa.valorInsumos || 0);
@@ -231,6 +254,8 @@ export class ProjectsService {
       nome: nomeTrim,
       resumo: data.resumo,
       objetivo: data.objetivo,
+      descricaoLonga: data.descricaoLonga,
+      descricaoArquivos: data.descricaoArquivos ?? null,
       valorTotal: data.valorTotal ?? 0,
       valorInsumos: 0, // Sempre inicia com 0, será calculado automaticamente quando houver etapas
       planilhaJson: data.planilhaJson ?? null,
@@ -286,11 +311,13 @@ export class ProjectsService {
     const statusAnterior = projetoAtual.status;
     const novoStatus = data.status;
 
-    // Preparar payload para o Prisma
+    // Preparar payload para o Prisma (campos básicos do projeto)
     const payload: any = {
       nome: data.nome,
       resumo: data.resumo,
       objetivo: data.objetivo,
+      descricaoLonga: data.descricaoLonga,
+      // descricaoArquivos agora é gerenciado pelos métodos específicos
       valorTotal: data.valorTotal,
       // valorInsumos não é mais editável, será calculado automaticamente
       status: data.status,
@@ -627,5 +654,128 @@ export class ProjectsService {
       data: { sessaoId: null },
     });
     await this.prisma.sessao.delete({ where: { id: sessaoId } });
+  }
+
+  /**
+   * Adiciona arquivos à descrição do projeto, salvando no campo descricaoArquivos
+   * e retornando a lista completa atualizada.
+   */
+  async addDescricaoArquivos(
+    projetoId: number,
+    files: Express.Multer.File[],
+  ): Promise<
+    {
+      originalName: string;
+      url: string;
+      mimeType?: string;
+      size?: number;
+    }[]
+  > {
+    const projeto = await this.prisma.projeto.findUnique({
+      where: { id: projetoId },
+      select: { descricaoArquivos: true },
+    });
+
+    if (!projeto) {
+      throw new NotFoundException('Projeto não encontrado');
+    }
+
+    const existentes = Array.isArray(projeto.descricaoArquivos)
+      ? (projeto.descricaoArquivos as any[])
+      : [];
+
+    const baseUrl = '/uploads/projects';
+    const novos = (files || []).map((file) => ({
+      originalName: file.originalname,
+      url: `${baseUrl}/${file.filename}`,
+      mimeType: file.mimetype,
+      size: file.size,
+    }));
+
+    const atualizados = [...existentes, ...novos];
+
+    await this.prisma.projeto.update({
+      where: { id: projetoId },
+      data: { descricaoArquivos: atualizados as any },
+    });
+
+    return atualizados;
+  }
+
+  /**
+   * Remove um arquivo específico da descrição do projeto (por URL)
+   * e também apaga o arquivo físico do storage, se existir.
+   */
+  async removeDescricaoArquivo(
+    projetoId: number,
+    url: string,
+  ): Promise<
+    {
+      originalName: string;
+      url: string;
+      mimeType?: string;
+      size?: number;
+    }[]
+  > {
+    if (!url) {
+      throw new BadRequestException('URL do arquivo é obrigatória');
+    }
+
+    const projeto = await this.prisma.projeto.findUnique({
+      where: { id: projetoId },
+      select: { descricaoArquivos: true },
+    });
+
+    if (!projeto) {
+      throw new NotFoundException('Projeto não encontrado');
+    }
+
+    const existentes = Array.isArray(projeto.descricaoArquivos)
+      ? (projeto.descricaoArquivos as any[])
+      : [];
+
+    const atualizados = existentes.filter(
+      (file) => file && typeof file.url === 'string' && file.url !== url,
+    );
+
+    await this.prisma.projeto.update({
+      where: { id: projetoId },
+      data: { descricaoArquivos: atualizados as any },
+    });
+
+    await this.deleteProjectFilesFromStorage([url]);
+
+    return atualizados;
+  }
+
+  /**
+   * Apaga arquivos físicos do diretório de uploads de projetos,
+   * usado ao remover anexos da descrição.
+   */
+  private async deleteProjectFilesFromStorage(urls: string[]): Promise<void> {
+    if (!urls || !Array.isArray(urls)) {
+      return;
+    }
+
+    for (const url of urls) {
+      if (!url || typeof url !== 'string') continue;
+      if (!url.startsWith('/uploads/projects/')) continue;
+
+      const relativePath = url.replace(/^\/+/, '');
+      const absolutePath = join(process.cwd(), relativePath);
+
+      try {
+        await fs.promises.stat(absolutePath);
+      } catch {
+        // Arquivo não existe mais, seguir em frente
+        continue;
+      }
+
+      try {
+        await fs.promises.unlink(absolutePath);
+      } catch {
+        // Falha ao remover arquivo não deve quebrar a requisição
+      }
+    }
   }
 }

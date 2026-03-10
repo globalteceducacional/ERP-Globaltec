@@ -21,6 +21,9 @@ interface Projeto {
   id: number;
   nome: string;
   resumo?: string | null;
+  objetivo?: string | null;
+  descricaoLonga?: string | null;
+  descricaoArquivos?: { originalName: string; url: string; mimeType?: string; size?: number }[] | null;
   status: string;
   supervisor?: { nome: string } | null;
   progress?: number;
@@ -736,7 +739,40 @@ export default function MyTasks() {
                           )}
                         </div>
                         {projeto.resumo && (
-                          <p className="text-white/60 text-sm mb-3 line-clamp-2">{projeto.resumo}</p>
+                          <p className="text-white/60 text-sm mb-1 line-clamp-2">{projeto.resumo}</p>
+                        )}
+                        {projeto.descricaoLonga && projeto.descricaoLonga.trim().length > 0 && (
+                          <p className="text-white/50 text-xs mb-3 line-clamp-2">
+                            {projeto.descricaoLonga}
+                          </p>
+                        )}
+                        {Array.isArray(projeto.descricaoArquivos) && projeto.descricaoArquivos.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-2 mb-3">
+                            {projeto.descricaoArquivos.slice(0, 3).map((file, index) => {
+                              const isImage = file.mimeType?.startsWith('image/');
+                              const displayName = file.originalName || file.url;
+                              const fileUrl = resolveFileUrl(file.url);
+                              return (
+                                <a
+                                  key={`${file.url}-${index}`}
+                                  href={fileUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center px-2 py-0.5 rounded border border-white/15 text-[11px] text-white/80 hover:border-primary hover:text-primary transition-colors"
+                                  onClick={(e) => e.stopPropagation()}
+                                  title={displayName}
+                                >
+                                  {isImage ? '🖼️' : '📎'}{' '}
+                                  <span className="max-w-[8rem] truncate">{displayName}</span>
+                                </a>
+                              );
+                            })}
+                            {projeto.descricaoArquivos.length > 3 && (
+                              <span className="text-[11px] text-white/50">
+                                +{projeto.descricaoArquivos.length - 3} arquivo(s)
+                              </span>
+                            )}
+                          </div>
                         )}
                         {/* Etapas: total + pills por status (pendente = não iniciada; em andamento; em análise) */}
                         {hasEtapas && (

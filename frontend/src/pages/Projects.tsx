@@ -1,8 +1,8 @@
-import { useEffect, useState, FormEvent, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState, FormEvent, useRef, useMemo, ChangeEvent } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import * as XLSX from 'xlsx-js-style';
 import { api } from '../services/api';
-import { Projeto, ChecklistItem } from '../types';
+import { Projeto, ChecklistItem, ProjetoArquivo } from '../types';
 import { btn } from '../utils/buttonStyles';
 import { DataTable, DataTableColumn } from '../components/DataTable';
 import { toast, formatApiError } from '../utils/toast';
@@ -22,10 +22,12 @@ interface CreateProjectForm {
   supervisorId?: number;
   responsavelIds: number[];
   status?: 'EM_ANDAMENTO' | 'FINALIZADO';
+  descricaoLonga?: string;
 }
 
 export default function Projects() {
   const navigate = useNavigate();
+  const location = useLocation();
   const [projects, setProjects] = useState<Projeto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,6 +48,7 @@ export default function Projects() {
     supervisorId: undefined,
     responsavelIds: [],
     status: 'EM_ANDAMENTO',
+    descricaoLonga: '',
   });
 
   const statusOptions = [
@@ -71,8 +74,10 @@ export default function Projects() {
   // Validação de formulário
   const validation = useFormValidation<CreateProjectForm>(validationRules);
 
-  async function loadProjects() {
-    setLoading(true);
+  async function loadProjects(showSpinner = true) {
+    if (showSpinner) {
+      setLoading(true);
+    }
     try {
       setError(null);
       const { data } = await api.get<Projeto[]>('/projects');
@@ -80,7 +85,9 @@ export default function Projects() {
     } catch (err: any) {
       setError(err.response?.data?.message ?? 'Falha ao carregar projetos');
     } finally {
-      setLoading(false);
+      if (showSpinner) {
+        setLoading(false);
+      }
     }
   }
 
@@ -260,17 +267,34 @@ export default function Projects() {
   }
 
   useEffect(() => {
-    loadProjects();
+    loadProjects(true);
     loadUsers();
 
     // Recarregar projetos quando a página ganha foco novamente
     const handleFocus = () => {
-      loadProjects();
+      loadProjects(false);
     };
 
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, []);
+
+  useEffect(() => {
+    // Se vier com ?edit=ID na URL, abrir automaticamente o modal de edição desse projeto
+    const params = new URLSearchParams(location.search);
+    const editId = params.get('edit');
+    if (!editId) return;
+
+    const idNumber = Number(editId);
+    if (!Number.isFinite(idNumber) || idNumber <= 0) return;
+
+    const project = projects.find((p) => p.id === idNumber);
+    if (project) {
+      openEditModal(project);
+      // Limpar o parâmetro da URL para evitar reabrir ao voltar
+      navigate('/projects', { replace: true });
+    }
+  }, [location.search, projects]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -293,9 +317,18 @@ export default function Projects() {
 
         if (typeof form.resumo === 'string') payload.resumo = form.resumo?.trim() ?? '';
         if (typeof form.objetivo === 'string') payload.objetivo = form.objetivo?.trim() ?? '';
+        if (typeof form.descricaoLonga === 'string') {
+          payload.descricaoLonga = form.descricaoLonga.trim() || null;
+        }
+        // descricaoArquivos agora é gerenciado pelos endpoints específicos
         if (typeof form.valorTotal === 'number') payload.valorTotal = form.valorTotal;
         if (typeof form.supervisorId !== 'undefined') payload.supervisorId = form.supervisorId;
         if (form.status) payload.status = form.status;
+
+        // eslint-disable-next-line no-console
+        console.log('[Projects] handleSubmit edit payload', {
+          id: editingProject.id,
+        });
 
         await api.patch(`/projects/${editingProject.id}`, payload);
 
@@ -310,11 +343,18 @@ export default function Projects() {
 
         if (form.resumo && form.resumo.trim().length > 0) payload.resumo = form.resumo.trim();
         if (form.objetivo && form.objetivo.trim().length > 0) payload.objetivo = form.objetivo.trim();
+        if (form.descricaoLonga && form.descricaoLonga.trim().length > 0) {
+          payload.descricaoLonga = form.descricaoLonga.trim();
+        }
+        // descricaoArquivos será anexado depois, na edição
         if (typeof form.valorTotal === 'number') payload.valorTotal = form.valorTotal;
         if (form.supervisorId) payload.supervisorId = form.supervisorId;
         if (form.responsavelIds.length > 0) {
           payload.responsavelIds = form.responsavelIds;
         }
+
+        // eslint-disable-next-line no-console
+        console.log('[Projects] handleSubmit create payload', {});
 
         await api.post('/projects', payload);
       }
@@ -329,6 +369,7 @@ export default function Projects() {
         supervisorId: undefined,
         responsavelIds: [],
         status: 'EM_ANDAMENTO',
+        descricaoLonga: '',
       });
       validation.reset();
       await loadProjects();
@@ -352,6 +393,7 @@ export default function Projects() {
       supervisorId: undefined,
       responsavelIds: [],
       status: 'EM_ANDAMENTO',
+      descricaoLonga: '',
     });
     validation.reset();
     setModalError(null);
@@ -368,6 +410,7 @@ export default function Projects() {
       supervisorId: project.supervisor?.id ?? undefined,
       responsavelIds: project.responsaveis ? project.responsaveis.map((r) => r.usuario.id) : [],
       status: project.status,
+      descricaoLonga: project.descricaoLonga ?? '',
     });
     validation.reset();
     setModalError(null);
@@ -675,6 +718,20 @@ export default function Projects() {
                 value={form.objetivo}
                 onChange={(e) => setForm((prev) => ({ ...prev, objetivo: e.target.value }))}
                   className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 h-20 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm text-white/70 mb-1">
+                  Descrição detalhada do projeto
+                </label>
+                <textarea
+                  value={form.descricaoLonga}
+                  onChange={(e) =>
+                    setForm((prev) => ({ ...prev, descricaoLonga: e.target.value }))
+                  }
+                  placeholder="Descreva o contexto geral, escopo, observações importantes do projeto..."
+                  className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 h-24 focus:outline-none focus:ring-2 focus:ring-primary text-sm"
                 />
               </div>
 
