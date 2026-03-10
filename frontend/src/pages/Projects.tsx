@@ -50,6 +50,10 @@ export default function Projects() {
     status: 'EM_ANDAMENTO',
     descricaoLonga: '',
   });
+  const [pendingDescricaoFiles, setPendingDescricaoFiles] = useState<File[]>([]);
+  const [projectDescricaoArquivos, setProjectDescricaoArquivos] = useState<ProjetoArquivo[]>([]);
+  const [projectDescricaoSaving, setProjectDescricaoSaving] = useState(false);
+  const [projectDescricaoError, setProjectDescricaoError] = useState<string | null>(null);
 
   const statusOptions = [
     { value: 'EM_ANDAMENTO', label: 'Em Andamento' },
@@ -73,6 +77,59 @@ export default function Projects() {
 
   // Validação de formulário
   const validation = useFormValidation<CreateProjectForm>(validationRules);
+  const MAX_PROJECT_FILES = 10;
+  const MAX_PROJECT_FILE_SIZE_MB = 20;
+  const MAX_PROJECT_FILE_SIZE_BYTES = MAX_PROJECT_FILE_SIZE_MB * 1024 * 1024;
+
+  const resolveFileUrl = (url: string | null | undefined) => {
+    if (!url) return '';
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+      return url;
+    }
+
+    const base = api.defaults.baseURL || '';
+    try {
+      const baseUrl = new URL(base, window.location.origin);
+      const origin = baseUrl.origin;
+      const path = url.startsWith('/') ? url : `/${url}`;
+      return `${origin}${path}`;
+    } catch {
+      return url;
+    }
+  };
+
+  const normalizeDescricaoArquivos = (arquivos: ProjetoArquivo[] | null | undefined): ProjetoArquivo[] =>
+    Array.isArray(arquivos) ? arquivos : [];
+
+  const validateIncomingFiles = (incomingFiles: File[], currentCount: number): string | null => {
+    if (currentCount + incomingFiles.length > MAX_PROJECT_FILES) {
+      return `Limite de ${MAX_PROJECT_FILES} arquivos por projeto excedido.`;
+    }
+
+    const tooLarge = incomingFiles.find((file) => file.size > MAX_PROJECT_FILE_SIZE_BYTES);
+    if (tooLarge) {
+      return `O arquivo "${tooLarge.name}" excede o limite de ${MAX_PROJECT_FILE_SIZE_MB}MB.`;
+    }
+
+    return null;
+  };
+
+  async function uploadDescricaoFiles(projectId: number, files: File[]) {
+    if (!files.length) {
+      return normalizeDescricaoArquivos(projectDescricaoArquivos);
+    }
+
+    const formData = new FormData();
+    files.forEach((file) => formData.append('files', file));
+
+    const { data } = await api.post<ProjetoArquivo[]>(
+      `/projects/${projectId}/descricao-files`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    );
+
+    return normalizeDescricaoArquivos(data);
+  }
 
   async function loadProjects(showSpinner = true) {
     if (showSpinner) {
@@ -167,6 +224,19 @@ export default function Projects() {
         setCell(projetosSheet, 1, 5, responsaveisEmails);
       }
 
+      // Aba Sessões - preencher com as sessões do projeto (aba "Sessoes")
+      const sessoesSheet = wb.Sheets.Sessoes;
+      const sessoes: any[] = Array.isArray(data.sessoes) ? data.sessoes : [];
+      if (sessoesSheet && sessoes.length > 0) {
+        let row = 1; // começa na linha 2
+        for (const sessao of sessoes) {
+          setCell(sessoesSheet, row, 0, projetoNome);
+          setCell(sessoesSheet, row, 1, sessao.nome ?? '');
+          setCell(sessoesSheet, row, 2, typeof sessao.ordem === 'number' ? sessao.ordem : 0);
+          row += 1;
+        }
+      }
+
       // Aba Etapas
       const etapasSheet = wb.Sheets.Etapas;
       const etapas: any[] = Array.isArray(data.etapas) ? data.etapas : [];
@@ -180,26 +250,40 @@ export default function Projects() {
                 .join(', ')
             : '';
 
+          // Colunas da aba Etapas:
+          // 0: projetoNome
+          // 1: sessaoNome
+          // 2: nome (etapa)
+          // 3: aba
+          // 4: descricao
+          // 5: dataInicio
+          // 6: dataFim
+          // 7: valorInsumos
+          // 8: executorEmail
+          // 9: responsavelEmail
+          // 10: integrantesEmails
+
           setCell(etapasSheet, row, 0, projetoNome);
-          setCell(etapasSheet, row, 1, etapa.nome ?? '');
-          setCell(etapasSheet, row, 2, etapa.aba ?? '');
-          setCell(etapasSheet, row, 3, etapa.descricao ?? '');
+          setCell(etapasSheet, row, 1, etapa.sessao?.nome ?? '');
+          setCell(etapasSheet, row, 2, etapa.nome ?? '');
+          setCell(etapasSheet, row, 3, etapa.aba ?? '');
+          setCell(etapasSheet, row, 4, etapa.descricao ?? '');
           setCell(
             etapasSheet,
             row,
-            4,
+            5,
             etapa.dataInicio ? String(etapa.dataInicio).slice(0, 10) : '',
           );
           setCell(
             etapasSheet,
             row,
-            5,
+            6,
             etapa.dataFim ? String(etapa.dataFim).slice(0, 10) : '',
           );
-          setCell(etapasSheet, row, 6, etapa.valorInsumos ?? 0);
-          setCell(etapasSheet, row, 7, etapa.executor?.email ?? '');
-          setCell(etapasSheet, row, 8, etapa.responsavel?.email ?? '');
-          setCell(etapasSheet, row, 9, integrantesEmails);
+          setCell(etapasSheet, row, 7, etapa.valorInsumos ?? 0);
+          setCell(etapasSheet, row, 8, etapa.executor?.email ?? '');
+          setCell(etapasSheet, row, 9, etapa.responsavel?.email ?? '');
+          setCell(etapasSheet, row, 10, integrantesEmails);
           row += 1;
         }
       }
@@ -301,6 +385,7 @@ export default function Projects() {
     setSubmitting(true);
     setModalError(null);
     setError(null);
+    setProjectDescricaoError(null);
 
     // Validar todos os campos
     if (!validation.validateAll(form)) {
@@ -325,11 +410,6 @@ export default function Projects() {
         if (typeof form.supervisorId !== 'undefined') payload.supervisorId = form.supervisorId;
         if (form.status) payload.status = form.status;
 
-        // eslint-disable-next-line no-console
-        console.log('[Projects] handleSubmit edit payload', {
-          id: editingProject.id,
-        });
-
         await api.patch(`/projects/${editingProject.id}`, payload);
 
         // Sempre atualizar responsáveis, mesmo se o array estiver vazio (para remover todos)
@@ -353,14 +433,18 @@ export default function Projects() {
           payload.responsavelIds = form.responsavelIds;
         }
 
-        // eslint-disable-next-line no-console
-        console.log('[Projects] handleSubmit create payload', {});
-
-        await api.post('/projects', payload);
+        const { data: createdProject } = await api.post<Projeto>('/projects', payload);
+        if (pendingDescricaoFiles.length > 0) {
+          const uploaded = await uploadDescricaoFiles(createdProject.id, pendingDescricaoFiles);
+          setProjectDescricaoArquivos(uploaded);
+        }
       }
 
       setShowModal(false);
       setEditingProject(null);
+      setPendingDescricaoFiles([]);
+      setProjectDescricaoArquivos([]);
+      setProjectDescricaoError(null);
       setForm({
         nome: '',
         resumo: '',
@@ -397,6 +481,9 @@ export default function Projects() {
     });
     validation.reset();
     setModalError(null);
+    setPendingDescricaoFiles([]);
+    setProjectDescricaoArquivos([]);
+    setProjectDescricaoError(null);
     setShowModal(true);
   }
 
@@ -414,6 +501,9 @@ export default function Projects() {
     });
     validation.reset();
     setModalError(null);
+    setPendingDescricaoFiles([]);
+    setProjectDescricaoArquivos(normalizeDescricaoArquivos(project.descricaoArquivos));
+    setProjectDescricaoError(null);
     setShowModal(true);
   }
 
@@ -670,6 +760,9 @@ export default function Projects() {
                   setError(null);
                   setModalError(null);
                   setEditingProject(null);
+                  setPendingDescricaoFiles([]);
+                  setProjectDescricaoArquivos([]);
+                  setProjectDescricaoError(null);
                 }}
                 className="text-white/50 hover:text-white transition-colors"
               >
@@ -733,6 +826,150 @@ export default function Projects() {
                   placeholder="Descreva o contexto geral, escopo, observações importantes do projeto..."
                   className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 h-24 focus:outline-none focus:ring-2 focus:ring-primary text-sm"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm text-white/70 mb-1">
+                  Arquivos e imagens da descrição
+                </label>
+                <input
+                  type="file"
+                  multiple
+                  onChange={async (e: ChangeEvent<HTMLInputElement>) => {
+                    const files = Array.from(e.target.files || []);
+                    if (!files.length) return;
+
+                    setProjectDescricaoError(null);
+                    if (editingProject) {
+                      const validationError = validateIncomingFiles(
+                        files,
+                        projectDescricaoArquivos.length,
+                      );
+                      if (validationError) {
+                        setProjectDescricaoError(validationError);
+                        e.target.value = '';
+                        return;
+                      }
+
+                      try {
+                        setProjectDescricaoSaving(true);
+                        const uploaded = await uploadDescricaoFiles(editingProject.id, files);
+                        setProjectDescricaoArquivos(uploaded);
+                        toast.success('Arquivos anexados ao projeto.');
+                      } catch (err: any) {
+                        const message = formatApiError(err);
+                        setProjectDescricaoError(message);
+                        toast.error(message);
+                      } finally {
+                        setProjectDescricaoSaving(false);
+                        e.target.value = '';
+                      }
+                      return;
+                    }
+
+                    const validationError = validateIncomingFiles(files, pendingDescricaoFiles.length);
+                    if (validationError) {
+                      setProjectDescricaoError(validationError);
+                      e.target.value = '';
+                      return;
+                    }
+
+                    setPendingDescricaoFiles((prev) => [...prev, ...files]);
+                    e.target.value = '';
+                  }}
+                  disabled={projectDescricaoSaving || submitting}
+                  className="mt-1 block w-full text-sm text-white/80 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary/80 file:text-white hover:file:bg-primary transition-colors cursor-pointer"
+                />
+                <p className="text-xs text-white/50 mt-2">
+                  Até {MAX_PROJECT_FILES} arquivos por projeto, com limite de {MAX_PROJECT_FILE_SIZE_MB}MB por arquivo.
+                </p>
+
+                {editingProject ? (
+                  <>
+                    {projectDescricaoArquivos.length > 0 ? (
+                      <div className="mt-2 space-y-2 max-h-44 overflow-y-auto bg-black/10 rounded-md p-2">
+                        {projectDescricaoArquivos.map((file, index) => (
+                          <div
+                            key={`${file.url}-${index}`}
+                            className="flex items-center justify-between gap-3 text-xs text-white/80"
+                          >
+                            <a
+                              href={resolveFileUrl(file.url)}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="truncate hover:text-primary transition-colors"
+                              title={file.originalName || file.url}
+                            >
+                              {file.originalName || file.url}
+                            </a>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  setProjectDescricaoSaving(true);
+                                  const { data } = await api.delete<ProjetoArquivo[]>(
+                                    `/projects/${editingProject.id}/descricao-files`,
+                                    { data: { url: file.url } },
+                                  );
+                                  setProjectDescricaoArquivos(normalizeDescricaoArquivos(data));
+                                } catch (err: any) {
+                                  const message = formatApiError(err);
+                                  setProjectDescricaoError(message);
+                                  toast.error(message);
+                                } finally {
+                                  setProjectDescricaoSaving(false);
+                                }
+                              }}
+                              className="inline-flex items-center px-2 py-0.5 rounded border border-danger/60 text-[11px] text-danger hover:bg-danger/10 transition-colors"
+                              disabled={projectDescricaoSaving || submitting}
+                            >
+                              Remover
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-white/50 mt-2">Nenhum arquivo anexado ainda.</p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {pendingDescricaoFiles.length > 0 ? (
+                      <div className="mt-2 space-y-2 max-h-44 overflow-y-auto bg-black/10 rounded-md p-2">
+                        {pendingDescricaoFiles.map((file, index) => (
+                          <div
+                            key={`${file.name}-${file.lastModified}-${index}`}
+                            className="flex items-center justify-between gap-3 text-xs text-white/80"
+                          >
+                            <span className="truncate" title={file.name}>
+                              {file.name}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPendingDescricaoFiles((prev) =>
+                                  prev.filter((_, fileIndex) => fileIndex !== index),
+                                )
+                              }
+                              className="inline-flex items-center px-2 py-0.5 rounded border border-danger/60 text-[11px] text-danger hover:bg-danger/10 transition-colors"
+                              disabled={submitting}
+                            >
+                              Remover
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-white/50 mt-2">
+                        Os arquivos selecionados serao enviados automaticamente apos criar o projeto.
+                      </p>
+                    )}
+                  </>
+                )}
+
+                {projectDescricaoError && (
+                  <p className="text-xs text-danger mt-2">{projectDescricaoError}</p>
+                )}
               </div>
 
               <div>
@@ -910,6 +1147,9 @@ export default function Projects() {
                     setError(null);
                     setModalError(null);
                     setEditingProject(null);
+                  setPendingDescricaoFiles([]);
+                  setProjectDescricaoArquivos([]);
+                  setProjectDescricaoError(null);
                   }}
                   className={btn.secondaryLg}
                   disabled={submitting}

@@ -134,16 +134,6 @@ export class ProjectsController {
   @Patch(':id')
   @Permissions('projetos:editar')
   update(@Param('id', ParseIntPipe) id: number, @Body() body: UpdateProjectDto) {
-    // Debug: verificar se descricaoArquivos está chegando no controller
-    // eslint-disable-next-line no-console
-    console.log('[ProjectsController] update body.descricaoArquivos', {
-      id,
-      hasDescricaoArquivos: !!body.descricaoArquivos,
-      isArray: Array.isArray(body.descricaoArquivos),
-      length: Array.isArray(body.descricaoArquivos)
-        ? body.descricaoArquivos.length
-        : null,
-    });
     return this.projectsService.update(id, body);
   }
 
@@ -257,6 +247,10 @@ export class ProjectsController {
     @Param('id', ParseIntPipe) id: number,
     @UploadedFiles() files: Express.Multer.File[],
   ) {
+    if (!files || files.length === 0) {
+      throw new BadRequestException('Nenhum arquivo enviado');
+    }
+
     return this.projectsService.addDescricaoArquivos(id, files);
   }
 

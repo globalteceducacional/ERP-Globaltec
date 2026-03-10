@@ -197,27 +197,6 @@ export class ProjectsService {
       throw new NotFoundException('Projeto não encontrado');
     }
 
-    // Debug: conferir o que está salvo em descricaoArquivos
-    // eslint-disable-next-line no-console
-    console.log('[ProjectsService] findOne descricaoArquivos', {
-      id,
-      hasDescricaoArquivos: Object.prototype.hasOwnProperty.call(
-        project,
-        'descricaoArquivos',
-      ),
-      isArray: Array.isArray(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (project as any).descricaoArquivos,
-      ),
-      length: Array.isArray(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (project as any).descricaoArquivos,
-      )
-        ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (project as any).descricaoArquivos.length
-        : null,
-    });
-
     // Calcular valorInsumos como soma das etapas
     const valorInsumosCalculado = project.etapas.reduce((sum, etapa) => {
       return sum + (etapa.valorInsumos || 0);

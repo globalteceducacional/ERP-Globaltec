@@ -13,7 +13,7 @@ interface Category {
   dataCriacao: string;
   dataAtualizacao: string;
 }
-
+  
 interface CreateCategoryForm {
   nome: string;
   descricao: string;

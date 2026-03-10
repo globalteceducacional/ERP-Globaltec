@@ -474,6 +474,65 @@ export default function ProjectDetails() {
   const [sessaoToDelete, setSessaoToDelete] = useState<Sessao | null>(null);
   const [sessaoModalLoading, setSessaoModalLoading] = useState(false);
 
+  const LinkifiedText = ({ text, className }: { text: string; className?: string }) => {
+    if (!text) return null;
+
+    const urlRegex =
+      /((https?:\/\/|www\.)[^\s<]+)|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+
+    const parts: Array<{ type: 'text' | 'link'; value: string }> = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    // eslint-disable-next-line no-cond-assign
+    while ((match = urlRegex.exec(text)) !== null) {
+      const matchText = match[0];
+      const index = match.index;
+
+      if (index > lastIndex) {
+        parts.push({ type: 'text', value: text.slice(lastIndex, index) });
+      }
+
+      parts.push({ type: 'link', value: matchText });
+      lastIndex = index + matchText.length;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push({ type: 'text', value: text.slice(lastIndex) });
+    }
+
+    return (
+      <span className={className}>
+        {parts.map((part, index) => {
+          if (part.type === 'link') {
+            const raw = part.value;
+            const isEmail =
+              raw.includes('@') && !raw.startsWith('http') && !raw.startsWith('www.');
+            const href = isEmail
+              ? `mailto:${raw}`
+              : raw.startsWith('http')
+                ? raw
+                : `http://${raw}`;
+
+            return (
+              <a
+                key={`${raw}-${index}`}
+                href={href}
+                target={isEmail ? '_self' : '_blank'}
+                rel={isEmail ? undefined : 'noreferrer'}
+                className="text-primary hover:underline break-words"
+              >
+                {raw}
+              </a>
+            );
+          }
+
+          return <span key={`text-${index}`}>{part.value}</span>;
+        })}
+      </span>
+    );
+  };
+
   const resolveFileUrl = (url: string | null | undefined) => {
     if (!url) return '';
     if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
@@ -1338,7 +1397,11 @@ export default function ProjectDetails() {
               <span>Descrição do Projeto</span>
             </label>
             <p className="mt-1 text-white/90 whitespace-pre-wrap break-words">
-              {project.descricaoLonga?.trim() || '—'}
+              {project.descricaoLonga?.trim() ? (
+                <LinkifiedText text={project.descricaoLonga.trim()} />
+              ) : (
+                '—'
+              )}
             </p>
             {Array.isArray(project.descricaoArquivos) && project.descricaoArquivos.length > 0 && (
               <div className="mt-3 space-y-2">
@@ -1761,29 +1824,31 @@ export default function ProjectDetails() {
                   className="bg-slate-950/80 border border-white/10 rounded-xl p-4 sm:p-5 shadow-xl shadow-black/40"
                 >
                   <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
-                    <div
-                      className="flex-1 flex items-start gap-2 cursor-pointer min-w-0"
-                      onClick={() => toggleEtapa(etapa.id)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => e.key === 'Enter' && toggleEtapa(etapa.id)}
-                      aria-expanded={expandedEtapas.has(etapa.id)}
-                      aria-label={expandedEtapas.has(etapa.id) ? 'Retrair etapa' : 'Expandir etapa'}
-                    >
-                      <span
-                        className="shrink-0 text-white/70 mt-0.5 inline-flex transition-transform duration-300 ease-out"
+                    <div className="flex-1 flex items-start gap-2 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => toggleEtapa(etapa.id)}
+                        onKeyDown={(e) => e.key === 'Enter' && toggleEtapa(etapa.id)}
+                        aria-expanded={expandedEtapas.has(etapa.id)}
+                        aria-label={expandedEtapas.has(etapa.id) ? 'Retrair etapa' : 'Expandir etapa'}
+                        className="shrink-0 text-white/70 mt-0.5 inline-flex transition-transform duration-300 ease-out focus:outline-none"
                         style={{ transform: expandedEtapas.has(etapa.id) ? 'rotate(0deg)' : 'rotate(-90deg)' }}
-                        aria-hidden
                       >
                         ▼
-                      </span>
+                      </button>
                       <div className="min-w-0">
                         <h4 className="font-semibold text-white/90">
                           {etapaIndex + 1}. {etapa.nome}
                         </h4>
                         {etapa.descricao && (
-                          <p className={`text-sm mt-1 ${expandedEtapas.has(etapa.id) ? 'text-white/70' : 'text-white/50 line-clamp-1'}`}>
-                            {etapa.descricao}
+                          <p
+                            className={`text-sm mt-1 ${
+                              expandedEtapas.has(etapa.id)
+                                ? 'text-white/70'
+                                : 'text-white/50 line-clamp-1'
+                            }`}
+                          >
+                            <LinkifiedText text={etapa.descricao} />
                           </p>
                         )}
                       </div>

@@ -132,6 +132,65 @@ export default function MyTasks() {
     const base = (api.defaults.baseURL || '').replace(/\/$/, '');
     return `${base}${url}`;
   };
+
+  const LinkifiedText = ({ text, className }: { text: string; className?: string }) => {
+    if (!text) return null;
+
+    const urlRegex =
+      /((https?:\/\/|www\.)[^\s<]+)|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
+
+    const parts: Array<{ type: 'text' | 'link'; value: string }> = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    // eslint-disable-next-line no-cond-assign
+    while ((match = urlRegex.exec(text)) !== null) {
+      const matchText = match[0];
+      const index = match.index;
+
+      if (index > lastIndex) {
+        parts.push({ type: 'text', value: text.slice(lastIndex, index) });
+      }
+
+      parts.push({ type: 'link', value: matchText });
+      lastIndex = index + matchText.length;
+    }
+
+    if (lastIndex < text.length) {
+      parts.push({ type: 'text', value: text.slice(lastIndex) });
+    }
+
+    return (
+      <span className={className}>
+        {parts.map((part, index) => {
+          if (part.type === 'link') {
+            const raw = part.value;
+            const isEmail =
+              raw.includes('@') && !raw.startsWith('http') && !raw.startsWith('www.');
+            const href = isEmail
+              ? `mailto:${raw}`
+              : raw.startsWith('http')
+                ? raw
+                : `http://${raw}`;
+
+            return (
+              <a
+                key={`${raw}-${index}`}
+                href={href}
+                target={isEmail ? '_self' : '_blank'}
+                rel={isEmail ? undefined : 'noreferrer'}
+                className="text-primary hover:underline break-words"
+              >
+                {raw}
+              </a>
+            );
+          }
+
+          return <span key={`text-${index}`}>{part.value}</span>;
+        })}
+      </span>
+    );
+  };
   
   // Estado para controlar expansão de detalhes dos itens do checklist
   // Chave: "etapaId-itemIndex" ou "etapaId-itemIndex-subIndex" para subitens
@@ -743,35 +802,40 @@ export default function MyTasks() {
                         )}
                         {projeto.descricaoLonga && projeto.descricaoLonga.trim().length > 0 && (
                           <p className="text-white/50 text-xs mb-3 line-clamp-2">
-                            {projeto.descricaoLonga}
+                            <LinkifiedText text={projeto.descricaoLonga} />
                           </p>
                         )}
                         {Array.isArray(projeto.descricaoArquivos) && projeto.descricaoArquivos.length > 0 && (
-                          <div className="flex flex-wrap items-center gap-2 mb-3">
-                            {projeto.descricaoArquivos.slice(0, 3).map((file, index) => {
-                              const isImage = file.mimeType?.startsWith('image/');
-                              const displayName = file.originalName || file.url;
-                              const fileUrl = resolveFileUrl(file.url);
-                              return (
-                                <a
-                                  key={`${file.url}-${index}`}
-                                  href={fileUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center px-2 py-0.5 rounded border border-white/15 text-[11px] text-white/80 hover:border-primary hover:text-primary transition-colors"
-                                  onClick={(e) => e.stopPropagation()}
-                                  title={displayName}
-                                >
-                                  {isImage ? '🖼️' : '📎'}{' '}
-                                  <span className="max-w-[8rem] truncate">{displayName}</span>
-                                </a>
-                              );
-                            })}
-                            {projeto.descricaoArquivos.length > 3 && (
-                              <span className="text-[11px] text-white/50">
-                                +{projeto.descricaoArquivos.length - 3} arquivo(s)
-                              </span>
-                            )}
+                          <div className="mb-3 space-y-1">
+                            <p className="text-[11px] text-white/50">
+                              Arquivos do projeto
+                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {projeto.descricaoArquivos.slice(0, 3).map((file, index) => {
+                                const isImage = file.mimeType?.startsWith('image/');
+                                const displayName = file.originalName || file.url;
+                                const fileUrl = resolveFileUrl(file.url);
+                                return (
+                                  <a
+                                    key={`${file.url}-${index}`}
+                                    href={fileUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/40 border border-white/15 text-[11px] text-white/85 hover:border-primary hover:text-primary hover:bg-black/60 transition-colors"
+                                    onClick={(e) => e.stopPropagation()}
+                                    title={displayName}
+                                  >
+                                    <span aria-hidden>{isImage ? '🖼️' : '📎'}</span>
+                                    <span className="max-w-[9rem] truncate">{displayName}</span>
+                                  </a>
+                                );
+                              })}
+                              {projeto.descricaoArquivos.length > 3 && (
+                                <span className="text-[11px] text-white/60">
+                                  +{projeto.descricaoArquivos.length - 3} arquivo(s)
+                                </span>
+                              )}
+                            </div>
                           </div>
                         )}
                         {/* Etapas: total + pills por status (pendente = não iniciada; em andamento; em análise) */}
@@ -975,7 +1039,9 @@ export default function MyTasks() {
                               {etapaIndex + 1}. {etapa.nome}
                             </h4>
                             {etapa.descricao && (
-                              <p className="text-sm text-white/70 mt-1">{etapa.descricao}</p>
+                              <p className="text-sm text-white/70 mt-1">
+                                <LinkifiedText text={etapa.descricao} />
+                              </p>
                             )}
                           </div>
                           <div className="flex flex-wrap items-center gap-2 sm:flex-col sm:items-end sm:flex-nowrap">
