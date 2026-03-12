@@ -473,6 +473,15 @@ export default function ProjectDetails() {
   const [showDeleteSessaoModal, setShowDeleteSessaoModal] = useState(false);
   const [sessaoToDelete, setSessaoToDelete] = useState<Sessao | null>(null);
   const [sessaoModalLoading, setSessaoModalLoading] = useState(false);
+  const [showFullResumo, setShowFullResumo] = useState(false);
+  const [showFullObjetivo, setShowFullObjetivo] = useState(false);
+  const [showFullDescricao, setShowFullDescricao] = useState(false);
+
+  const getTruncatedText = (text: string, maxChars: number, expanded: boolean): string => {
+    const trimmed = text.trim();
+    if (expanded || trimmed.length <= maxChars) return trimmed;
+    return `${trimmed.slice(0, maxChars).trimEnd()}...`;
+  };
 
   const LinkifiedText = ({ text, className }: { text: string; className?: string }) => {
     if (!text) return null;
@@ -1384,21 +1393,68 @@ export default function ProjectDetails() {
 
           <div>
             <label className="text-sm text-white/70">Resumo</label>
-            <p className="mt-1 text-white/90">{project.resumo || '—'}</p>
+            <p className="mt-1 text-white/90 text-sm whitespace-pre-wrap break-words">
+              {project.resumo && project.resumo.trim().length > 0 ? (
+                <>
+                  {getTruncatedText(project.resumo, 180, showFullResumo)}
+                  {project.resumo.trim().length > 180 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowFullResumo((prev) => !prev)}
+                      className="ml-1 text-primary text-xs hover:underline"
+                    >
+                      {showFullResumo ? 'ver menos' : 'ver mais'}
+                    </button>
+                  )}
+                </>
+              ) : (
+                '—'
+              )}
+            </p>
           </div>
 
           <div>
             <label className="text-sm text-white/70">Objetivo</label>
-            <p className="mt-1 text-white/90">{project.objetivo || '—'}</p>
+            <p className="mt-1 text-white/90 text-sm whitespace-pre-wrap break-words">
+              {project.objetivo && project.objetivo.trim().length > 0 ? (
+                <>
+                  {getTruncatedText(project.objetivo, 220, showFullObjetivo)}
+                  {project.objetivo.trim().length > 220 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowFullObjetivo((prev) => !prev)}
+                      className="ml-1 text-primary text-xs hover:underline"
+                    >
+                      {showFullObjetivo ? 'ver menos' : 'ver mais'}
+                    </button>
+                  )}
+                </>
+              ) : (
+                '—'
+              )}
+            </p>
           </div>
 
           <div>
             <label className="text-sm text-white/70 flex items-center justify-between">
               <span>Descrição do Projeto</span>
             </label>
-            <p className="mt-1 text-white/90 whitespace-pre-wrap break-words">
-              {project.descricaoLonga?.trim() ? (
-                <LinkifiedText text={project.descricaoLonga.trim()} />
+            <p className="mt-1 text-white/90 whitespace-pre-wrap break-words text-sm">
+              {project.descricaoLonga && project.descricaoLonga.trim().length > 0 ? (
+                <>
+                  <LinkifiedText
+                    text={getTruncatedText(project.descricaoLonga, 400, showFullDescricao)}
+                  />
+                  {project.descricaoLonga.trim().length > 400 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowFullDescricao((prev) => !prev)}
+                      className="ml-1 text-primary text-xs hover:underline"
+                    >
+                      {showFullDescricao ? 'ver menos' : 'ver mais'}
+                    </button>
+                  )}
+                </>
               ) : (
                 '—'
               )}
