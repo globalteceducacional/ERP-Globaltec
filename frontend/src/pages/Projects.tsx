@@ -393,6 +393,7 @@ export default function Projects() {
       return;
     }
 
+    
     try {
 
       if (editingProject) {
