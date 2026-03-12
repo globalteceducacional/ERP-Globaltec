@@ -40,6 +40,19 @@ async function main() {
     permissionMap.set(`${created.modulo}:${created.acao}`, created.id);
   }
 
+  // Garantir que o mapa de permissões contenha TODAS as permissões existentes,
+  // incluindo aquelas criadas manualmente ou por outras migrações
+  const allPermissions = await prisma.permission.findMany();
+  for (const perm of allPermissions) {
+    const key = `${perm.modulo}:${perm.acao}`;
+    if (!permissionMap.has(key)) {
+      permissionMap.set(key, perm.id);
+    }
+  }
+  const allPermissionKeys = Array.from(
+    new Set(allPermissions.map((p) => `${p.modulo}:${p.acao}`)),
+  );
+
   // Configurações de cargos e permissões
   const cargosSeed = [
     {
@@ -77,13 +90,13 @@ async function main() {
       nome: 'DIRETOR',
       descricao: 'Diretor com acesso total ao sistema',
       paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/stock', '/occurrences', '/requests', '/users', '/cargos'],
-      permissions: Array.from(permissionMap.keys()),
+      permissions: allPermissionKeys,
     },
     {
       nome: 'GM',
       descricao: 'Gerente Master com controle total do ERP',
       paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/stock', '/occurrences', '/requests', '/users', '/cargos'],
-      permissions: Array.from(permissionMap.keys()),
+      permissions: allPermissionKeys,
     },
   ];
 
