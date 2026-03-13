@@ -8,11 +8,13 @@ import {
   Post,
   UseGuards,
   ParseIntPipe,
+  Query,
 } from '@nestjs/common';
 import { CategoriesService } from './categories.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CategoriaCompraTipo } from '@prisma/client';
 
 @Controller('categories')
 @UseGuards(JwtAuthGuard)
@@ -20,13 +22,13 @@ export class CategoriesController {
   constructor(private readonly categoriesService: CategoriesService) {}
 
   @Get()
-  findAll() {
-    return this.categoriesService.findAll();
+  findAll(@Query('tipo') tipo?: CategoriaCompraTipo) {
+    return this.categoriesService.findAll(tipo);
   }
 
   @Get('all')
-  findAllIncludingInactive() {
-    return this.categoriesService.findAllIncludingInactive();
+  findAllIncludingInactive(@Query('tipo') tipo?: CategoriaCompraTipo) {
+    return this.categoriesService.findAllIncludingInactive(tipo);
   }
 
   @Get(':id')

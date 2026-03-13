@@ -12,6 +12,8 @@ import Cargos from './pages/Cargos';
 import Suppliers from './pages/Suppliers';
 import Categories from './pages/Categories';
 import NotificationsPage from './pages/NotificationsPage';
+import Curadoria from './pages/Curadoria';
+import CuradoriaBudgetDetails from './pages/CuradoriaBudgetDetails';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
 import { ToastContainer } from './components/ToastContainer';
@@ -40,6 +42,8 @@ export default function App() {
             <Route path="/projects/:id" element={<ProjectDetails />} />
             <Route path="/tasks/my" element={<MyTasks />} />
             <Route path="/stock" element={<Stock />} />
+            <Route path="/curadoria" element={<Curadoria />} />
+            <Route path="/curadoria/:id" element={<CuradoriaBudgetDetails />} />
             <Route path="/communications" element={<Communications />} />
             {/* Redirecionamento para compatibilidade com rota antiga */}
             <Route path="/requests" element={<Navigate to="/communications" replace />} />

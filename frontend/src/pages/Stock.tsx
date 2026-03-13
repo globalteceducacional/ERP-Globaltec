@@ -47,6 +47,7 @@ import {
 import { useStockData } from '../hooks/useStockData';
 import { usePurchaseFilters } from '../hooks/usePurchaseFilters';
 import { DataTable, DataTableColumn } from '../components/DataTable';
+import { FileDropInput } from '../components/FileDropInput';
 
 export default function Stock() {
   // Hook para gerenciar dados do estoque
@@ -819,8 +820,7 @@ export default function Stock() {
     }
   }
 
-  async function handleImageChange(event: React.ChangeEvent<HTMLInputElement>, setForm: (f: any) => void, form: any) {
-    const file = event.target.files?.[0];
+  async function handleImageChange(file: File | undefined, setForm: (f: any) => void, form: any) {
     if (!file) {
       return;
     }
@@ -829,7 +829,6 @@ export default function Stock() {
     const isValidType = file.type.startsWith('image/') || file.type === 'application/pdf';
     if (!isValidType) {
       setError('Por favor, selecione um arquivo de imagem ou PDF válido.');
-      event.target.value = ''; // Limpar o input
       return;
     }
 
@@ -837,7 +836,6 @@ export default function Stock() {
       const maxFileSize = 5 * 1024 * 1024; // 5MB
       if (file.size > maxFileSize) {
       setError('Arquivo muito grande. Por favor, escolha um arquivo menor que 5MB.');
-      event.target.value = ''; // Limpar o input
         return;
       }
 
@@ -877,7 +875,6 @@ export default function Stock() {
     
     reader.onerror = () => {
       setError('Erro ao ler o arquivo. Por favor, tente novamente.');
-      event.target.value = ''; // Limpar o input
     };
     
       reader.readAsDataURL(file);
@@ -2617,11 +2614,13 @@ export default function Stock() {
 
                         <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Imagem</label>
-                          <input
-                  type="file"
+                          <FileDropInput
                   accept="image/*"
-                  onChange={(e) => handleImageChange(e, setItemForm, itemForm)}
+                  onFilesSelected={(files) => {
+                    void handleImageChange(files[0], setItemForm, itemForm);
+                  }}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                  dropMessage="Solte a imagem aqui"
                 />
                 {itemForm.imagemUrl && (
                   <img src={itemForm.imagemUrl} alt="Preview" className="mt-2 w-32 h-32 object-cover rounded border border-white/20" />
@@ -3017,11 +3016,13 @@ export default function Stock() {
 
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Imagem</label>
-                <input
-                  type="file"
+                <FileDropInput
                   accept="image/*"
-                  onChange={(e) => handleImageChange(e, setItemForm, itemForm)}
+                  onFilesSelected={(files) => {
+                    void handleImageChange(files[0], setItemForm, itemForm);
+                  }}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                  dropMessage="Solte a imagem aqui"
                 />
                 {itemForm.imagemUrl && (
                   <img src={itemForm.imagemUrl} alt="Preview" className="mt-2 w-32 h-32 object-cover rounded border border-white/20" />
@@ -3189,11 +3190,13 @@ export default function Stock() {
 
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Imagem</label>
-                <input
-                  type="file"
+                <FileDropInput
                   accept="image/*"
-                  onChange={(e) => handleImageChange(e, setPurchaseForm, purchaseForm)}
+                  onFilesSelected={(files) => {
+                    void handleImageChange(files[0], setPurchaseForm, purchaseForm);
+                  }}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                  dropMessage="Solte a imagem aqui"
                 />
                 {purchaseForm.imagemUrl && (
                   <img src={purchaseForm.imagemUrl} alt="Preview" className="mt-2 w-32 h-32 object-cover rounded border border-white/20" />
@@ -3202,11 +3205,10 @@ export default function Stock() {
 
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Nota Fiscal (NF)</label>
-                <input
-                  type="file"
+                <FileDropInput
                   accept="image/*,.pdf"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
+                  onFilesSelected={(files) => {
+                    const file = files[0];
                     if (!file) return;
                     
                     const isValidType = file.type.startsWith('image/') || file.type === 'application/pdf';
@@ -3238,6 +3240,7 @@ export default function Stock() {
                     reader.readAsDataURL(file);
                   }}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                  dropMessage="Solte a NF aqui"
                 />
                 {purchaseForm.nfUrl && (
                   <div className="mt-2">
@@ -3252,11 +3255,10 @@ export default function Stock() {
 
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Comprovante de Pagamento</label>
-                <input
-                  type="file"
+                <FileDropInput
                   accept="image/*,.pdf"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
+                  onFilesSelected={(files) => {
+                    const file = files[0];
                     if (!file) return;
                     
                     const isValidType = file.type.startsWith('image/') || file.type === 'application/pdf';
@@ -3288,6 +3290,7 @@ export default function Stock() {
                     reader.readAsDataURL(file);
                   }}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                  dropMessage="Solte o comprovante aqui"
                 />
                 {purchaseForm.comprovantePagamentoUrl && (
                   <div className="mt-2">
@@ -3689,11 +3692,13 @@ export default function Stock() {
 
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Imagem</label>
-                <input
-                  type="file"
+                <FileDropInput
                   accept="image/*"
-                  onChange={(e) => handleImageChange(e, setPurchaseForm, purchaseForm)}
+                  onFilesSelected={(files) => {
+                    void handleImageChange(files[0], setPurchaseForm, purchaseForm);
+                  }}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                  dropMessage="Solte a imagem aqui"
                 />
                 {purchaseForm.imagemUrl && (
                   <img src={purchaseForm.imagemUrl} alt="Preview" className="mt-2 w-32 h-32 object-cover rounded border border-white/20" />
@@ -3708,11 +3713,10 @@ export default function Stock() {
 
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Nota Fiscal (NF)</label>
-                <input
-                  type="file"
+                <FileDropInput
                   accept="image/*,.pdf"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
+                  onFilesSelected={(files) => {
+                    const file = files[0];
                     if (!file) return;
                     const isValidType = file.type.startsWith('image/') || file.type === 'application/pdf';
                     if (!isValidType) {
@@ -3741,6 +3745,7 @@ export default function Stock() {
                     reader.readAsDataURL(file);
                   }}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                  dropMessage="Solte a NF aqui"
                 />
                 {purchaseForm.nfUrl && (
                   <div className="mt-2">
@@ -3755,11 +3760,10 @@ export default function Stock() {
 
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Comprovante de Pagamento</label>
-                <input
-                  type="file"
+                <FileDropInput
                   accept="image/*,.pdf"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
+                  onFilesSelected={(files) => {
+                    const file = files[0];
                     if (!file) return;
                     const isValidType = file.type.startsWith('image/') || file.type === 'application/pdf';
                     if (!isValidType) {
@@ -3788,6 +3792,7 @@ export default function Stock() {
                     reader.readAsDataURL(file);
                   }}
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                  dropMessage="Solte o comprovante aqui"
                 />
                 {purchaseForm.comprovantePagamentoUrl && (
                   <div className="mt-2">
@@ -4560,17 +4565,17 @@ export default function Stock() {
                   <div>
                     <label className="block text-xs font-medium text-white/90 mb-1.5">NF (imagem ou URL)</label>
                     <div className="flex flex-col gap-2">
-                      <input
-                        type="file"
+                      <FileDropInput
                         accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
+                        onFilesSelected={(files) => {
+                          const file = files[0];
                           if (!file) return;
                           const reader = new FileReader();
                           reader.onload = () => setBatchAcaminhoForm((f) => ({ ...f, nfUrl: reader.result as string }));
                           reader.readAsDataURL(file);
                         }}
                         className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white/90 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:bg-primary file:text-white"
+                        dropMessage="Solte a NF aqui"
                       />
                       <input
                         type="text"
@@ -4588,17 +4593,17 @@ export default function Stock() {
                   <div>
                     <label className="block text-xs font-medium text-white/90 mb-1.5">Comprovante de pagamento (opcional)</label>
                     <div className="flex flex-col gap-2">
-                      <input
-                        type="file"
+                      <FileDropInput
                         accept="image/*"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0];
+                        onFilesSelected={(files) => {
+                          const file = files[0];
                           if (!file) return;
                           const reader = new FileReader();
                           reader.onload = () => setBatchAcaminhoForm((f) => ({ ...f, comprovantePagamentoUrl: reader.result as string }));
                           reader.readAsDataURL(file);
                         }}
                         className="w-full bg-white/10 border border-white/30 rounded-md px-3 py-2 text-sm text-white/90 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-sm file:bg-primary file:text-white"
+                        dropMessage="Solte o comprovante aqui"
                       />
                       <input
                         type="text"

@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsBoolean, MaxLength } from 'class-validator';
+import { IsString, IsOptional, IsBoolean, MaxLength, IsEnum } from 'class-validator';
+import { CategoriaCompraTipo } from '@prisma/client';
 
 export class CreateCategoryDto {
   @IsString()
@@ -13,4 +14,8 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsBoolean()
   ativo?: boolean;
+
+  @IsOptional()
+  @IsEnum(CategoriaCompraTipo)
+  tipo?: CategoriaCompraTipo;
 }

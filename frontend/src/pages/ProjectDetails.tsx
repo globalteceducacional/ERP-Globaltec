@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/auth';
 import { ChecklistItemEntrega, ChecklistItem, ChecklistSubItem, ProjetoArquivo } from '../types';
 import { btn } from '../utils/buttonStyles';
 import { DataTable, DataTableColumn } from '../components/DataTable';
+import { FileDropInput } from '../components/FileDropInput';
 import { toast, formatApiError } from '../utils/toast';
 import {
   getStatusColor,
@@ -1190,8 +1191,7 @@ export default function ProjectDetails() {
     resetEntregaModal();
   }
 
-  async function handleEntregaImagemChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+  async function handleEntregaImagemChange(file?: File | null) {
     if (!file) {
       setEntregaImagem(null);
       setEntregaPreview(null);
@@ -2976,11 +2976,13 @@ export default function ProjectDetails() {
                 <label className="block text-sm font-medium text-white/90 mb-2">
                   Imagem (opcional)
                 </label>
-                <input
-                  type="file"
+                <FileDropInput
                   accept="image/*"
-                  onChange={handleEntregaImagemChange}
+                  onFilesSelected={(files) => {
+                    void handleEntregaImagemChange(files[0]);
+                  }}
                   className="w-full text-sm text-white/80 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                  dropMessage="Solte a imagem aqui"
                 />
                 <p className="text-xs text-white/50 mt-1">
                   Anexe uma foto que comprove o andamento ou conclusão do trabalho.
@@ -4859,11 +4861,9 @@ export default function ProjectDetails() {
                     <label className="block text-xs text-white/60 mb-1">
                       Arquivos e imagens do projeto
                     </label>
-                    <input
-                      type="file"
+                    <FileDropInput
                       multiple
-                      onChange={async (e) => {
-                        const files = Array.from(e.target.files || []);
+                      onFilesSelected={async (files) => {
                         if (!files.length) return;
                         try {
                           setProjectDescricaoSaving(true);
@@ -4884,12 +4884,10 @@ export default function ProjectDetails() {
                           toast.error(message);
                         } finally {
                           setProjectDescricaoSaving(false);
-                          if (e.target) {
-                            e.target.value = '';
-                          }
                         }
                       }}
                       className="mt-1 block w-full text-sm text-white/80 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary/80 file:text-white hover:file:bg-primary transition-colors cursor-pointer"
+                      dropMessage="Solte arquivos do projeto aqui"
                     />
                   </div>
                   {projectDescricaoArquivos.length > 0 && (

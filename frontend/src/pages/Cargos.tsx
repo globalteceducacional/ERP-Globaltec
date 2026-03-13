@@ -36,6 +36,7 @@ const todasPaginas = [
   { value: '/dashboard', label: 'Dashboard' },
   { value: '/projects', label: 'Projetos' },
   { value: '/tasks/my', label: 'Meu Trabalho' },
+  { value: '/curadoria', label: 'Curadoria' },
   { value: '/stock', label: 'Compras & Estoque' },
   { value: '/suppliers', label: 'Fornecedores' },
   { value: '/categories', label: 'Categorias' },

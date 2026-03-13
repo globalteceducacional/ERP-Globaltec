@@ -5,6 +5,7 @@ import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
 import { ChecklistItemEntrega, ChecklistItem } from '../types';
 import { toast, formatApiError } from '../utils/toast';
+import { FileDropInput } from '../components/FileDropInput';
 import {
   getStatusColor,
   getStatusLabel,
@@ -123,6 +124,13 @@ export default function MyTasks() {
   const [selectedSessoesByProject, setSelectedSessoesByProject] = useState<
     Record<number, number | null | 'all'>
   >({});
+  const [expandedResumoProjects, setExpandedResumoProjects] = useState<Set<number>>(new Set());
+  const [expandedObjetivoProjects, setExpandedObjetivoProjects] = useState<Set<number>>(
+    new Set(),
+  );
+  const [expandedDescricaoProjects, setExpandedDescricaoProjects] = useState<Set<number>>(
+    new Set(),
+  );
 
   const resolveFileUrl = (url: string | null | undefined) => {
     if (!url) return '';
@@ -131,6 +139,12 @@ export default function MyTasks() {
     }
     const base = (api.defaults.baseURL || '').replace(/\/$/, '');
     return `${base}${url}`;
+  };
+
+  const getTruncatedText = (text: string, maxChars: number, expanded: boolean): string => {
+    const trimmed = text.trim();
+    if (expanded || trimmed.length <= maxChars) return trimmed;
+    return `${trimmed.slice(0, maxChars).trimEnd()}...`;
   };
 
   const LinkifiedText = ({ text, className }: { text: string; className?: string }) => {
@@ -370,8 +384,7 @@ export default function MyTasks() {
     }
   }
 
-  async function handleEntregaImagemChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+  async function handleEntregaImagemChange(file?: File | null) {
     if (!file) {
       setEntregaImagem(null);
       setEntregaPreview(null);
@@ -429,8 +442,7 @@ export default function MyTasks() {
     setObjetivoPreviews(prev => [...prev.filter(p => p.type !== 'image'), ...newPreviews]);
   }
 
-  async function handleObjetivoFilesChange(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files || []);
+  async function handleObjetivoFilesChange(files: File[]) {
     if (files.length === 0) {
       setObjetivoImagens([]);
       setObjetivoDocumentos([]);
@@ -705,6 +717,9 @@ export default function MyTasks() {
           <div className="space-y-4">
             {projetosComEtapas.map(({ projeto, etapas, temEtapasPendentes }) => {
               const isExpanded = expandedProjects.has(projeto.id);
+              const isResumoExpanded = expandedResumoProjects.has(projeto.id);
+              const isObjetivoExpanded = expandedObjetivoProjects.has(projeto.id);
+              const isDescricaoExpanded = expandedDescricaoProjects.has(projeto.id);
 
               // Mesma lógica da etapa: só considerar etapas em que o usuário está (executor, integrante ou responsável)
               const etapasDoUsuario = etapas.filter((etapa) => {
@@ -797,12 +812,76 @@ export default function MyTasks() {
                             </span>
                           )}
                         </div>
-                        {projeto.resumo && (
-                          <p className="text-white/60 text-sm mb-1 line-clamp-2">{projeto.resumo}</p>
+                        {projeto.resumo && projeto.resumo.trim().length > 0 && (
+                          <p className="text-white/60 text-sm mb-1 whitespace-pre-wrap break-words">
+                            {getTruncatedText(projeto.resumo, 140, isResumoExpanded)}
+                            {projeto.resumo.trim().length > 140 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedResumoProjects((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(projeto.id)) next.delete(projeto.id);
+                                    else next.add(projeto.id);
+                                    return next;
+                                  });
+                                }}
+                                className="ml-1 text-primary text-xs hover:underline"
+                              >
+                                {isResumoExpanded ? 'ver menos' : 'ver mais'}
+                              </button>
+                            )}
+                          </p>
+                        )}
+                        {projeto.objetivo && projeto.objetivo.trim().length > 0 && (
+                          <p className="text-white/55 text-xs mb-1 whitespace-pre-wrap break-words">
+                            {getTruncatedText(projeto.objetivo, 180, isObjetivoExpanded)}
+                            {projeto.objetivo.trim().length > 180 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedObjetivoProjects((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(projeto.id)) next.delete(projeto.id);
+                                    else next.add(projeto.id);
+                                    return next;
+                                  });
+                                }}
+                                className="ml-1 text-primary text-xs hover:underline"
+                              >
+                                {isObjetivoExpanded ? 'ver menos' : 'ver mais'}
+                              </button>
+                            )}
+                          </p>
                         )}
                         {projeto.descricaoLonga && projeto.descricaoLonga.trim().length > 0 && (
-                          <p className="text-white/50 text-xs mb-3 line-clamp-2">
-                            <LinkifiedText text={projeto.descricaoLonga} />
+                          <p className="text-white/50 text-xs mb-3 whitespace-pre-wrap break-words">
+                            <LinkifiedText
+                              text={getTruncatedText(
+                                projeto.descricaoLonga,
+                                260,
+                                isDescricaoExpanded,
+                              )}
+                            />
+                            {projeto.descricaoLonga.trim().length > 260 && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setExpandedDescricaoProjects((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(projeto.id)) next.delete(projeto.id);
+                                    else next.add(projeto.id);
+                                    return next;
+                                  });
+                                }}
+                                className="ml-1 text-primary text-xs hover:underline"
+                              >
+                                {isDescricaoExpanded ? 'ver menos' : 'ver mais'}
+                              </button>
+                            )}
                           </p>
                         )}
                         {Array.isArray(projeto.descricaoArquivos) && projeto.descricaoArquivos.length > 0 && (
@@ -1458,11 +1537,13 @@ export default function MyTasks() {
                 <label className="block text-sm font-medium text-white/90 mb-2">
                   Imagem (opcional)
                 </label>
-                <input
-                  type="file"
+                <FileDropInput
                   accept="image/*"
-                  onChange={handleEntregaImagemChange}
+                  onFilesSelected={(files) => {
+                    void handleEntregaImagemChange(files[0]);
+                  }}
                   className="w-full text-sm text-white/80 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary/20 file:text-primary hover:file:bg-primary/30"
+                  dropMessage="Solte a imagem aqui"
                 />
                 <p className="text-xs text-white/50 mt-1">
                   Anexe uma foto que comprove o andamento ou conclusão do trabalho.
@@ -1550,11 +1631,13 @@ export default function MyTasks() {
                   <label className="block text-sm font-medium text-white/90 mb-2">
                     Arquivos (opcional) - Você pode selecionar múltiplos arquivos (até 10MB cada)
                   </label>
-                  <input 
-                    type="file" 
+                  <FileDropInput 
                     multiple
-                    onChange={handleObjetivoFilesChange} 
+                    onFilesSelected={(files) => {
+                      void handleObjetivoFilesChange(files);
+                    }} 
                     className="w-full text-sm text-white/80 file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-primary/20 file:text-primary hover:file:bg-primary/30" 
+                    dropMessage="Solte arquivos aqui"
                   />
                   <p className="text-xs text-white/50 mt-1">
                     Imagens serão exibidas como pré-visualização. Outros tipos de arquivos serão enviados normalmente (limite 10MB por arquivo).

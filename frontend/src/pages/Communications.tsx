@@ -7,6 +7,7 @@ import { FORMAS_PAGAMENTO, INITIAL_COTACAO } from '../constants/stock';
 import type { Cotacao, Supplier, Projeto } from '../types/stock';
 import { DataTable, DataTableColumn } from '../components/DataTable';
 import { btn } from '../utils/buttonStyles';
+import { FileDropInput } from '../components/FileDropInput';
 
 type RequerimentoTipo = 'SOLICITACAO' | 'APROVACAO' | 'INFORMACAO' | 'RECLAMACAO' | 'SUGESTAO' | 'COMPRA' | 'OUTRO';
 
@@ -115,7 +116,7 @@ export default function Communications() {
 
   async function loadCategories() {
     try {
-      const { data } = await api.get<Category[]>('/categories');
+      const { data } = await api.get<Category[]>('/categories?tipo=ITEM');
       setCategories(data.filter((c) => c.ativo));
     } catch (err) {
       console.error(err);
@@ -798,14 +799,14 @@ export default function Communications() {
                   </label>
                   <label className="text-sm text-white/70">
                     Imagem
-                    <input
-                      type="file"
+                    <FileDropInput
                       accept="image/*"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
+                      onFilesSelected={(files) => {
+                        const file = files[0];
                         if (file) handleFileUpload(index, 'imagemUrl', file);
                       }}
                       className="mt-1 w-full bg-neutral/80 border border-white/10 rounded-md px-3 py-2 text-white text-sm"
+                      dropMessage="Solte a imagem aqui"
                     />
                   </label>
                   <label className="text-sm text-white/70 md:col-span-2">

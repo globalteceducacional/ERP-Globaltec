@@ -5,6 +5,7 @@ import { api } from '../services/api';
 import { Projeto, ChecklistItem, ProjetoArquivo } from '../types';
 import { btn } from '../utils/buttonStyles';
 import { DataTable, DataTableColumn } from '../components/DataTable';
+import { FileDropInput } from '../components/FileDropInput';
 import { toast, formatApiError } from '../utils/toast';
 import { buildProjectsTemplateWorkbook } from '../utils/projectsExcelTemplate';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
@@ -833,11 +834,9 @@ export default function Projects() {
                 <label className="block text-sm text-white/70 mb-1">
                   Arquivos e imagens da descrição
                 </label>
-                <input
-                  type="file"
+                <FileDropInput
                   multiple
-                  onChange={async (e: ChangeEvent<HTMLInputElement>) => {
-                    const files = Array.from(e.target.files || []);
+                  onFilesSelected={async (files) => {
                     if (!files.length) return;
 
                     setProjectDescricaoError(null);
@@ -848,7 +847,6 @@ export default function Projects() {
                       );
                       if (validationError) {
                         setProjectDescricaoError(validationError);
-                        e.target.value = '';
                         return;
                       }
 
@@ -863,7 +861,6 @@ export default function Projects() {
                         toast.error(message);
                       } finally {
                         setProjectDescricaoSaving(false);
-                        e.target.value = '';
                       }
                       return;
                     }
@@ -871,15 +868,14 @@ export default function Projects() {
                     const validationError = validateIncomingFiles(files, pendingDescricaoFiles.length);
                     if (validationError) {
                       setProjectDescricaoError(validationError);
-                      e.target.value = '';
                       return;
                     }
 
                     setPendingDescricaoFiles((prev) => [...prev, ...files]);
-                    e.target.value = '';
                   }}
                   disabled={projectDescricaoSaving || submitting}
                   className="mt-1 block w-full text-sm text-white/80 file:mr-4 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-primary/80 file:text-white hover:file:bg-primary transition-colors cursor-pointer"
+                  dropMessage="Solte arquivos da descrição aqui"
                 />
                 <p className="text-xs text-white/50 mt-2">
                   Até {MAX_PROJECT_FILES} arquivos por projeto, com limite de {MAX_PROJECT_FILE_SIZE_MB}MB por arquivo.

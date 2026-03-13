@@ -2,20 +2,22 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
+import { CategoriaCompraTipo } from '@prisma/client';
 
 @Injectable()
 export class CategoriesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll() {
+  async findAll(tipo?: CategoriaCompraTipo) {
     return this.prisma.categoriaCompra.findMany({
-      where: { ativo: true },
+      where: { ativo: true, ...(tipo ? { tipo } : {}) },
       orderBy: { nome: 'asc' },
     });
   }
 
-  async findAllIncludingInactive() {
+  async findAllIncludingInactive(tipo?: CategoriaCompraTipo) {
     return this.prisma.categoriaCompra.findMany({
+      where: tipo ? { tipo } : undefined,
       orderBy: { nome: 'asc' },
     });
   }
@@ -33,9 +35,10 @@ export class CategoriesService {
   }
 
   async create(data: CreateCategoryDto) {
+    const tipo = data.tipo ?? CategoriaCompraTipo.ITEM;
     // Verificar se nome já existe
-    const existingCategory = await this.prisma.categoriaCompra.findUnique({
-      where: { nome: data.nome },
+    const existingCategory = await this.prisma.categoriaCompra.findFirst({
+      where: { nome: data.nome, tipo },
     });
 
     if (existingCategory) {
@@ -47,17 +50,24 @@ export class CategoriesService {
         nome: data.nome,
         descricao: data.descricao,
         ativo: data.ativo ?? true,
+        tipo,
       },
     });
   }
 
   async update(id: number, data: UpdateCategoryDto) {
     const categoria = await this.findOne(id);
+    const nextTipo = data.tipo ?? categoria.tipo;
+    const nextNome = data.nome ?? categoria.nome;
 
     // Se estiver atualizando o nome, verificar se já existe
-    if (data.nome && data.nome !== categoria.nome) {
-      const existingCategory = await this.prisma.categoriaCompra.findUnique({
-        where: { nome: data.nome },
+    if (nextNome !== categoria.nome || nextTipo !== categoria.tipo) {
+      const existingCategory = await this.prisma.categoriaCompra.findFirst({
+        where: {
+          nome: nextNome,
+          tipo: nextTipo,
+          id: { not: id },
+        },
       });
 
       if (existingCategory) {

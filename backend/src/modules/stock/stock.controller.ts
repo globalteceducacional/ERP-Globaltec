@@ -10,7 +10,10 @@ import {
   Query,
   UseGuards,
   BadRequestException,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { StockService } from './stock.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -27,6 +30,8 @@ import { ApprovePurchaseDto } from './dto/approve-purchase.dto';
 import { RejectPurchaseDto } from './dto/reject-purchase.dto';
 import { CreateAlocacaoDto } from './dto/create-alocacao.dto';
 import { UpdateAlocacaoDto } from './dto/update-alocacao.dto';
+import { ImportPurchasesXlsxDto } from './dto/import-purchases-xlsx.dto';
+import { CreateCuradoriaRegisterDto } from './dto/create-curadoria-register.dto';
 
 @Controller('stock')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -65,7 +70,7 @@ export class StockController {
   // ── Compras ───────────────────────────────────────────────────────────────
 
   @Get('purchases')
-  @Permissions('compras:solicitar', 'compras:aprovar')
+  @Permissions('compras:solicitar', 'compras:aprovar', 'trabalhos:visualizar')
   listPurchases(
     @Query('status') status?: CompraStatus,
     @Query('projetoId') projetoId?: string,
@@ -80,6 +85,12 @@ export class StockController {
     });
   }
 
+  @Get('books/isbn/:isbn')
+  @Permissions('compras:solicitar', 'compras:aprovar', 'trabalhos:visualizar')
+  fetchBookByIsbn(@Param('isbn') isbn: string) {
+    return this.stockService.fetchBookByIsbn(isbn);
+  }
+
   @Post('purchases')
   @Permissions('compras:solicitar', 'compras:aprovar')
   createPurchase(
@@ -87,6 +98,38 @@ export class StockController {
     @Body() body: CreatePurchaseDto,
   ) {
     return this.stockService.createPurchase(body, user.userId);
+  }
+
+  @Post('purchases/curadoria-register')
+  @Permissions('compras:solicitar', 'compras:aprovar')
+  createCuradoriaRegister(
+    @CurrentUser() user: { userId: number },
+    @Body() body: CreateCuradoriaRegisterDto,
+  ) {
+    return this.stockService.createCuradoriaRegister(body, user.userId);
+  }
+
+  @Post('purchases/import-xlsx')
+  @Permissions('compras:solicitar', 'compras:aprovar')
+  @UseInterceptors(FileInterceptor('file'))
+  importPurchasesXlsx(
+    @CurrentUser() user: { userId: number },
+    @UploadedFile() file: Express.Multer.File,
+    @Body() body: ImportPurchasesXlsxDto,
+  ) {
+    if (!file) {
+      throw new BadRequestException('Arquivo XLSX não enviado');
+    }
+    const isXlsx =
+      file.originalname.toLowerCase().endsWith('.xlsx') ||
+      file.mimetype.includes(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+    if (!isXlsx) {
+      throw new BadRequestException('Formato inválido. Envie somente arquivo .xlsx');
+    }
+
+    return this.stockService.importPurchasesFromXlsx(file.buffer, body, user.userId);
   }
 
   @Patch('purchases/:id/status')

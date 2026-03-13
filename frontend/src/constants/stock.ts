@@ -82,6 +82,7 @@ export const INITIAL_SUPPLIER_FORM = {
 export const INITIAL_CATEGORY_FORM = {
   nome: '',
   descricao: '',
+  tipo: 'ITEM' as const,
 };
 
 export const INITIAL_ALOCACAO_FORM = {

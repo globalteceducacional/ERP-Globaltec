@@ -60,7 +60,7 @@ export function useStockData(): UseStockDataReturn {
         api.get<Purchase[]>('/stock/purchases'),
         api.get<Projeto[]>('/projects'),
         api.get<Supplier[]>('/suppliers'),
-        api.get<Category[]>('/categories'),
+        api.get<Category[]>('/categories?tipo=ITEM'),
       ]);
       setItems(itemsRes.data);
       setPurchases(purchasesRes.data);

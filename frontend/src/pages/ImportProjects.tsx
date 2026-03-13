@@ -1,20 +1,19 @@
-import React, { useState, FormEvent, useRef } from 'react';
+import React, { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { toast, formatApiError } from '../utils/toast';
 import { btn } from '../utils/buttonStyles';
 import { ExcelDownloadButton } from '../components/ExcelDownloadButton';
 import { buildProjectsTemplateWorkbook } from '../utils/projectsExcelTemplate';
+import { FileDropInput } from '../components/FileDropInput';
 
 export default function ImportProjects() {
   const navigate = useNavigate();
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
+  const handleFileChange = (selectedFile?: File | null) => {
     if (selectedFile) {
       // Validar extensão
       const allowedExtensions = ['.xlsx', '.xls'];
@@ -25,9 +24,6 @@ export default function ImportProjects() {
       if (!allowedExtensions.includes(fileExtension)) {
         setError('Formato de arquivo inválido. Use .xlsx ou .xls');
         setFile(null);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = '';
-        }
         return;
       }
 
@@ -61,9 +57,6 @@ export default function ImportProjects() {
       
       // Limpar formulário
       setFile(null);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
 
       // Redirecionar para projetos após 1 segundo
       setTimeout(() => {
@@ -198,14 +191,13 @@ export default function ImportProjects() {
             <label htmlFor="file" className="block text-sm font-medium mb-2">
               Arquivo Excel (.xlsx ou .xls)
             </label>
-            <input
-              ref={fileInputRef}
-              type="file"
+            <FileDropInput
               id="file"
               accept=".xlsx,.xls"
-              onChange={handleFileChange}
+              onFilesSelected={(files) => handleFileChange(files[0])}
               className="w-full px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={uploading}
+              dropMessage="Solte o arquivo Excel aqui"
             />
             {file && (
               <p className="mt-2 text-sm text-gray-400">

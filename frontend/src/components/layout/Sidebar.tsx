@@ -5,6 +5,7 @@ const links = [
   { to: '/dashboard', label: 'Dashboard', icon: IconDashboard },
   { to: '/projects', label: 'Projetos', icon: IconFolder },
   { to: '/tasks/my', label: 'Meu Trabalho', icon: IconClipboard },
+  { to: '/curadoria', label: 'Curadoria', icon: IconClipboard },
   { to: '/stock', label: 'Compras & Estoque', icon: IconCart },
   { to: '/suppliers', label: 'Fornecedores', icon: IconTruck },
   { to: '/categories', label: 'Categorias', icon: IconTag },
@@ -124,12 +125,12 @@ export function Sidebar({ collapsed, onToggle, isMobile, mobileOpen, onCloseMobi
   if (typeof user.cargo === 'string') {
     userCargoNome = user.cargo;
     const allowedMap: Record<string, string[]> = {
-      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-      GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-      SUPERVISOR: ['/tasks/my', '/communications'],
-      EXECUTOR: ['/tasks/my', '/communications'],
-      COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications'],
-      PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications'],
+      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+      GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+      SUPERVISOR: ['/tasks/my', '/curadoria', '/communications'],
+      EXECUTOR: ['/tasks/my', '/curadoria', '/communications'],
+      COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
+      PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
     };
     paginasPermitidas = allowedMap[userCargoNome] || [];
   } else if (user.cargo && typeof user.cargo === 'object' && 'nome' in user.cargo) {
@@ -140,14 +141,17 @@ export function Sidebar({ collapsed, onToggle, isMobile, mobileOpen, onCloseMobi
   }
 
   const filteredLinks = links.filter((link) => {
+    if (link.to === '/curadoria') {
+      return true;
+    }
     if (paginasPermitidas.length === 0) {
       const allowedMap: Record<string, string[]> = {
-        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-        GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-        SUPERVISOR: ['/tasks/my', '/communications'],
-        EXECUTOR: ['/tasks/my', '/communications'],
-        COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications'],
-        PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications'],
+        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+        GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+        SUPERVISOR: ['/tasks/my', '/curadoria', '/communications'],
+        EXECUTOR: ['/tasks/my', '/curadoria', '/communications'],
+        COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
+        PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
       };
       return allowedMap[userCargoNome]?.includes(link.to) || false;
     }

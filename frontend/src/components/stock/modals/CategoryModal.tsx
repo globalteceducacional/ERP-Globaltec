@@ -30,6 +30,7 @@ export function CategoryModal({ isOpen, onClose, onCategoryCreated }: CategoryMo
     try {
       const payload: any = {
         nome: form.nome.trim(),
+        tipo: 'ITEM',
       };
 
       if (form.descricao && form.descricao.trim()) {

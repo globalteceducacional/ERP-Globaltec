@@ -93,6 +93,11 @@ enum RequerimentoTipo {
   OUTRO
 }
 
+enum CategoriaCompraTipo {
+  ITEM
+  LIVRO
+}
+
 model Usuario {
   id                          Int                    @id @default(autoincrement())
   nome                        String
@@ -123,6 +128,7 @@ model Usuario {
   checklistEntregasExecutadas ChecklistItemEntrega[] @relation("ChecklistItemEntregaExecutor")
   checklistEntregasAvaliadas  ChecklistItemEntrega[] @relation("ChecklistItemEntregaAvaliador")
   estoqueAlocacoes            EstoqueAlocacao[]
+  curadoriaOrcamentos         CuradoriaOrcamento[]
 }
 
 model Projeto {
@@ -144,8 +150,61 @@ model Projeto {
   etapas           Etapa[]
   responsaveis     ProjetoResponsavel[]
   compras          Compra[]
+  curadoriaOrcamentos CuradoriaOrcamento[]
   estoqueItems     Estoque[]
   estoqueAlocacoes EstoqueAlocacao[]
+}
+
+enum CuradoriaDescontoAplicadoEm {
+  ITEM
+  TOTAL
+}
+
+model CuradoriaOrcamento {
+  id                 Int                         @id @default(autoincrement())
+  nome               String
+  observacao         String?
+  nfUrl              String?
+  arquivoOrcamentoUrl String?
+  comprovantePagamentoUrl String?
+  formaPagamento     String?
+  status             CompraStatus                @default(PENDENTE)
+  descontoAplicadoEm CuradoriaDescontoAplicadoEm @default(ITEM)
+  descontoTotal      Float                       @default(0)
+  projetoId          Int?
+  projeto            Projeto?                    @relation(fields: [projetoId], references: [id], onDelete: SetNull)
+  fornecedorId       Int?
+  fornecedor         Fornecedor?                 @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  criadoPorId        Int?
+  criadoPor          Usuario?                    @relation(fields: [criadoPorId], references: [id], onDelete: SetNull)
+  dataCriacao        DateTime                    @default(now())
+  dataAtualizacao    DateTime                    @updatedAt
+  itens              CuradoriaItem[]
+
+  @@index([projetoId])
+  @@index([criadoPorId])
+  @@index([fornecedorId])
+}
+
+model CuradoriaItem {
+  id              Int               @id @default(autoincrement())
+  orcamentoId     Int
+  orcamento       CuradoriaOrcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  nome            String
+  isbn            String
+  quantidade      Int               @default(1)
+  categoriaId     Int?
+  categoria       CategoriaCompra?  @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  valor           Float
+  desconto        Float             @default(0)
+  valorLiquido    Float
+  autor           String?
+  editora         String?
+  anoPublicacao   String?
+  dataCriacao     DateTime          @default(now())
+
+  @@index([orcamentoId])
+  @@index([categoriaId])
 }
 
 model Sessao {
@@ -410,19 +469,23 @@ model Fornecedor {
   ativo           Boolean  @default(true)
   dataCriacao     DateTime @default(now())
   dataAtualizacao DateTime @updatedAt
+  curadoriaOrcamentos CuradoriaOrcamento[]
 
   @@map("Fornecedor")
 }
 
 model CategoriaCompra {
   id              Int       @id @default(autoincrement())
-  nome            String    @unique
+  nome            String
   descricao       String?
+  tipo            CategoriaCompraTipo @default(ITEM)
   ativo           Boolean   @default(true)
   dataCriacao     DateTime  @default(now())
   dataAtualizacao DateTime  @updatedAt
   compras         Compra[]
+  curadoriaItens  CuradoriaItem[]
   estoqueItems    Estoque[]
 
   @@map("CategoriaCompra")
+  @@unique([nome, tipo])
 }

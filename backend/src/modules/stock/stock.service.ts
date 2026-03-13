@@ -8,6 +8,9 @@ import { UpdatePurchaseDto } from './dto/update-purchase.dto';
 import { UpdatePurchaseStatusDto } from './dto/update-purchase-status.dto';
 import { BatchPurchaseToAcaminhoDto } from './dto/batch-purchase-to-acaminho.dto';
 import { CompraStatus, EstoqueStatus, NotificacaoTipo, RequerimentoTipo } from '@prisma/client';
+import { ImportPurchasesXlsxDto } from './dto/import-purchases-xlsx.dto';
+import { CreateCuradoriaRegisterDto, CuradoriaItemInput } from './dto/create-curadoria-register.dto';
+import * as XLSX from 'xlsx';
 
 @Injectable()
 export class StockService {
@@ -17,6 +20,356 @@ export class StockService {
     private readonly prisma: PrismaService,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  private normalizeHeader(value: unknown): string {
+    return String(value ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '')
+      .trim();
+  }
+
+  private parseNumber(value: unknown): number | undefined {
+    if (value == null || value === '') return undefined;
+    if (typeof value === 'number' && !Number.isNaN(value)) return value;
+    const raw = String(value).trim();
+    let normalized = raw;
+    if (raw.includes(',') && raw.includes('.')) {
+      // Ex.: 1.234,56
+      normalized = raw.replace(/\./g, '').replace(',', '.');
+    } else if (raw.includes(',')) {
+      // Ex.: 12,50
+      normalized = raw.replace(',', '.');
+    }
+    const parsed = Number(normalized);
+    if (Number.isNaN(parsed)) return undefined;
+    return parsed;
+  }
+
+  private buildCuradoriaObservation(base: string | undefined, registroId: string): string {
+    const trimmed = base?.trim() ?? '';
+    const prefix = `Registro Curadoria: ${registroId}`;
+    return trimmed ? `${prefix} | ${trimmed}` : prefix;
+  }
+
+  private buildDiscountsByTotal(values: number[], descontoTotal: number): number[] {
+    const subtotal = values.reduce((sum, value) => sum + value, 0);
+    if (subtotal <= 0 || descontoTotal <= 0) {
+      return values.map(() => 0);
+    }
+
+    const discounts = values.map((value) => Number(((value / subtotal) * descontoTotal).toFixed(2)));
+    const sum = discounts.reduce((acc, value) => acc + value, 0);
+    const diff = Number((descontoTotal - sum).toFixed(2));
+    if (diff !== 0 && discounts.length > 0) {
+      discounts[discounts.length - 1] = Number((discounts[discounts.length - 1] + diff).toFixed(2));
+    }
+    return discounts;
+  }
+
+  async fetchBookByIsbn(isbn: string) {
+    const cleaned = isbn.toUpperCase().replace(/[^0-9X]/g, '');
+    if (!(cleaned.length === 10 || cleaned.length === 13)) {
+      throw new BadRequestException('ISBN inválido. Informe 10 ou 13 caracteres.');
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+      const response = await fetch(
+        `https://www.googleapis.com/books/v1/volumes?q=isbn:${cleaned}`,
+        { signal: controller.signal },
+      );
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new BadRequestException('Erro ao buscar dados do ISBN.');
+      }
+
+      const payload = await response.json();
+      const volumeInfo = payload?.items?.[0]?.volumeInfo;
+      if (!volumeInfo) {
+        throw new BadRequestException('Livro não encontrado para o ISBN informado.');
+      }
+
+      return {
+        isbn: cleaned,
+        titulo: String(volumeInfo.title ?? '').trim() || null,
+        subtitulo: String(volumeInfo.subtitle ?? '').trim() || null,
+        autores: Array.isArray(volumeInfo.authors)
+          ? volumeInfo.authors.map((author: unknown) => String(author))
+          : [],
+        editora: String(volumeInfo.publisher ?? '').trim() || null,
+        anoPublicacao: String(volumeInfo.publishedDate ?? '').trim() || null,
+        categorias: Array.isArray(volumeInfo.categories)
+          ? volumeInfo.categories.map((category: unknown) => String(category))
+          : [],
+      };
+    } catch (error: any) {
+      if (error.name === 'AbortError') {
+        throw new BadRequestException('Tempo de espera excedido ao buscar dados do ISBN.');
+      }
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(
+        error.message || 'Erro ao buscar dados do ISBN. Verifique o valor informado.',
+      );
+    }
+  }
+
+  private async createCuradoriaItems(
+    items: CuradoriaItemInput[],
+    params: {
+      projetoId?: number;
+      solicitadoPorId: number;
+      descontoAplicadoEm: 'item' | 'total';
+      descontoTotal?: number;
+      observacao?: string;
+      registroId: string;
+    },
+  ) {
+    if (!items.length) {
+      throw new BadRequestException('Informe ao menos um item no registro.');
+    }
+
+    const valores = items.map((item) => item.valor);
+    const descontosPorItem =
+      params.descontoAplicadoEm === 'total'
+        ? this.buildDiscountsByTotal(valores, params.descontoTotal ?? 0)
+        : items.map((item) => item.desconto ?? 0);
+
+    const createPayloads = items.map((item, index) => {
+      const descontoAplicado = descontosPorItem[index] ?? 0;
+      const valorLiquidoUnitario = Number(Math.max(0, item.valor - descontoAplicado).toFixed(2));
+
+      return {
+        projetoId: params.projetoId || null,
+        categoriaId: item.categoriaId,
+        item: item.nome,
+        descricao: `ISBN: ${item.isbn}`,
+        quantidade: 1,
+        valorUnitario: valorLiquidoUnitario,
+        status: CompraStatus.SOLICITADO,
+        solicitadoPorId: params.solicitadoPorId,
+        observacao: this.buildCuradoriaObservation(params.observacao, params.registroId),
+        cotacoesJson: [
+          {
+            valorOriginal: item.valor,
+            valorUnitario: valorLiquidoUnitario,
+            desconto: descontoAplicado,
+            descontoTipo: 'valor',
+            isbn: item.isbn,
+            registroCuradoriaId: params.registroId,
+            descontoAplicadoEm: params.descontoAplicadoEm,
+          },
+        ],
+      };
+    });
+
+    await this.prisma.$transaction(
+      createPayloads.map((payload) =>
+        this.prisma.compra.create({
+          data: payload as any,
+        }),
+      ),
+    );
+
+    const totalBruto = Number(valores.reduce((sum, value) => sum + value, 0).toFixed(2));
+    const totalDesconto = Number(descontosPorItem.reduce((sum, value) => sum + value, 0).toFixed(2));
+    return {
+      registroId: params.registroId,
+      count: createPayloads.length,
+      totalBruto,
+      totalDesconto,
+      totalLiquido: Number((totalBruto - totalDesconto).toFixed(2)),
+    };
+  }
+
+  async createCuradoriaRegister(data: CreateCuradoriaRegisterDto, solicitadoPorId: number) {
+    if (data.projetoId) {
+      await this.ensureProjectExists(data.projetoId);
+    }
+
+    const uniqueCategoryIds = Array.from(new Set(data.itens.map((item) => item.categoriaId)));
+    const categories = await this.prisma.categoriaCompra.findMany({
+      where: { id: { in: uniqueCategoryIds } },
+      select: { id: true },
+    });
+    if (categories.length !== uniqueCategoryIds.length) {
+      throw new BadRequestException('Um ou mais itens possuem categoria inválida.');
+    }
+
+    if (data.descontoAplicadoEm === 'total' && (data.descontoTotal == null || data.descontoTotal < 0)) {
+      throw new BadRequestException('Informe o desconto total quando aplicado no valor total.');
+    }
+
+    const registroId = `CUR-${Date.now()}`;
+    const result = await this.createCuradoriaItems(data.itens, {
+      projetoId: data.projetoId,
+      solicitadoPorId,
+      descontoAplicadoEm: data.descontoAplicadoEm,
+      descontoTotal: data.descontoTotal,
+      observacao: data.observacao,
+      registroId,
+    });
+
+    return {
+      message: 'Registro de curadoria criado com sucesso.',
+      ...result,
+    };
+  }
+
+  async importPurchasesFromXlsx(
+    fileBuffer: Buffer,
+    options: ImportPurchasesXlsxDto,
+    solicitadoPorId: number,
+  ) {
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+    const firstSheetName = workbook.SheetNames[0];
+    if (!firstSheetName) {
+      throw new BadRequestException('Planilha XLSX sem abas válidas');
+    }
+
+    const sheet = workbook.Sheets[firstSheetName];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, {
+      defval: '',
+      raw: true,
+    });
+
+    if (!rows.length) {
+      throw new BadRequestException('Planilha sem linhas de dados');
+    }
+
+    const overwriteCurrent = options.overwriteCurrent === true;
+    const projetoId = options.projetoId;
+    const categoriaId = options.categoriaId;
+    const descontoAplicadoEm = options.descontoAplicadoEm ?? 'item';
+    const descontoTotal = options.descontoTotal;
+
+    if (overwriteCurrent && !projetoId) {
+      throw new BadRequestException(
+        'Para sobrescrever orçamento atual, informe o projeto (projetoId).',
+      );
+    }
+
+    if (projetoId) {
+      await this.ensureProjectExists(projetoId);
+    }
+
+    if (categoriaId) {
+      const category = await this.prisma.categoriaCompra.findUnique({
+        where: { id: categoriaId },
+      });
+      if (!category) {
+        throw new BadRequestException('Categoria informada não existe');
+      }
+    }
+
+    if (descontoAplicadoEm === 'total' && (descontoTotal == null || descontoTotal < 0)) {
+      throw new BadRequestException('Informe descontoTotal para desconto aplicado no total.');
+    }
+
+    const removed = overwriteCurrent && projetoId
+      ? await this.prisma.compra.deleteMany({
+          where: {
+            projetoId,
+            status: { in: [CompraStatus.SOLICITADO, CompraStatus.PENDENTE, CompraStatus.REPROVADO] },
+          },
+        })
+      : { count: 0 };
+
+    const categoryNameMap = new Map<string, number>();
+    if (!categoriaId) {
+      const allCategories = await this.prisma.categoriaCompra.findMany({
+        where: { ativo: true },
+        select: { id: true, nome: true },
+      });
+      for (const category of allCategories) {
+        categoryNameMap.set(this.normalizeHeader(category.nome), category.id);
+      }
+    }
+
+    const importItems: CuradoriaItemInput[] = [];
+    let skipped = 0;
+
+    for (const row of rows) {
+      const rowMap = new Map<string, unknown>();
+      Object.entries(row).forEach(([key, value]) => {
+        rowMap.set(this.normalizeHeader(key), value);
+      });
+
+      const nome = String(
+        rowMap.get('nome') ??
+          rowMap.get('item') ??
+          rowMap.get('titulo') ??
+          rowMap.get('descricao') ??
+          '',
+      ).trim();
+      const isbn = String(
+        rowMap.get('isbn') ??
+          rowMap.get('codigodebarras') ??
+          rowMap.get('codigobarras') ??
+          '',
+      ).trim();
+      const valor = this.parseNumber(
+        rowMap.get('valor') ??
+          rowMap.get('vunit') ??
+          rowMap.get('valorunitario') ??
+          rowMap.get('precotabela'),
+      );
+      const desconto = this.parseNumber(rowMap.get('desconto') ?? rowMap.get('desc')) ?? 0;
+      const categoryFromSheet = String(rowMap.get('categoria') ?? '').trim();
+      const categoryIdResolved =
+        categoriaId ??
+        categoryNameMap.get(this.normalizeHeader(categoryFromSheet));
+
+      if (!nome || !isbn || !valor || valor < 0 || !categoryIdResolved) {
+        skipped += 1;
+        continue;
+      }
+
+      importItems.push({
+        nome: nome.slice(0, 120),
+        isbn: isbn.slice(0, 60),
+        categoriaId: categoryIdResolved,
+        valor,
+        desconto,
+      });
+    }
+
+    if (!importItems.length) {
+      throw new BadRequestException(
+        'Nenhum item válido encontrado. Colunas obrigatórias: nome, isbn, categoria, valor.',
+      );
+    }
+
+    const registroId = `CUR-IMP-${Date.now()}`;
+    const result = await this.createCuradoriaItems(importItems, {
+      projetoId,
+      solicitadoPorId,
+      descontoAplicadoEm,
+      descontoTotal,
+      observacao: 'Importado via planilha XLSX (Curadoria).',
+      registroId,
+    });
+
+    return {
+      message: 'Importação XLSX concluída.',
+      imported: result.count,
+      skipped,
+      removed: removed.count,
+      overwriteCurrent,
+      projetoId: projetoId ?? null,
+      registroId: result.registroId,
+      totalBruto: result.totalBruto,
+      totalDesconto: result.totalDesconto,
+      totalLiquido: result.totalLiquido,
+    };
+  }
 
   async listItems(filter: { search?: string }) {
     const where: any = {};

@@ -10,6 +10,7 @@ const titles: Record<string, { title: string; subtitle?: string }> = {
   '/dashboard': { title: 'Dashboard', subtitle: 'Visão geral dos projetos e indicadores' },
   '/projects': { title: 'Projetos', subtitle: 'Gestão de projetos ativos e finalizados' },
   '/tasks/my': { title: 'Meu Trabalho', subtitle: 'Acompanhe suas tarefas e subetapas' },
+  '/curadoria': { title: 'Curadoria', subtitle: 'Orçamentos de livros' },
   '/stock': { title: 'Compras & Estoque', subtitle: 'Controle de ativos e requisições' },
   '/suppliers': { title: 'Fornecedores', subtitle: 'Gerenciamento de fornecedores' },
   '/categories': { title: 'Categorias', subtitle: 'Gerenciamento de categorias de compras' },
@@ -57,12 +58,12 @@ export function AppLayout() {
     
     if (typeof user.cargo === 'string') {
       const allowedMap: Record<string, string[]> = {
-        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
-        GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
+        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
+        GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
         SUPERVISOR: ['/tasks/my', '/communications', '/notifications'],
         EXECUTOR: ['/tasks/my', '/communications', '/notifications'],
-        COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/notifications'],
-        PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/notifications'],
+        COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/notifications'],
+        PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/notifications'],
       };
       paginasPermitidas = allowedMap[user.cargo] || [];
     } else if (user.cargo && typeof user.cargo === 'object' && 'nome' in user.cargo) {
@@ -73,12 +74,12 @@ export function AppLayout() {
         }
       } else {
         const allowedMap: Record<string, string[]> = {
-          DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
-          GM: ['/dashboard', '/projects', '/tasks/my', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
+          DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
+          GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
           SUPERVISOR: ['/tasks/my', '/communications', '/notifications'],
           EXECUTOR: ['/tasks/my', '/communications', '/notifications'],
-          COTADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/notifications'],
-          PAGADOR: ['/tasks/my', '/stock', '/suppliers', '/categories', '/notifications'],
+          COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/notifications'],
+          PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/notifications'],
         };
         paginasPermitidas = allowedMap[user.cargo.nome] || [];
       }
@@ -90,6 +91,9 @@ export function AppLayout() {
     if (currentPath.startsWith('/projects/')) {
       return paginasPermitidas.includes('/projects');
     }
+    if (currentPath.startsWith('/curadoria/')) {
+      return paginasPermitidas.includes('/curadoria');
+    }
     if (currentPath === '/notifications') {
       return paginasPermitidas.includes('/notifications');
     }
@@ -97,16 +101,16 @@ export function AppLayout() {
     return paginasPermitidas.includes(currentPath);
   }, [user, location.pathname]);
 
+  const header = useMemo(() => {
+    const entry = Object.entries(titles).find(([path]) => location.pathname.startsWith(path));
+    return entry ? entry[1] : { title: 'ERP Globaltec' };
+  }, [location.pathname]);
+
   // Se não tem acesso, redirecionar para a primeira página permitida
   if (!hasAccess) {
     const firstPage = getFirstAllowedPage(user);
     return <Navigate to={firstPage} replace />;
   }
-
-  const header = useMemo(() => {
-    const entry = Object.entries(titles).find(([path]) => location.pathname.startsWith(path));
-    return entry ? entry[1] : { title: 'ERP Globaltec' };
-  }, [location.pathname]);
 
   return (
     <div className="flex min-h-screen min-w-0">

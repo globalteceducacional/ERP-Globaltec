@@ -10,6 +10,7 @@ interface Category {
   nome: string;
   descricao?: string | null;
   ativo: boolean;
+  tipo: 'ITEM' | 'LIVRO';
   dataCriacao: string;
   dataAtualizacao: string;
 }
@@ -18,6 +19,7 @@ interface CreateCategoryForm {
   nome: string;
   descricao: string;
   ativo: boolean;
+  tipo: 'ITEM' | 'LIVRO';
 }
 
 export default function Categories() {
@@ -29,10 +31,12 @@ export default function Categories() {
   const [modalError, setModalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
+  const [tipoFilter, setTipoFilter] = useState<'ITEM' | 'LIVRO'>('ITEM');
   const [form, setForm] = useState<CreateCategoryForm>({
     nome: '',
     descricao: '',
     ativo: true,
+    tipo: 'ITEM',
   });
 
   // Hook de validação
@@ -47,7 +51,8 @@ export default function Categories() {
   async function load() {
     try {
       setLoading(true);
-      const endpoint = showInactive ? '/categories/all' : '/categories';
+      const tipoQuery = `?tipo=${tipoFilter}`;
+      const endpoint = showInactive ? `/categories/all${tipoQuery}` : `/categories${tipoQuery}`;
       const { data } = await api.get<Category[]>(endpoint);
       setCategories(data);
     } catch (err: any) {
@@ -60,7 +65,7 @@ export default function Categories() {
 
   useEffect(() => {
     load();
-  }, [showInactive]);
+  }, [showInactive, tipoFilter]);
 
   function openCreateModal() {
     setEditingCategory(null);
@@ -68,6 +73,7 @@ export default function Categories() {
       nome: '',
       descricao: '',
       ativo: true,
+      tipo: 'ITEM',
     });
     setModalError(null);
     validation.reset();
@@ -80,6 +86,7 @@ export default function Categories() {
       nome: category.nome,
       descricao: category.descricao || '',
       ativo: category.ativo,
+      tipo: category.tipo || 'ITEM',
     });
     setModalError(null);
     validation.reset();
@@ -101,6 +108,7 @@ export default function Categories() {
       const payload: any = {
         nome: form.nome.trim(),
         ativo: form.ativo,
+        tipo: form.tipo,
       };
 
       if (form.descricao && form.descricao.trim()) {
@@ -184,16 +192,42 @@ export default function Categories() {
       )}
 
       <div className="bg-white/5 rounded-xl border border-white/10 p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            type="button"
+            onClick={() => setTipoFilter('ITEM')}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              tipoFilter === 'ITEM'
+                ? 'bg-amber-500/25 text-amber-200 border border-amber-400/40'
+                : 'bg-white/10 text-white/70 hover:bg-white/20'
+            }`}
+          >
+            Aba Itens
+          </button>
+          <button
+            type="button"
+            onClick={() => setTipoFilter('LIVRO')}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+              tipoFilter === 'LIVRO'
+                ? 'bg-blue-500/25 text-blue-200 border border-blue-400/40'
+                : 'bg-white/10 text-white/70 hover:bg-white/20'
+            }`}
+          >
+            Aba Livros
+          </button>
+        </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showInactive}
-              onChange={(e) => setShowInactive(e.target.checked)}
-              className="w-4 h-4 rounded border-white/30 bg-white/10 text-primary focus:ring-primary"
-            />
-            <span className="text-sm text-white/80">Mostrar inativas</span>
-          </label>
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showInactive}
+                onChange={(e) => setShowInactive(e.target.checked)}
+                className="w-4 h-4 rounded border-white/30 bg-white/10 text-primary focus:ring-primary"
+              />
+              <span className="text-sm text-white/80">Mostrar inativas</span>
+            </label>
+          </div>
           <span className="text-xs text-white/50">
             {filteredCategories.length}{' '}
             {filteredCategories.length === 1 ? 'categoria' : 'categorias'}
@@ -210,13 +244,22 @@ export default function Categories() {
             {/* Cabeçalho: nome + status */}
             <div className="flex items-start justify-between gap-2">
               <p className="font-semibold text-white truncate flex-1">{c.nome}</p>
-              <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${
-                c.ativo
-                  ? 'bg-success/20 text-success border border-success/40'
-                  : 'bg-danger/20 text-danger border border-danger/40'
-              }`}>
-                {c.ativo ? 'Ativa' : 'Inativa'}
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                  c.tipo === 'LIVRO'
+                    ? 'bg-blue-500/20 text-blue-200 border border-blue-400/40'
+                    : 'bg-amber-500/20 text-amber-200 border border-amber-400/40'
+                }`}>
+                  {c.tipo === 'LIVRO' ? 'Livro' : 'Item'}
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded font-medium ${
+                  c.ativo
+                    ? 'bg-success/20 text-success border border-success/40'
+                    : 'bg-danger/20 text-danger border border-danger/40'
+                }`}>
+                  {c.ativo ? 'Ativa' : 'Inativa'}
+                </span>
+              </div>
             </div>
             {/* Descrição */}
             {c.descricao && (
@@ -248,6 +291,19 @@ export default function Categories() {
             render: (c) => (
               <span className="block max-w-[220px] truncate text-white/70" title={c.descricao || undefined}>
                 {c.descricao || '-'}
+              </span>
+            ),
+          },
+          {
+            key: 'tipo',
+            label: 'Tipo',
+            render: (c) => (
+              <span className={`inline-block px-2 py-1 rounded text-xs font-medium ${
+                c.tipo === 'LIVRO'
+                  ? 'bg-blue-500/20 text-blue-200 border border-blue-400/40'
+                  : 'bg-amber-500/20 text-amber-200 border border-amber-400/40'
+              }`}>
+                {c.tipo === 'LIVRO' ? 'Livro' : 'Item'}
               </span>
             ),
           },
@@ -345,6 +401,18 @@ export default function Categories() {
                   placeholder="Descrição opcional da categoria"
                   rows={3}
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Tipo da Categoria *</label>
+                <select
+                  value={form.tipo}
+                  onChange={(e) => setForm({ ...form, tipo: e.target.value as 'ITEM' | 'LIVRO' })}
+                  className="w-full bg-neutral/80 border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                >
+                  <option value="ITEM">Item (Compras/Estoque)</option>
+                  <option value="LIVRO">Livro (Curadoria de Livros)</option>
+                </select>
               </div>
 
               <div>

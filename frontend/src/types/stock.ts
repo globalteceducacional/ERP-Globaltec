@@ -46,6 +46,7 @@ export interface Purchase {
   cotacoesJson?: Cotacao[] | null;
   dataCompra?: string | null;
   dataSolicitacao?: string | null;
+  dataConfirmacao?: string | null;
   formaPagamento?: string | null;
   statusEntrega?: string | null;
   previsaoEntrega?: string | null;
@@ -56,6 +57,9 @@ export interface Purchase {
   solicitadoPorId?: number | null;
   solicitadoPor?: { id: number; nome: string; cargo?: { nome: string } } | null;
   categoriaId?: number | null;
+  projeto?: Projeto | null;
+  categoria?: Category | null;
+  motivoRejeicao?: string | null;
 }
 
 export interface Projeto {
@@ -81,6 +85,7 @@ export interface Category {
   nome: string;
   descricao?: string | null;
   ativo: boolean;
+  tipo?: 'ITEM' | 'LIVRO';
 }
 
 export interface Alocacao {
@@ -140,6 +145,7 @@ export interface SupplierForm {
 export interface CategoryForm {
   nome: string;
   descricao: string;
+  tipo?: 'ITEM' | 'LIVRO';
 }
 
 // Tipos para abas
