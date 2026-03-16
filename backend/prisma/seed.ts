@@ -18,6 +18,8 @@ async function main() {
     { modulo: 'compras', acao: 'aprovar', descricao: 'Aprovar solicitações de compras' },
     { modulo: 'estoque', acao: 'visualizar', descricao: 'Visualizar itens de estoque' },
     { modulo: 'estoque', acao: 'movimentar', descricao: 'Registrar movimentações de estoque' },
+    { modulo: 'curadoria', acao: 'visualizar', descricao: 'Visualizar orçamentos e estoque de curadoria' },
+    { modulo: 'curadoria', acao: 'gerenciar', descricao: 'Criar, editar, importar e ajustar curadoria' },
     { modulo: 'usuarios', acao: 'gerenciar', descricao: 'Gerenciar usuários e cargos' },
     { modulo: 'sistema', acao: 'administrar', descricao: 'Administrar configurações avançadas do sistema' },
   ];
@@ -84,6 +86,8 @@ async function main() {
         'compras:aprovar',
         'estoque:visualizar',
         'estoque:movimentar',
+        'curadoria:visualizar',
+        'curadoria:gerenciar',
       ],
     },
     {
@@ -94,6 +98,7 @@ async function main() {
         'projetos:visualizar',
         'compras:aprovar',
         'estoque:visualizar',
+        'curadoria:visualizar',
       ],
     },
     {

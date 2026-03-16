@@ -30,25 +30,25 @@ export class CuradoriaController {
   constructor(private readonly curadoriaService: CuradoriaService) {}
 
   @Get('orcamentos')
-  @Permissions('compras:solicitar', 'compras:aprovar', 'trabalhos:visualizar')
+  @Permissions('curadoria:visualizar', 'curadoria:gerenciar')
   listOrcamentos(@Query('search') search?: string) {
     return this.curadoriaService.listOrcamentos(search);
   }
 
   @Get('estoque')
-  @Permissions('compras:solicitar', 'compras:aprovar', 'trabalhos:visualizar')
+  @Permissions('curadoria:visualizar', 'curadoria:gerenciar')
   listEstoque(@Query('search') search?: string) {
     return this.curadoriaService.listEstoqueCuradoria(search);
   }
 
   @Get('orcamentos/:id')
-  @Permissions('compras:solicitar', 'compras:aprovar', 'trabalhos:visualizar')
+  @Permissions('curadoria:visualizar', 'curadoria:gerenciar')
   getOrcamentoById(@Param('id', ParseIntPipe) id: number) {
     return this.curadoriaService.getOrcamentoById(id);
   }
 
   @Post('orcamentos')
-  @Permissions('compras:solicitar', 'compras:aprovar')
+  @Permissions('curadoria:gerenciar')
   createOrcamento(
     @CurrentUser() user: { userId: number },
     @Body() body: CreateCuradoriaOrcamentoDto,
@@ -57,13 +57,13 @@ export class CuradoriaController {
   }
 
   @Delete('orcamentos/:id')
-  @Permissions('compras:solicitar', 'compras:aprovar')
+  @Permissions('curadoria:gerenciar')
   deleteOrcamento(@Param('id', ParseIntPipe) id: number) {
     return this.curadoriaService.deleteOrcamento(id);
   }
 
   @Patch('orcamentos/:id')
-  @Permissions('compras:solicitar', 'compras:aprovar')
+  @Permissions('curadoria:gerenciar')
   updateOrcamento(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: UpdateCuradoriaOrcamentoDto,
@@ -72,7 +72,7 @@ export class CuradoriaController {
   }
 
   @Post('orcamentos/:id/itens')
-  @Permissions('compras:solicitar', 'compras:aprovar')
+  @Permissions('curadoria:gerenciar')
   addItem(
     @Param('id', ParseIntPipe) id: number,
     @Body() body: CreateCuradoriaItemDto,
@@ -81,7 +81,7 @@ export class CuradoriaController {
   }
 
   @Patch('orcamentos/:id/itens/:itemId')
-  @Permissions('compras:solicitar', 'compras:aprovar')
+  @Permissions('curadoria:gerenciar')
   updateItem(
     @Param('id', ParseIntPipe) id: number,
     @Param('itemId', ParseIntPipe) itemId: number,
@@ -91,7 +91,7 @@ export class CuradoriaController {
   }
 
   @Delete('orcamentos/:id/itens/:itemId')
-  @Permissions('compras:solicitar', 'compras:aprovar')
+  @Permissions('curadoria:gerenciar')
   deleteItem(
     @Param('id', ParseIntPipe) id: number,
     @Param('itemId', ParseIntPipe) itemId: number,
@@ -100,7 +100,7 @@ export class CuradoriaController {
   }
 
   @Post('orcamentos/import-xlsx')
-  @Permissions('compras:solicitar', 'compras:aprovar')
+  @Permissions('curadoria:gerenciar')
   @UseInterceptors(FileInterceptor('file'))
   importXlsx(
     @CurrentUser() user: { userId: number },
@@ -121,7 +121,7 @@ export class CuradoriaController {
   }
 
   @Get('books/isbn/:isbn')
-  @Permissions('compras:solicitar', 'compras:aprovar', 'trabalhos:visualizar')
+  @Permissions('curadoria:visualizar', 'curadoria:gerenciar')
   fetchBookByIsbn(@Param('isbn') isbn: string) {
     return this.curadoriaService.fetchBookByIsbn(isbn);
   }

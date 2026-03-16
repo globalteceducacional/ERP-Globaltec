@@ -21,6 +21,8 @@ const PERMISSIONS_CATALOG: CargoPermission[] = [
   { id: 0, modulo: 'compras',   acao: 'solicitar',    chave: 'compras:solicitar',    descricao: 'Solicitar compras e orçamentos' },
   { id: 0, modulo: 'estoque',   acao: 'movimentar',   chave: 'estoque:movimentar',   descricao: 'Registrar movimentações de estoque' },
   { id: 0, modulo: 'estoque',   acao: 'visualizar',   chave: 'estoque:visualizar',   descricao: 'Visualizar itens de estoque' },
+  { id: 0, modulo: 'curadoria', acao: 'visualizar',   chave: 'curadoria:visualizar', descricao: 'Visualizar orçamentos e estoque de curadoria' },
+  { id: 0, modulo: 'curadoria', acao: 'gerenciar',    chave: 'curadoria:gerenciar',  descricao: 'Criar, editar, importar e ajustar curadoria' },
   { id: 0, modulo: 'projetos',  acao: 'aprovar',      chave: 'projetos:aprovar',     descricao: 'Aprovar etapas e metas de projetos' },
   { id: 0, modulo: 'projetos',  acao: 'editar',       chave: 'projetos:editar',      descricao: 'Criar e editar projetos' },
   { id: 0, modulo: 'projetos',  acao: 'visualizar',   chave: 'projetos:visualizar',  descricao: 'Visualizar projetos' },

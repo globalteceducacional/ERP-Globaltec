@@ -233,8 +233,15 @@ export default function Curadoria() {
 
   const cargoNome = typeof user?.cargo === 'string' ? user.cargo : user?.cargo?.nome;
   const isDiretor = cargoNome === 'DIRETOR' || cargoNome === 'GM';
-  const canEdit = isDiretor || permissionKeys.has('compras:solicitar') || permissionKeys.has('compras:aprovar');
-  const canView = canEdit || permissionKeys.has('trabalhos:visualizar');
+  const canEdit =
+    isDiretor ||
+    permissionKeys.has('curadoria:gerenciar') ||
+    permissionKeys.has('compras:solicitar') ||
+    permissionKeys.has('compras:aprovar');
+  const canView =
+    canEdit ||
+    permissionKeys.has('curadoria:visualizar') ||
+    permissionKeys.has('trabalhos:visualizar');
   const fieldClass =
     'w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary';
   const fileFieldClass =
@@ -1032,7 +1039,7 @@ export default function Curadoria() {
       render: (item) => (
         <button
           type="button"
-          className={btn.primarySm}
+          className={btn.editSm}
           onClick={() => {
             setStockItemMode('edit');
             setStockItemForm({
@@ -1064,29 +1071,40 @@ export default function Curadoria() {
             Orçamentos de livros e estoque específico da curadoria, separados do módulo de Compras.
           </p>
         </div>
-        {canEdit && activeTab === 'orcamentos' && (
+        {canEdit && (
           <div className="flex items-center gap-2">
-            <button type="button" className={btn.secondary} onClick={() => setShowImportModal(true)}>
-              Importar XLSX
-            </button>
-            <button type="button" className={btn.primary} onClick={() => setShowCreateModal(true)}>
-              Novo orçamento
-            </button>
-          </div>
-        )}
-        {canEdit && activeTab === 'estoque' && (
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className={btn.primary}
-              onClick={() => {
-                setStockItemMode('add');
-                setStockItemForm(createEmptyItem());
-                setShowStockItemModal(true);
-              }}
-            >
-              Adicionar item ao estoque
-            </button>
+            {activeTab === 'orcamentos' && (
+              <>
+                <button type="button" className={btn.secondary} onClick={() => setShowImportModal(true)}>
+                  Importar XLSX
+                </button>
+                <button type="button" className={btn.primary} onClick={() => setShowCreateModal(true)}>
+                  Novo orçamento
+                </button>
+              </>
+            )}
+            {activeTab === 'estoque' && (
+              <>
+                <button
+                  type="button"
+                  className={btn.secondary}
+                  onClick={() => setShowImportModal(true)}
+                >
+                  Importar XLSX (modelo existente)
+                </button>
+                <button
+                  type="button"
+                  className={btn.primary}
+                  onClick={() => {
+                    setStockItemMode('add');
+                    setStockItemForm(createEmptyItem());
+                    setShowStockItemModal(true);
+                  }}
+                >
+                  Adicionar item ao estoque
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -1310,6 +1328,52 @@ export default function Curadoria() {
             keyExtractor={(item) => `${item.isbn}-${item.categoriaId ?? 'sem-categoria'}`}
             loading={stockLoading}
             emptyMessage="Nenhum item em estoque para orçamentos entregues."
+            renderMobileCard={(item) => (
+              <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-2">
+                <p className="font-mono text-xs text-white/70">{item.isbn}</p>
+                <p className="font-semibold">{item.nome}</p>
+                <p className="text-xs text-white/60">
+                  Categoria: {item.categoriaNome ?? 'Sem categoria'}
+                </p>
+                <p className="text-xs text-white/60">
+                  Autor: {item.autor ?? '-'}
+                </p>
+                <p className="text-xs text-white/60">
+                  Qtd em estoque: {item.quantidadeTotal}
+                </p>
+                <p className="text-xs text-white/60">
+                  Valor médio:{' '}
+                  {item.valorMedio.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </p>
+                <p className="text-xs text-emerald-300">
+                  Valor total:{' '}
+                  {item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                </p>
+                <div className="flex items-center justify-end pt-2 border-t border-white/10">
+                  <button
+                    type="button"
+                    className={btn.editSm}
+                    onClick={() => {
+                      setStockItemMode('edit');
+                      setStockItemForm({
+                        nome: item.nome,
+                        isbn: item.isbn,
+                        categoriaId: item.categoriaId ?? undefined,
+                        quantidade: item.quantidadeTotal,
+                        valor: item.valorMedio,
+                        desconto: 0,
+                        autor: item.autor ?? '',
+                        editora: item.editora ?? '',
+                        anoPublicacao: item.anoPublicacao ?? '',
+                      });
+                      setShowStockItemModal(true);
+                    }}
+                  >
+                    Editar
+                  </button>
+                </div>
+              </div>
+            )}
           />
         </>
       )}
