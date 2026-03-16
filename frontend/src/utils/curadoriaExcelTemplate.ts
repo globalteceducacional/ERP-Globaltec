@@ -25,7 +25,7 @@ export function buildCuradoriaTemplateWorkbook(): XLSX.WorkBook {
     },
   };
 
-  const headers = ['nome', 'isbn', 'editora', 'categoria', 'quantidade', 'valor', 'desconto', 'desconto_percentual'];
+  const headers = ['titulo', 'isbn', 'editora', 'genero_literario', 'quantidade', 'valor', 'desconto', 'desconto_percentual'];
   const sampleRows = [
     ['Dom Casmurro', '9788535902775', 'Principis', 'Literatura', 3, 49.9, 5, ''],
     ['Clean Code', '9780132350884', 'Prentice Hall', 'Tecnologia', 2, 199.9, '', 10],
@@ -62,10 +62,10 @@ export function buildCuradoriaTemplateWorkbook(): XLSX.WorkBook {
 
   const instrucoes = [
     ['Campo', 'Obrigatório', 'Descrição'],
-    ['nome', 'Não', 'Título do livro. Se vazio, o sistema tenta preencher pelo ISBN.'],
+    ['titulo', 'Não', 'Título do livro. Se vazio, o sistema tenta preencher pelo ISBN.'],
     ['isbn', 'Sim', 'ISBN do livro (10 ou 13 dígitos)'],
     ['editora', 'Não', 'Nome da editora do livro. Se vazio, o sistema tenta buscar pelo ISBN.'],
-    ['categoria', 'Sim*', 'Nome da categoria já cadastrada no sistema.'],
+    ['genero_literario', 'Sim*', 'Nome do gênero literário já cadastrado no sistema.'],
     ['quantidade', 'Sim', 'Quantidade de exemplares do livro (inteiro maior que zero).'],
     ['valor', 'Sim', 'Valor unitário do livro (R$).'],
     [
@@ -78,7 +78,11 @@ export function buildCuradoriaTemplateWorkbook(): XLSX.WorkBook {
       'Não',
       'Desconto unitário em porcentagem (%). Se esta coluna estiver preenchida, ela será usada no lugar de "desconto".',
     ],
-    ['*Categoria padrão', 'Opcional no modal', 'Se informar categoria padrão no modal, a coluna categoria pode ficar vazia.'],
+    [
+      '*Gênero literário padrão',
+      'Opcional no modal',
+      'Se informar gênero literário padrão no modal, a coluna genero_literario pode ficar vazia.',
+    ],
   ];
   const instrucoesSheet = XLSX.utils.aoa_to_sheet(instrucoes);
   instrucoesSheet['!cols'] = [{ wch: 20 }, { wch: 22 }, { wch: 72 }];

@@ -257,12 +257,12 @@ export default function CuradoriaBudgetDetails() {
 
   const columns = useMemo<DataTableColumn<CuradoriaItem>[]>(
     () => [
-      { key: 'nome', label: 'Livro', render: (item) => <span className="font-medium">{item.nome}</span> },
+      { key: 'nome', label: 'Título', render: (item) => <span className="font-medium">{item.nome}</span> },
       { key: 'isbn', label: 'ISBN', render: (item) => <span className="font-mono text-xs">{item.isbn}</span> },
       {
         key: 'categoria',
-        label: 'Categoria',
-        render: (item) => <span>{item.categoria?.nome ?? 'Sem categoria'}</span>,
+        label: 'Gênero literário',
+        render: (item) => <span>{item.categoria?.nome ?? 'Sem gênero literário'}</span>,
       },
       { key: 'qtd', label: 'Qtd', align: 'right', render: (item) => <span>{item.quantidade}</span> },
       {
@@ -405,7 +405,7 @@ export default function CuradoriaBudgetDetails() {
       return;
     }
     if (!editItemForm.categoriaId) {
-      toast.error('Selecione a categoria.');
+      toast.error('Selecione o gênero literário.');
       return;
     }
     if (Number(editItemForm.quantidade) <= 0 || Number(editItemForm.valor) < 0 || Number(editItemForm.desconto) < 0) {
@@ -553,7 +553,7 @@ export default function CuradoriaBudgetDetails() {
                 type="text"
                 value={itemsSearch}
                 onChange={(event) => setItemsSearch(event.target.value)}
-                placeholder="Buscar item por nome, ISBN ou categoria..."
+                placeholder="Buscar item por título, ISBN ou gênero literário..."
                 className="w-full sm:w-72 bg-neutral/80 border border-white/15 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary"
               />
               <div className="flex items-center gap-2">
@@ -564,7 +564,7 @@ export default function CuradoriaBudgetDetails() {
                   }
                   className="bg-neutral/80 border border-white/15 rounded-md px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary"
                 >
-                  <option value="nome">Ordenar por nome</option>
+                  <option value="nome">Ordenar por título</option>
                   <option value="valor">Ordenar por valor</option>
                   <option value="desconto">Ordenar por desconto</option>
                   <option value="liquido">Ordenar por líquido</option>
@@ -620,7 +620,7 @@ export default function CuradoriaBudgetDetails() {
           <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-2">
             <p className="font-semibold">{item.nome}</p>
             <p className="text-xs text-white/60">ISBN: {item.isbn}</p>
-            <p className="text-xs text-white/60">Categoria: {item.categoria?.nome ?? 'Sem categoria'}</p>
+            <p className="text-xs text-white/60">Gênero literário: {item.categoria?.nome ?? 'Sem gênero literário'}</p>
             <p className="text-xs text-white/70">
               Qtd: {item.quantidade} | Valor un.:{' '}
               {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} | Desconto
@@ -911,7 +911,7 @@ export default function CuradoriaBudgetDetails() {
             <form onSubmit={handleEditItem} className="p-6 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs text-white/70">Nome do livro (opcional)</label>
+                  <label className="text-xs text-white/70">Título (opcional)</label>
                   <input
                     type="text"
                     value={editItemForm.nome}
@@ -985,7 +985,7 @@ export default function CuradoriaBudgetDetails() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs text-white/70">Categoria</label>
+                  <label className="text-xs text-white/70">Gênero literário</label>
                   <select
                     value={editItemForm.categoriaId ?? ''}
                     onChange={(event) =>

@@ -99,8 +99,50 @@ export class CuradoriaService {
       select: { id: true },
     });
     if (categories.length !== uniqueCategoryIds.length) {
-      throw new BadRequestException('Um ou mais itens possuem categoria inválida.');
+      throw new BadRequestException('Um ou mais itens possuem gênero literário inválido.');
     }
+  }
+
+  async listCotacoesByIsbn(isbnRaw: string) {
+    const isbn = String(isbnRaw ?? '').replace(/[^0-9Xx]/g, '').toUpperCase();
+    if (!isbn) {
+      throw new BadRequestException('ISBN é obrigatório.');
+    }
+
+    const items = await this.prisma.curadoriaItem.findMany({
+      where: {
+        isbn,
+        orcamento: {
+          status: CompraStatus.ENTREGUE,
+        },
+      },
+      include: {
+        categoria: { select: { id: true, nome: true } },
+        orcamento: {
+          select: {
+            id: true,
+            nome: true,
+            dataCriacao: true,
+            projeto: { select: { id: true, nome: true } },
+          },
+        },
+      },
+      orderBy: [{ valorLiquido: 'asc' }, { valor: 'asc' }],
+    });
+
+    return items.map((item) => ({
+      orcamentoId: item.orcamento.id,
+      orcamentoNome: item.orcamento.nome,
+      dataCriacao: item.orcamento.dataCriacao,
+      projetoId: item.orcamento.projeto?.id ?? null,
+      projetoNome: item.orcamento.projeto?.nome ?? null,
+      categoriaId: item.categoriaId ?? null,
+      categoriaNome: item.categoria?.nome ?? null,
+      quantidade: item.quantidade,
+      valor: item.valor,
+      desconto: item.desconto,
+      valorLiquido: item.valorLiquido,
+    }));
   }
 
   async listEstoqueCuradoria(search?: string) {
@@ -138,6 +180,8 @@ export class CuradoriaService {
         quantidadeTotal: number;
         valorMedio: number;
         valorTotal: number;
+        descontoMedio: number;
+        totalDesconto: number;
         autor?: string | null;
         editora?: string | null;
         anoPublicacao?: string | null;
@@ -150,6 +194,8 @@ export class CuradoriaService {
       const quantidade = item.quantidade || 1;
       const valorUnitario = item.valorLiquido ?? item.valor;
       const valorTotalItem = Number((valorUnitario * quantidade).toFixed(2));
+      const descontoUnitario = item.desconto ?? 0;
+      const descontoTotalItem = Number((descontoUnitario * quantidade).toFixed(2));
 
       if (!existing) {
         grouped.set(key, {
@@ -160,6 +206,8 @@ export class CuradoriaService {
           quantidadeTotal: quantidade,
           valorMedio: Number(valorUnitario.toFixed(2)),
           valorTotal: valorTotalItem,
+          descontoMedio: descontoUnitario,
+          totalDesconto: descontoTotalItem,
           autor: item.autor,
           editora: item.editora,
           anoPublicacao: item.anoPublicacao,
@@ -167,13 +215,18 @@ export class CuradoriaService {
       } else {
         const novaQuantidade = existing.quantidadeTotal + quantidade;
         const novoValorTotal = Number((existing.valorTotal + valorTotalItem).toFixed(2));
+        const novoTotalDesconto = Number((existing.totalDesconto + descontoTotalItem).toFixed(2));
         const novoValorMedio = novaQuantidade > 0 ? Number((novoValorTotal / novaQuantidade).toFixed(2)) : 0;
+        const novoDescontoMedio =
+          novaQuantidade > 0 ? Number((novoTotalDesconto / novaQuantidade).toFixed(2)) : 0;
 
         grouped.set(key, {
           ...existing,
           quantidadeTotal: novaQuantidade,
           valorTotal: novoValorTotal,
           valorMedio: novoValorMedio,
+          totalDesconto: novoTotalDesconto,
+          descontoMedio: novoDescontoMedio,
           autor: existing.autor || item.autor,
           editora: existing.editora || item.editora,
           anoPublicacao: existing.anoPublicacao || item.anoPublicacao,
@@ -181,7 +234,49 @@ export class CuradoriaService {
       }
     }
 
-    return Array.from(grouped.values()).sort((a, b) => a.nome.localeCompare(b.nome));
+    return Array.from(grouped.values())
+      .map((item) => ({
+        isbn: item.isbn,
+        nome: item.nome,
+        categoriaId: item.categoriaId,
+        categoriaNome: item.categoriaNome,
+        quantidadeTotal: item.quantidadeTotal,
+        valorMedio: item.valorMedio,
+        valorTotal: item.valorTotal,
+        descontoMedio: item.descontoMedio,
+        autor: item.autor,
+        editora: item.editora,
+        anoPublicacao: item.anoPublicacao,
+      }))
+      .sort((a, b) => a.nome.localeCompare(b.nome));
+  }
+
+  async clearEstoqueCuradoria(isbnRaw: string, categoriaId?: number) {
+    const isbn = String(isbnRaw ?? '').replace(/[^0-9Xx]/g, '').toUpperCase();
+    if (!isbn) {
+      throw new BadRequestException('ISBN é obrigatório.');
+    }
+
+    const where: any = {
+      isbn,
+      orcamento: {
+        status: CompraStatus.ENTREGUE,
+      },
+    };
+    if (categoriaId) {
+      where.categoriaId = categoriaId;
+    }
+
+    const existingCount = await this.prisma.curadoriaItem.count({ where });
+    if (!existingCount) {
+      throw new NotFoundException('Nenhum item encontrado no estoque para o ISBN/gênero informado.');
+    }
+
+    const deleted = await this.prisma.curadoriaItem.deleteMany({ where });
+    return {
+      deleted: deleted.count,
+      message: 'Itens removidos do estoque de curadoria para o ISBN/gênero informado.',
+    };
   }
 
   async listOrcamentos(search?: string) {
@@ -531,7 +626,7 @@ export class CuradoriaService {
         select: { id: true },
       });
       if (!category) {
-        throw new BadRequestException('Categoria de livro inválida.');
+        throw new BadRequestException('Gênero literário inválido.');
       }
       data.categoriaId = dto.categoriaId;
     }
@@ -779,7 +874,7 @@ export class CuradoriaService {
         rowMap.set(this.normalizeHeader(key), value);
       });
 
-      let nome = String(rowMap.get('nome') ?? rowMap.get('item') ?? rowMap.get('titulo') ?? '').trim();
+      let nome = String(rowMap.get('titulo') ?? rowMap.get('nome') ?? rowMap.get('item') ?? '').trim();
       const isbnRaw = String(rowMap.get('isbn') ?? '').trim();
       const isbn = isbnRaw.replace(/[^0-9Xx]/g, '').toUpperCase();
       const valor = this.parseNumber(rowMap.get('valor') ?? rowMap.get('valorunitario'));
@@ -803,7 +898,9 @@ export class CuradoriaService {
         rowMap.get('editora') ?? rowMap.get('publisher') ?? rowMap.get('publicadora') ?? '',
       ).trim();
       const editoraPlanilha = editoraPlanilhaRaw ? editoraPlanilhaRaw.slice(0, 120) : undefined;
-      const categoriaNomeRaw = String(rowMap.get('categoria') ?? '').trim();
+      const categoriaNomeRaw = String(
+        rowMap.get('generoliterario') ?? rowMap.get('categoria') ?? rowMap.get('genero') ?? '',
+      ).trim();
       const categoriaNomeNormalizado = this.normalizeHeader(categoriaNomeRaw);
       let categoriaId = dto.categoriaId ?? categoryNameMap.get(categoriaNomeNormalizado);
 
@@ -930,7 +1027,7 @@ export class CuradoriaService {
 
     if (!items.length) {
       throw new BadRequestException(
-        'Nenhum item válido encontrado. Colunas obrigatórias: isbn, categoria, valor.',
+        'Nenhum item válido encontrado. Colunas obrigatórias: isbn, genero_literario, valor.',
       );
     }
 

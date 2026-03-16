@@ -41,6 +41,25 @@ export class CuradoriaController {
     return this.curadoriaService.listEstoqueCuradoria(search);
   }
 
+  @Delete('estoque/:isbn')
+  @Permissions('curadoria:gerenciar')
+  clearEstoque(
+    @Param('isbn') isbn: string,
+    @Query('categoriaId') categoriaId?: string,
+  ) {
+    const categoriaIdNumber = categoriaId ? Number(categoriaId) : undefined;
+    return this.curadoriaService.clearEstoqueCuradoria(
+      isbn,
+      Number.isFinite(categoriaIdNumber as number) ? (categoriaIdNumber as number) : undefined,
+    );
+  }
+
+  @Get('estoque/:isbn/cotacoes')
+  @Permissions('curadoria:visualizar', 'curadoria:gerenciar')
+  listCotacoesByIsbn(@Param('isbn') isbn: string) {
+    return this.curadoriaService.listCotacoesByIsbn(isbn);
+  }
+
   @Get('orcamentos/:id')
   @Permissions('curadoria:visualizar', 'curadoria:gerenciar')
   getOrcamentoById(@Param('id', ParseIntPipe) id: number) {

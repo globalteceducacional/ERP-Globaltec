@@ -42,9 +42,24 @@ interface CuradoriaStockItem {
   quantidadeTotal: number;
   valorMedio: number;
   valorTotal: number;
+   descontoMedio: number;
   autor?: string | null;
   editora?: string | null;
   anoPublicacao?: string | null;
+}
+
+interface CuradoriaStockQuote {
+  orcamentoId: number;
+  orcamentoNome: string;
+  dataCriacao: string;
+  projetoId: number | null;
+  projetoNome: string | null;
+  categoriaId: number | null;
+  categoriaNome: string | null;
+  quantidade: number;
+  valor: number;
+  desconto: number;
+  valorLiquido: number;
 }
 
 interface CuradoriaItemForm {
@@ -57,6 +72,16 @@ interface CuradoriaItemForm {
   autor?: string;
   editora?: string;
   anoPublicacao?: string;
+  fornecedorId?: number;
+}
+
+interface CuradoriaStockQuoteForm {
+  categoriaId?: number;
+  quantidade?: number;
+  valor?: number;
+  desconto?: number;
+  descontoTipo: 'VALOR' | 'PERCENTUAL';
+  fornecedorId?: number;
 }
 
 interface CuradoriaCreateForm {
@@ -132,6 +157,15 @@ const createEmptyItem = (): CuradoriaItemForm => ({
   anoPublicacao: '',
 });
 
+const createEmptyStockQuote = (): CuradoriaStockQuoteForm => ({
+  categoriaId: undefined,
+  quantidade: 1,
+  valor: 0,
+  desconto: 0,
+  descontoTipo: 'VALOR',
+  fornecedorId: undefined,
+});
+
 export default function Curadoria() {
   const user = useAuthStore((state) => state.user);
   const navigate = useNavigate();
@@ -164,6 +198,11 @@ export default function Curadoria() {
   const [stockItemSaving, setStockItemSaving] = useState(false);
   const [stockIsbnLoading, setStockIsbnLoading] = useState(false);
   const [stockItemMode, setStockItemMode] = useState<'add' | 'edit'>('add');
+  const [stockQuotesForm, setStockQuotesForm] = useState<CuradoriaStockQuoteForm[]>([createEmptyStockQuote()]);
+  const [showStockQuotesModal, setShowStockQuotesModal] = useState(false);
+  const [stockQuotesLoading, setStockQuotesLoading] = useState(false);
+  const [stockQuotes, setStockQuotes] = useState<CuradoriaStockQuote[]>([]);
+  const [stockQuotesItem, setStockQuotesItem] = useState<CuradoriaStockItem | null>(null);
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -177,6 +216,10 @@ export default function Curadoria() {
   const [editingBudgetTotalBruto, setEditingBudgetTotalBruto] = useState(0);
   const [editingBudgetSaving, setEditingBudgetSaving] = useState(false);
   const [isbnLoadingByIndex, setIsbnLoadingByIndex] = useState<Record<number, boolean>>({});
+
+  const [showStockDeleteModal, setShowStockDeleteModal] = useState(false);
+  const [stockItemToDelete, setStockItemToDelete] = useState<CuradoriaStockItem | null>(null);
+  const [stockDeleting, setStockDeleting] = useState(false);
 
   const [createForm, setCreateForm] = useState<CuradoriaCreateForm>({
     nome: '',
@@ -194,6 +237,7 @@ export default function Curadoria() {
   });
 
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [importModalContext, setImportModalContext] = useState<'orcamentos' | 'estoque'>('orcamentos');
   const [importName, setImportName] = useState('');
   const [importProjectId, setImportProjectId] = useState<number | undefined>(undefined);
   const [importCategoryId, setImportCategoryId] = useState<number | undefined>(undefined);
@@ -376,6 +420,20 @@ export default function Curadoria() {
     return sorted;
   }, [stockItems, stockSearch, stockCategoryId, stockSortKey, stockSortDir]);
 
+  async function openStockQuotes(item: CuradoriaStockItem) {
+    try {
+      setStockQuotesItem(item);
+      setShowStockQuotesModal(true);
+      setStockQuotesLoading(true);
+      const { data } = await api.get<CuradoriaStockQuote[]>(`/curadoria/estoque/${encodeURIComponent(item.isbn)}/cotacoes`);
+      setStockQuotes(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      toast.error(formatApiError(err));
+    } finally {
+      setStockQuotesLoading(false);
+    }
+  }
+
   function updateItem(index: number, field: keyof CuradoriaItemForm, value: string | number | undefined) {
     setCreateForm((prev) => ({
       ...prev,
@@ -385,6 +443,27 @@ export default function Curadoria() {
 
   function updateStockItem(field: keyof CuradoriaItemForm, value: string | number | undefined) {
     setStockItemForm((prev) => ({ ...prev, [field]: value as any }));
+  }
+
+  function updateStockQuote(
+    index: number,
+    field: keyof CuradoriaStockQuoteForm,
+    value: number | 'VALOR' | 'PERCENTUAL' | undefined,
+  ) {
+    setStockQuotesForm((prev) =>
+      prev.map((quote, quoteIndex) => (quoteIndex === index ? { ...quote, [field]: value as any } : quote)),
+    );
+  }
+
+  function addStockQuote() {
+    setStockQuotesForm((prev) => [...prev, createEmptyStockQuote()]);
+  }
+
+  function removeStockQuote(index: number) {
+    setStockQuotesForm((prev) => {
+      if (prev.length <= 1) return prev;
+      return prev.filter((_, quoteIndex) => quoteIndex !== index);
+    });
   }
 
   function addItem() {
@@ -435,7 +514,7 @@ export default function Curadoria() {
           return acc;
         }, {});
 
-        const nome = String(normalizedRow.nome ?? '').trim();
+        const nome = String(normalizedRow.titulo ?? normalizedRow.nome ?? '').trim();
         const isbn = String(normalizedRow.isbn ?? '').trim();
         const valor = parseNumber(normalizedRow.valor);
         const quantidade = Math.max(1, Math.floor(parseNumber(normalizedRow.quantidade)));
@@ -539,15 +618,15 @@ export default function Curadoria() {
     try {
       setStockIsbnLoading(true);
       const { data } = await api.get<IsbnBookData>(`/curadoria/books/isbn/${isbn}`);
+      const matchingCategory = categories.find((category) =>
+        data.categorias.some(
+          (bookCategory) =>
+            bookCategory.toLowerCase().includes(category.nome.toLowerCase()) ||
+            category.nome.toLowerCase().includes(bookCategory.toLowerCase()),
+        ),
+      );
 
       setStockItemForm((prev) => {
-        const matchingCategory = categories.find((category) =>
-          data.categorias.some(
-            (bookCategory) =>
-              bookCategory.toLowerCase().includes(category.nome.toLowerCase()) ||
-              category.nome.toLowerCase().includes(bookCategory.toLowerCase()),
-          ),
-        );
         return {
           ...prev,
           isbn: data.isbn || prev.isbn,
@@ -555,9 +634,18 @@ export default function Curadoria() {
           autor: data.autores?.join(', ') || prev.autor,
           editora: data.editora || prev.editora,
           anoPublicacao: data.anoPublicacao || prev.anoPublicacao,
-          categoriaId: prev.categoriaId || matchingCategory?.id,
         };
       });
+      if (matchingCategory?.id) {
+        setStockQuotesForm((prev) => {
+          if (prev.length === 0) return prev;
+          const next = [...prev];
+          if (!next[0].categoriaId) {
+            next[0] = { ...next[0], categoriaId: matchingCategory.id };
+          }
+          return next;
+        });
+      }
       toast.success('Dados do ISBN carregados.');
     } catch (err: any) {
       toast.error(formatApiError(err));
@@ -577,47 +665,79 @@ export default function Curadoria() {
       toast.error('Informe o ISBN do livro.');
       return;
     }
-    if (!stockItemForm.categoriaId) {
-      toast.error('Selecione a categoria.');
+    if (!stockQuotesForm.length) {
+      toast.error('Adicione ao menos uma cotação.');
       return;
     }
-    if (stockItemForm.quantidade == null || Number(stockItemForm.quantidade) <= 0) {
-      toast.error('Informe uma quantidade maior que zero.');
-      return;
-    }
-    if (stockItemForm.valor == null || Number(stockItemForm.valor) < 0) {
-      toast.error('Informe um valor válido.');
-      return;
-    }
-    if (stockItemForm.desconto != null && Number(stockItemForm.desconto) < 0) {
-      toast.error('Desconto inválido.');
+    const invalidQuote = stockQuotesForm.some(
+      (quote) =>
+        !quote.categoriaId ||
+        quote.quantidade == null ||
+        Number(quote.quantidade) <= 0 ||
+        quote.valor == null ||
+        Number(quote.valor) < 0 ||
+        (quote.desconto != null && Number(quote.desconto) < 0),
+    );
+    if (invalidQuote) {
+      toast.error('Preencha gênero literário, quantidade, valor e desconto válido em todas as cotações.');
       return;
     }
 
     try {
       setStockItemSaving(true);
-      await api.post('/curadoria/orcamentos', {
-        nome: 'Ajuste de estoque - Curadoria',
-        status: 'ENTREGUE',
-        descontoAplicadoEm: 'ITEM',
-        descontoTotal: 0,
-        itens: [
-          {
-            nome: stockItemForm.nome.trim(),
-            isbn: stockItemForm.isbn.trim(),
-            categoriaId: Number(stockItemForm.categoriaId),
-            quantidade: Number(stockItemForm.quantidade || 1),
-            valor: Number(stockItemForm.valor || 0),
-            desconto: Number(stockItemForm.desconto || 0),
-            autor: stockItemForm.autor?.trim() || undefined,
-            editora: stockItemForm.editora?.trim() || undefined,
-            anoPublicacao: stockItemForm.anoPublicacao?.trim() || undefined,
-          },
-        ],
+      const gruposPorFornecedor = new Map<
+        string,
+        { fornecedorId?: number; itens: { nome: string; isbn: string; categoriaId: number; quantidade: number; valor: number; desconto: number; autor?: string; editora?: string; anoPublicacao?: string }[] }
+      >();
+
+      stockQuotesForm.forEach((quote) => {
+        const valorUnitario = Number(quote.valor || 0);
+        const rawDesconto = Number(quote.desconto || 0);
+        const descontoCalculado =
+          quote.descontoTipo === 'PERCENTUAL'
+            ? Number(((valorUnitario * rawDesconto) / 100).toFixed(2))
+            : rawDesconto;
+        const fornecedorId = quote.fornecedorId || undefined;
+        const key = String(fornecedorId ?? 'null');
+        const itemPayload = {
+          nome: stockItemForm.nome.trim(),
+          isbn: stockItemForm.isbn.trim(),
+          categoriaId: Number(quote.categoriaId),
+          quantidade: Number(quote.quantidade || 1),
+          valor: valorUnitario,
+          desconto: descontoCalculado,
+          autor: stockItemForm.autor?.trim() || undefined,
+          editora: stockItemForm.editora?.trim() || undefined,
+          anoPublicacao: stockItemForm.anoPublicacao?.trim() || undefined,
+        };
+        const existing = gruposPorFornecedor.get(key);
+        if (existing) {
+          existing.itens.push(itemPayload);
+        } else {
+          gruposPorFornecedor.set(key, { fornecedorId, itens: [itemPayload] });
+        }
       });
-      toast.success('Item adicionado ao estoque da curadoria.');
+
+      for (const grupo of gruposPorFornecedor.values()) {
+        await api.post('/curadoria/orcamentos', {
+          nome: 'Ajuste de estoque - Curadoria',
+          status: 'ENTREGUE',
+          fornecedorId: grupo.fornecedorId || undefined,
+          descontoAplicadoEm: 'ITEM',
+          descontoTotal: 0,
+          itens: grupo.itens,
+        });
+      }
+
+      const totalItens = stockQuotesForm.length;
+      toast.success(
+        totalItens > 1
+          ? `${totalItens} cotações adicionadas ao estoque da curadoria.`
+          : 'Item adicionado ao estoque da curadoria.',
+      );
       setShowStockItemModal(false);
       setStockItemForm(createEmptyItem());
+      setStockQuotesForm([createEmptyStockQuote()]);
       await Promise.all([loadData(), loadStock()]);
     } catch (err: any) {
       toast.error(formatApiError(err));
@@ -649,7 +769,7 @@ export default function Curadoria() {
         (createForm.descontoAplicadoEm === 'ITEM' && Number(item.desconto ?? 0) < 0),
     );
     if (invalidItem) {
-      toast.error('Preencha os itens com ISBN, categoria, quantidade, valor e desconto válido.');
+      toast.error('Preencha os itens com ISBN, gênero literário, quantidade, valor e desconto válido.');
       return;
     }
 
@@ -996,7 +1116,7 @@ export default function Curadoria() {
     },
     {
       key: 'categoria',
-      label: 'Categoria',
+      label: 'Gênero literário',
       render: (item) => <span>{item.categoriaNome ?? '-'}</span>,
     },
     {
@@ -1037,27 +1157,54 @@ export default function Curadoria() {
       align: 'right',
       stopRowClick: true,
       render: (item) => (
-        <button
-          type="button"
-          className={btn.editSm}
-          onClick={() => {
-            setStockItemMode('edit');
-            setStockItemForm({
-              nome: item.nome,
-              isbn: item.isbn,
-              categoriaId: item.categoriaId ?? undefined,
-              quantidade: item.quantidadeTotal,
-              valor: item.valorMedio,
-              desconto: 0,
-              autor: item.autor ?? '',
-              editora: item.editora ?? '',
-              anoPublicacao: item.anoPublicacao ?? '',
-            });
-            setShowStockItemModal(true);
-          }}
-        >
-          Editar
-        </button>
+        <div className="flex items-center justify-end gap-2">
+          <button
+            type="button"
+            className={btn.primarySoft}
+            onClick={() => {
+              void openStockQuotes(item);
+            }}
+          >
+            Ver cotações
+          </button>
+          <button
+            type="button"
+            className={btn.editSm}
+            onClick={() => {
+              setStockItemMode('edit');
+              setStockItemForm({
+                nome: item.nome,
+                isbn: item.isbn,
+                autor: item.autor ?? '',
+                editora: item.editora ?? '',
+                anoPublicacao: item.anoPublicacao ?? '',
+              });
+              setStockQuotesForm([
+                {
+                  categoriaId: item.categoriaId ?? undefined,
+                  quantidade: item.quantidadeTotal,
+                  valor: item.valorMedio,
+                  desconto: item.descontoMedio,
+                  descontoTipo: 'VALOR',
+                  fornecedorId: undefined,
+                },
+              ]);
+              setShowStockItemModal(true);
+            }}
+          >
+            Editar
+          </button>
+          <button
+            type="button"
+            className={btn.dangerSm}
+            onClick={() => {
+              setStockItemToDelete(item);
+              setShowStockDeleteModal(true);
+            }}
+          >
+            Excluir
+          </button>
+        </div>
       ),
     },
   ];
@@ -1075,7 +1222,14 @@ export default function Curadoria() {
           <div className="flex items-center gap-2">
             {activeTab === 'orcamentos' && (
               <>
-                <button type="button" className={btn.secondary} onClick={() => setShowImportModal(true)}>
+                <button
+                  type="button"
+                  className={btn.secondary}
+                  onClick={() => {
+                    setImportModalContext('orcamentos');
+                    setShowImportModal(true);
+                  }}
+                >
                   Importar XLSX
                 </button>
                 <button type="button" className={btn.primary} onClick={() => setShowCreateModal(true)}>
@@ -1088,9 +1242,12 @@ export default function Curadoria() {
                 <button
                   type="button"
                   className={btn.secondary}
-                  onClick={() => setShowImportModal(true)}
+                  onClick={() => {
+                    setImportModalContext('estoque');
+                    setShowImportModal(true);
+                  }}
                 >
-                  Importar XLSX (modelo existente)
+                  Importar planilha
                 </button>
                 <button
                   type="button"
@@ -1098,6 +1255,7 @@ export default function Curadoria() {
                   onClick={() => {
                     setStockItemMode('add');
                     setStockItemForm(createEmptyItem());
+                    setStockQuotesForm([createEmptyStockQuote()]);
                     setShowStockItemModal(true);
                   }}
                 >
@@ -1274,7 +1432,7 @@ export default function Curadoria() {
             type="text"
             value={stockSearch}
             onChange={(event) => setStockSearch(event.target.value)}
-            placeholder="Buscar por título, ISBN, categoria, autor ou editora..."
+            placeholder="Buscar por título, ISBN, gênero literário, autor ou editora..."
             className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
           />
 
@@ -1288,7 +1446,7 @@ export default function Curadoria() {
               }
               className="w-full sm:w-64 bg-neutral/70 border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
             >
-              <option value="">Todas as categorias</option>
+              <option value="">Todos os gêneros literários</option>
               {categories.map((category) => (
                 <option key={category.id} value={category.id}>
                   {category.nome}
@@ -1333,7 +1491,7 @@ export default function Curadoria() {
                 <p className="font-mono text-xs text-white/70">{item.isbn}</p>
                 <p className="font-semibold">{item.nome}</p>
                 <p className="text-xs text-white/60">
-                  Categoria: {item.categoriaNome ?? 'Sem categoria'}
+                  Gênero literário: {item.categoriaNome ?? 'Sem gênero literário'}
                 </p>
                 <p className="text-xs text-white/60">
                   Autor: {item.autor ?? '-'}
@@ -1349,7 +1507,16 @@ export default function Curadoria() {
                   Valor total:{' '}
                   {item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
                 </p>
-                <div className="flex items-center justify-end pt-2 border-t border-white/10">
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+                  <button
+                    type="button"
+                    className={btn.primarySoft}
+                    onClick={() => {
+                      void openStockQuotes(item);
+                    }}
+                  >
+                    Ver cotações
+                  </button>
                   <button
                     type="button"
                     className={btn.editSm}
@@ -1358,14 +1525,19 @@ export default function Curadoria() {
                       setStockItemForm({
                         nome: item.nome,
                         isbn: item.isbn,
-                        categoriaId: item.categoriaId ?? undefined,
-                        quantidade: item.quantidadeTotal,
-                        valor: item.valorMedio,
-                        desconto: 0,
                         autor: item.autor ?? '',
                         editora: item.editora ?? '',
                         anoPublicacao: item.anoPublicacao ?? '',
                       });
+                      setStockQuotesForm([
+                        {
+                          categoriaId: item.categoriaId ?? undefined,
+                          quantidade: item.quantidadeTotal,
+                          valor: item.valorMedio,
+                          desconto: item.descontoMedio,
+                          descontoTipo: 'VALOR',
+                        },
+                      ]);
                       setShowStockItemModal(true);
                     }}
                   >
@@ -1393,150 +1565,273 @@ export default function Curadoria() {
                 ✕
               </button>
             </div>
-            <form onSubmit={handleSaveStockItem} className="p-6 space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className={labelClass}>Nome do livro (opcional)</label>
-                  <input
-                    type="text"
-                    value={stockItemForm.nome}
-                    onChange={(event) => updateStockItem('nome', event.target.value)}
-                    placeholder="Ex.: O Alquimista"
-                    className={fieldClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>ISBN (obrigatório)</label>
-                  <div className="flex gap-2">
+            <form onSubmit={handleSaveStockItem} className="p-6 space-y-5">
+              {/* Seção de busca / identificação do livro */}
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelClass}>Título (opcional)</label>
                     <input
                       type="text"
-                      value={stockItemForm.isbn}
-                      onChange={(event) => updateStockItem('isbn', event.target.value)}
-                      onBlur={() => {
-                        void fetchIsbnForStock();
-                      }}
-                      placeholder="Ex.: 9788532530783"
+                      value={stockItemForm.nome}
+                      onChange={(event) => updateStockItem('nome', event.target.value)}
+                      placeholder="Ex.: O Alquimista"
                       className={fieldClass}
-                      required
                     />
-                    <button
-                      type="button"
-                      className={btn.secondary}
-                      onClick={() => {
-                        void fetchIsbnForStock();
-                      }}
-                      disabled={stockIsbnLoading}
-                    >
-                      {stockIsbnLoading ? '...' : 'Buscar'}
-                    </button>
+                  </div>
+                  <div>
+                    <label className={labelClass}>ISBN (obrigatório)</label>
+                    <div className="flex items-stretch gap-2">
+                      <input
+                        type="text"
+                        value={stockItemForm.isbn}
+                        onChange={(event) => updateStockItem('isbn', event.target.value)}
+                        onBlur={() => {
+                          void fetchIsbnForStock();
+                        }}
+                        placeholder="Ex.: 9788532530783"
+                        className={fieldClass}
+                        required
+                      />
+                      <button
+                        type="button"
+                        className={btn.primary}
+                        onClick={() => {
+                          void fetchIsbnForStock();
+                        }}
+                        disabled={stockIsbnLoading}
+                      >
+                        {stockIsbnLoading ? '...' : 'Buscar'}
+                      </button>
+                    </div>
+                    {stockItemMode === 'edit' && stockItemForm.isbn && (
+                      <button
+                        type="button"
+                        className="mt-2 text-xs text-primary hover:underline"
+                        onClick={() => {
+                          void openStockQuotes({
+                            isbn: stockItemForm.isbn,
+                            nome: stockItemForm.nome,
+                            categoriaId: stockQuotesForm[0]?.categoriaId ?? null,
+                            categoriaNome:
+                              categories.find((c) => c.id === stockQuotesForm[0]?.categoriaId)?.nome ?? null,
+                            quantidadeTotal: stockQuotesForm[0]?.quantidade ?? 0,
+                            valorMedio: stockQuotesForm[0]?.valor ?? 0,
+                            valorTotal: 0,
+                            autor: stockItemForm.autor ?? null,
+                            editora: stockItemForm.editora ?? null,
+                            anoPublicacao: stockItemForm.anoPublicacao ?? null,
+                          });
+                        }}
+                      >
+                        Ver cotações deste ISBN
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelClass}>Autor (opcional)</label>
+                    <input
+                      type="text"
+                      value={stockItemForm.autor ?? ''}
+                      onChange={(event) => updateStockItem('autor', event.target.value)}
+                      placeholder="Ex.: Machado de Assis"
+                      className={fieldClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Editora (opcional)</label>
+                    <input
+                      type="text"
+                      value={stockItemForm.editora ?? ''}
+                      onChange={(event) => updateStockItem('editora', event.target.value)}
+                      placeholder="Ex.: Companhia das Letras"
+                      className={fieldClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Ano/Data publicação (opcional)</label>
+                    <input
+                      type="text"
+                      value={stockItemForm.anoPublicacao ?? ''}
+                      onChange={(event) => updateStockItem('anoPublicacao', event.target.value)}
+                      placeholder="Ex.: 2023 ou 2023-08-15"
+                      className={fieldClass}
+                    />
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                <div>
-                  <label className={labelClass}>Categoria</label>
-                  <select
-                    value={stockItemForm.categoriaId ?? ''}
-                    onChange={(event) =>
-                      updateStockItem(
-                        'categoriaId',
-                        event.target.value ? Number(event.target.value) : undefined,
-                      )
-                    }
-                    className={fieldClass}
-                    required
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-white">Cotações</p>
+                  <button
+                    type="button"
+                    className={btn.primarySoft}
+                    onClick={addStockQuote}
                   >
-                    <option value="">Selecione</option>
-                    {categories.map((category) => (
-                      <option key={category.id} value={category.id}>
-                        {category.nome}
-                      </option>
-                    ))}
-                  </select>
+                    + Adicionar cotação
+                  </button>
                 </div>
-                <div>
-                  <label className={labelClass}>Quantidade</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    value={stockItemForm.quantidade ?? 1}
-                    onChange={(event) =>
-                      updateStockItem(
-                        'quantidade',
-                        event.target.value === '' ? undefined : Number(event.target.value),
-                      )
-                    }
-                    className={fieldClass}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Valor unitário (R$)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={stockItemForm.valor ?? 0}
-                    onChange={(event) =>
-                      updateStockItem(
-                        'valor',
-                        event.target.value === '' ? undefined : Number(event.target.value),
-                      )
-                    }
-                    className={fieldClass}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Desconto (R$)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={stockItemForm.desconto ?? 0}
-                    onChange={(event) =>
-                      updateStockItem(
-                        'desconto',
-                        event.target.value === '' ? undefined : Number(event.target.value),
-                      )
-                    }
-                    className={fieldClass}
-                  />
-                </div>
-              </div>
+                <div className="space-y-3">
+                  {stockQuotesForm.map((quote, quoteIndex) => (
+                    <div key={`quote-${quoteIndex}`} className="bg-black/20 border border-white/10 rounded-lg p-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold text-white/80">Cotação {quoteIndex + 1}</p>
+                        {stockQuotesForm.length > 1 && (
+                          <button
+                            type="button"
+                            className="text-xs text-red-300 hover:text-red-200"
+                            onClick={() => removeStockQuote(quoteIndex)}
+                          >
+                            Remover
+                          </button>
+                        )}
+                      </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div>
-                  <label className={labelClass}>Autor (opcional)</label>
-                  <input
-                    type="text"
-                    value={stockItemForm.autor ?? ''}
-                    onChange={(event) => updateStockItem('autor', event.target.value)}
-                    placeholder="Ex.: Machado de Assis"
-                    className={fieldClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Editora (opcional)</label>
-                  <input
-                    type="text"
-                    value={stockItemForm.editora ?? ''}
-                    onChange={(event) => updateStockItem('editora', event.target.value)}
-                    placeholder="Ex.: Companhia das Letras"
-                    className={fieldClass}
-                  />
-                </div>
-                <div>
-                  <label className={labelClass}>Ano/Data publicação (opcional)</label>
-                  <input
-                    type="text"
-                    value={stockItemForm.anoPublicacao ?? ''}
-                    onChange={(event) => updateStockItem('anoPublicacao', event.target.value)}
-                    placeholder="Ex.: 2023 ou 2023-08-15"
-                    className={fieldClass}
-                  />
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs text-white/70 mb-1">Gênero literário</label>
+                          <select
+                            value={quote.categoriaId ?? ''}
+                            onChange={(event) =>
+                              updateStockQuote(
+                                quoteIndex,
+                                'categoriaId',
+                                event.target.value ? Number(event.target.value) : undefined,
+                              )
+                            }
+                            className={fieldClass}
+                            required
+                          >
+                            <option value="">Selecione</option>
+                            {categories.map((category) => (
+                              <option key={category.id} value={category.id}>
+                                {category.nome}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs text-white/70 mb-1">Quantidade</label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={quote.quantidade ?? 1}
+                            onChange={(event) =>
+                              updateStockQuote(
+                                quoteIndex,
+                                'quantidade',
+                                event.target.value === '' ? undefined : Number(event.target.value),
+                              )
+                            }
+                            className={fieldClass}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-white/70 mb-1">Valor unitário (R$)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={quote.valor ?? 0}
+                            onChange={(event) =>
+                              updateStockQuote(
+                                quoteIndex,
+                                'valor',
+                                event.target.value === '' ? undefined : Number(event.target.value),
+                              )
+                            }
+                            className={fieldClass}
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs text-white/70 mb-1">Tipo de desconto</label>
+                          <div className="flex items-center gap-3 bg-neutral/70 border border-white/10 rounded-md px-3 py-1.5">
+                            <label className="flex items-center gap-1 text-xs text-white/80 cursor-pointer">
+                              <input
+                                type="radio"
+                                className="accent-primary"
+                                checked={quote.descontoTipo === 'VALOR'}
+                                onChange={() => updateStockQuote(quoteIndex, 'descontoTipo', 'VALOR')}
+                              />
+                              <span>R$</span>
+                            </label>
+                            <label className="flex items-center gap-1 text-xs text-white/80 cursor-pointer">
+                              <input
+                                type="radio"
+                                className="accent-primary"
+                                checked={quote.descontoTipo === 'PERCENTUAL'}
+                                onChange={() => updateStockQuote(quoteIndex, 'descontoTipo', 'PERCENTUAL')}
+                              />
+                              <span>%</span>
+                            </label>
+                          </div>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={quote.desconto ?? 0}
+                            onChange={(event) =>
+                              updateStockQuote(
+                                quoteIndex,
+                                'desconto',
+                                event.target.value === '' ? undefined : Number(event.target.value),
+                              )
+                            }
+                            className={`${fieldClass} mt-2`}
+                            placeholder={quote.descontoTipo === 'VALOR' ? 'Ex.: 10,00' : 'Ex.: 10'}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                        <div>
+                          <label className="block text-xs text-white/70 mb-1">Fornecedor (opcional)</label>
+                          <select
+                            value={quote.fornecedorId ?? ''}
+                            onChange={(event) =>
+                              updateStockQuote(
+                                quoteIndex,
+                                'fornecedorId',
+                                event.target.value ? Number(event.target.value) : undefined,
+                              )
+                            }
+                            className={fieldClass}
+                          >
+                            <option value="">Selecione um fornecedor</option>
+                            {suppliers.map((supplier) => (
+                              <option key={supplier.id} value={supplier.id}>
+                                {supplier.nomeFantasia || supplier.razaoSocial}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex justify-end items-end">
+                          <div className="text-right w-full">
+                            <p className="text-xs text-white/60">Valor líquido estimado</p>
+                            <p className="text-sm font-semibold text-emerald-300">
+                              {(() => {
+                                const valor = Number(quote.valor || 0);
+                                const rawDesc = Number(quote.desconto || 0);
+                                const desconto =
+                                  quote.descontoTipo === 'PERCENTUAL' ? (valor * rawDesc) / 100 : rawDesc;
+                                return Math.max(0, valor - desconto).toLocaleString('pt-BR', {
+                                  style: 'currency',
+                                  currency: 'BRL',
+                                });
+                              })()}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 
@@ -1554,6 +1849,88 @@ export default function Curadoria() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showStockQuotesModal && stockQuotesItem && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral border border-white/10 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-semibold">Cotações do item</h3>
+                <p className="text-xs text-white/70">
+                  ISBN {stockQuotesItem.isbn} · {stockQuotesItem.nome}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowStockQuotesModal(false);
+                  setStockQuotes([]);
+                  setStockQuotesItem(null);
+                }}
+                className="text-white/50 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {stockQuotesLoading && <p className="text-sm text-white/80">Carregando cotações...</p>}
+              {!stockQuotesLoading && stockQuotes.length === 0 && (
+                <p className="text-sm text-white/70">
+                  Nenhuma cotação encontrada para este ISBN em orçamentos entregues.
+                </p>
+              )}
+              {!stockQuotesLoading && stockQuotes.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-white/60 border-b border-white/10">
+                        <th className="py-2 pr-4">Orçamento</th>
+                        <th className="py-2 pr-4">Projeto</th>
+                        <th className="py-2 pr-4">Gênero literário</th>
+                        <th className="py-2 pr-4 text-right">Qtd</th>
+                        <th className="py-2 pr-4 text-right">Valor (R$)</th>
+                        <th className="py-2 pr-4 text-right">Desconto (R$)</th>
+                        <th className="py-2 pr-4 text-right">V. líquido (R$)</th>
+                        <th className="py-2 pr-0 text-right">Criado em</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stockQuotes.map((quote) => (
+                        <tr key={`${quote.orcamentoId}-${quote.categoriaId}-${quote.valor}-${quote.valorLiquido}`} className="border-b border-white/5">
+                          <td className="py-2 pr-4">
+                            <span className="text-white/90">{quote.orcamentoNome}</span>
+                          </td>
+                          <td className="py-2 pr-4">
+                            <span className="text-white/80">{quote.projetoNome ?? '-'}</span>
+                          </td>
+                          <td className="py-2 pr-4">
+                            <span className="text-white/80">{quote.categoriaNome ?? '-'}</span>
+                          </td>
+                          <td className="py-2 pr-4 text-right">
+                            {quote.quantidade}
+                          </td>
+                          <td className="py-2 pr-4 text-right">
+                            {quote.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </td>
+                          <td className="py-2 pr-4 text-right">
+                            {quote.desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </td>
+                          <td className="py-2 pr-4 text-right">
+                            {quote.valorLiquido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </td>
+                          <td className="py-2 pr-0 text-right text-white/70 text-xs">
+                            {new Date(quote.dataCriacao).toLocaleDateString('pt-BR')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -1609,6 +1986,73 @@ export default function Curadoria() {
                   }
                 >
                   {deletingBudgetId === budgetToDelete.id ? 'Removendo...' : 'Confirmar Remoção'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showStockDeleteModal && stockItemToDelete && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
+            <div className="px-8 py-6 border-b border-white/20">
+              <h2 className="text-2xl font-bold text-white">Remover item do estoque da curadoria</h2>
+            </div>
+            <div className="p-8 space-y-4">
+              <p className="text-white/90">
+                Tem certeza que deseja remover todo o estoque do título{' '}
+                <span className="font-semibold">"{stockItemToDelete.nome}"</span> (ISBN{' '}
+                <span className="font-mono">{stockItemToDelete.isbn}</span>) para o gênero{' '}
+                <span className="font-semibold">
+                  {stockItemToDelete.categoriaNome ?? 'Sem gênero literário'}
+                </span>
+                ?
+              </p>
+              <p className="text-sm text-white/70">
+                Esta ação não pode ser desfeita. O estoque atual de{' '}
+                <span className="font-semibold">{stockItemToDelete.quantidadeTotal}</span> itens será zerado
+                para este ISBN + gênero literário.
+              </p>
+              <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
+                <button
+                  type="button"
+                  className={btn.secondaryLg}
+                  disabled={stockDeleting}
+                  onClick={() => {
+                    setShowStockDeleteModal(false);
+                    setStockItemToDelete(null);
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className={btn.dangerLg}
+                  disabled={stockDeleting}
+                  onClick={async () => {
+                    if (!stockItemToDelete) return;
+                    try {
+                      setStockDeleting(true);
+                      await api.delete(
+                        `/curadoria/estoque/${encodeURIComponent(stockItemToDelete.isbn)}${
+                          stockItemToDelete.categoriaId
+                            ? `?categoriaId=${stockItemToDelete.categoriaId}`
+                            : ''
+                        }`,
+                      );
+                      toast.success('Estoque do item removido com sucesso.');
+                      await loadStock();
+                      setShowStockDeleteModal(false);
+                      setStockItemToDelete(null);
+                    } catch (err: any) {
+                      toast.error(formatApiError(err));
+                    } finally {
+                      setStockDeleting(false);
+                    }
+                  }}
+                >
+                  {stockDeleting ? 'Removendo...' : 'Remover do estoque'}
                 </button>
               </div>
             </div>
@@ -2104,7 +2548,7 @@ export default function Curadoria() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <input
                         type="text"
-                        placeholder="Título do livro (opcional)"
+                        placeholder="Título (opcional)"
                         value={item.nome}
                         onChange={(event) => updateItem(index, 'nome', event.target.value)}
                         className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
@@ -2135,7 +2579,7 @@ export default function Curadoria() {
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                       <div>
-                        <label className="block text-xs text-white/60 mb-1">Categoria</label>
+                        <label className="block text-xs text-white/60 mb-1">Gênero literário</label>
                         <select
                           value={item.categoriaId ?? ''}
                           onChange={(event) => updateItem(index, 'categoriaId', event.target.value ? Number(event.target.value) : undefined)}
@@ -2240,7 +2684,11 @@ export default function Curadoria() {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
           <div className="bg-neutral border border-white/10 rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Importar orçamento (.xlsx)</h3>
+              <h3 className="text-lg font-semibold">
+                {importModalContext === 'estoque'
+                  ? 'Importar planilha para Curadoria (.xlsx)'
+                  : 'Importar orçamento (.xlsx)'}
+              </h3>
               <button type="button" onClick={() => setShowImportModal(false)} className="text-white/50 hover:text-white">
                 ✕
               </button>
@@ -2248,7 +2696,9 @@ export default function Curadoria() {
             <form onSubmit={handleImportXlsx} className="p-6 space-y-4">
               <div className="flex items-center justify-between gap-2 bg-black/20 border border-white/10 rounded-md p-3">
                 <p className="text-xs text-white/70">
-                  Baixe o modelo para importar orcamentos de livros.
+                  {importModalContext === 'estoque'
+                    ? 'Use o mesmo modelo de planilha da curadoria para entrada organizada de itens.'
+                    : 'Baixe o modelo para importar orçamentos de livros.'}
                 </p>
                 <ExcelDownloadButton
                   buildWorkbook={buildCuradoriaTemplateWorkbook}
@@ -2280,7 +2730,7 @@ export default function Curadoria() {
               <div className="bg-black/20 border border-white/10 rounded-md px-3 py-2 text-xs text-white/70">
                 Colunas esperadas:{' '}
                 <span className="text-white">
-                  isbn(obrigatório), nome(opcional), editora(opcional), categoria, quantidade, valor, desconto (R$),
+                  isbn(obrigatório), titulo(opcional), editora(opcional), genero_literario, quantidade, valor, desconto (R$),
                   desconto_percentual (%)
                 </span>
               </div>
@@ -2302,7 +2752,7 @@ export default function Curadoria() {
                   onChange={(event) => setImportCategoryId(event.target.value ? Number(event.target.value) : undefined)}
                   className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
                 >
-                  <option value="">Categoria padrão (opcional)</option>
+                  <option value="">Gênero literário padrão (opcional)</option>
                   {categories.map((category) => (
                     <option key={category.id} value={category.id}>
                       {category.nome}
