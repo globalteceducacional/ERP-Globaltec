@@ -57,7 +57,12 @@ export class TasksController {
     FilesInterceptor('files', 10, {
       storage: diskStorage({
         destination: (req, file, cb) => {
-          const uploadPath = join(process.cwd(), 'uploads', 'tasks');
+          const baseDir = process.env.UPLOADS_DIR && !/^https?:\/\//i.test(process.env.UPLOADS_DIR)
+            ? (process.env.UPLOADS_DIR.startsWith('.')
+                ? join(process.cwd(), process.env.UPLOADS_DIR)
+                : process.env.UPLOADS_DIR)
+            : join(process.cwd(), 'uploads');
+          const uploadPath = join(baseDir, 'tasks');
           if (!fs.existsSync(uploadPath)) {
             fs.mkdirSync(uploadPath, { recursive: true });
           }
@@ -81,7 +86,8 @@ export class TasksController {
       return [];
     }
 
-    const baseUrl = '/uploads/tasks';
+    const basePrefix = process.env.UPLOADS_URL_PREFIX || '/uploads';
+    const baseUrl = `${basePrefix.replace(/\/+$/, '')}/tasks`;
 
     return files.map((file) => ({
       originalName: file.originalname,

@@ -106,7 +106,7 @@ export function buildProjectsTemplateWorkbook(maxRows = 1000): XLSX.WorkBook {
     'dataInicio',
     'dataFim',
     'valorInsumos',
-    'executorEmail',
+    'supervisorEmail',
     'responsavelEmail',
     'integrantesEmails',
   ];

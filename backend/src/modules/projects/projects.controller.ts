@@ -224,7 +224,12 @@ export class ProjectsController {
     FilesInterceptor('files', 10, {
       storage: diskStorage({
         destination: (req, file, cb) => {
-          const uploadPath = join(process.cwd(), 'uploads', 'projects');
+          const baseDir = process.env.UPLOADS_DIR && !/^https?:\/\//i.test(process.env.UPLOADS_DIR)
+            ? (process.env.UPLOADS_DIR.startsWith('.')
+                ? join(process.cwd(), process.env.UPLOADS_DIR)
+                : process.env.UPLOADS_DIR)
+            : join(process.cwd(), 'uploads');
+          const uploadPath = join(baseDir, 'projects');
           if (!fs.existsSync(uploadPath)) {
             fs.mkdirSync(uploadPath, { recursive: true });
           }

@@ -11,6 +11,8 @@ import { CompraStatus, EstoqueStatus, NotificacaoTipo, RequerimentoTipo } from '
 import { ImportPurchasesXlsxDto } from './dto/import-purchases-xlsx.dto';
 import { CreateCuradoriaRegisterDto, CuradoriaItemInput } from './dto/create-curadoria-register.dto';
 import * as XLSX from 'xlsx';
+import * as fs from 'fs';
+import { join } from 'path';
 
 @Injectable()
 export class StockService {
@@ -28,6 +30,65 @@ export class StockService {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '')
       .trim();
+  }
+
+  /**
+   * Salva um data URL (base64) em disco e retorna a URL pública (/uploads/...).
+   * Se o valor não for data URL, devolve o próprio valor.
+   */
+  private async persistDataUrl(
+    value: string | undefined | null,
+    subdir: string,
+  ): Promise<string | undefined> {
+    if (!value || typeof value !== 'string') return undefined;
+
+    const trimmed = value.trim();
+    const dataUrlMatch = /^data:(.+);base64,(.+)$/i.exec(trimmed);
+    if (!dataUrlMatch) {
+      // Já é uma URL normal (http, https ou /uploads/...), apenas devolver
+      return trimmed;
+    }
+
+    const mimeType = dataUrlMatch[1] || 'application/octet-stream';
+    const base64Data = dataUrlMatch[2];
+
+    let extension = 'bin';
+    const mimeToExt: Record<string, string> = {
+      'image/png': 'png',
+      'image/jpeg': 'jpg',
+      'image/jpg': 'jpg',
+      'image/gif': 'gif',
+      'image/webp': 'webp',
+      'application/pdf': 'pdf',
+    };
+    if (mimeToExt[mimeType]) {
+      extension = mimeToExt[mimeType];
+    } else if (mimeType.startsWith('image/')) {
+      extension = mimeType.slice('image/'.length);
+    }
+
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    const baseDirEnv = process.env.UPLOADS_DIR;
+    const baseDir =
+      baseDirEnv && !/^https?:\/\//i.test(baseDirEnv)
+        ? baseDirEnv.startsWith('.')
+          ? join(process.cwd(), baseDirEnv)
+          : baseDirEnv
+        : join(process.cwd(), 'uploads');
+
+    const dir = join(baseDir, subdir);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+
+    const filename = `${Date.now()}-${Math.round(Math.random() * 1e9)}.${extension}`;
+    const filePath = join(dir, filename);
+    await fs.promises.writeFile(filePath, buffer);
+
+    const prefix = (process.env.UPLOADS_URL_PREFIX || '/uploads').replace(/\/+$/, '');
+    const publicPath = `${prefix}/${subdir}/${filename}`;
+    return publicPath;
   }
 
   private parseNumber(value: unknown): number | undefined {
@@ -429,7 +490,7 @@ export class StockService {
       createData.descricao = data.descricao;
     }
     if (data.imagemUrl !== undefined && data.imagemUrl !== null) {
-      createData.imagemUrl = data.imagemUrl;
+      createData.imagemUrl = await this.persistDataUrl(data.imagemUrl, 'stock');
     }
     if (data.cotacoes) {
       createData.cotacoesJson = data.cotacoes as any;
@@ -474,7 +535,9 @@ export class StockService {
       updateData.valorUnitario = data.valorUnitario;
     }
     if (data.imagemUrl !== undefined) {
-      updateData.imagemUrl = data.imagemUrl;
+      updateData.imagemUrl = data.imagemUrl
+        ? await this.persistDataUrl(data.imagemUrl, 'stock')
+        : null;
     }
     if (data.cotacoes !== undefined) {
       // Converter cotacoes para cotacoesJson (formato do Prisma)
@@ -602,18 +665,40 @@ export class StockService {
     }
 
     // Adicionar campos opcionais apenas se existirem
-    if (data.descricao !== undefined && data.descricao !== null && data.descricao.trim().length > 0) {
+    if (
+      data.descricao !== undefined &&
+      data.descricao !== null &&
+      data.descricao.trim().length > 0
+    ) {
       createData.descricao = data.descricao;
     }
-    // Salvar imagemUrl se existir e não for vazia
-    if (data.imagemUrl !== undefined && data.imagemUrl !== null && typeof data.imagemUrl === 'string' && data.imagemUrl.trim().length > 0) {
-      createData.imagemUrl = data.imagemUrl;
+    // Salvar imagemUrl/NF/comprovante em storage se vierem em base64
+    if (
+      data.imagemUrl !== undefined &&
+      data.imagemUrl !== null &&
+      typeof data.imagemUrl === 'string' &&
+      data.imagemUrl.trim().length > 0
+    ) {
+      createData.imagemUrl = await this.persistDataUrl(data.imagemUrl, 'stock');
     }
-    if (data.nfUrl !== undefined && data.nfUrl !== null && data.nfUrl.trim().length > 0) {
-      createData.nfUrl = data.nfUrl;
+    if (
+      data.nfUrl !== undefined &&
+      data.nfUrl !== null &&
+      typeof data.nfUrl === 'string' &&
+      data.nfUrl.trim().length > 0
+    ) {
+      createData.nfUrl = await this.persistDataUrl(data.nfUrl, 'stock');
     }
-    if (data.comprovantePagamentoUrl !== undefined && data.comprovantePagamentoUrl !== null && data.comprovantePagamentoUrl.trim().length > 0) {
-      createData.comprovantePagamentoUrl = data.comprovantePagamentoUrl;
+    if (
+      data.comprovantePagamentoUrl !== undefined &&
+      data.comprovantePagamentoUrl !== null &&
+      typeof data.comprovantePagamentoUrl === 'string' &&
+      data.comprovantePagamentoUrl.trim().length > 0
+    ) {
+      createData.comprovantePagamentoUrl = await this.persistDataUrl(
+        data.comprovantePagamentoUrl,
+        'stock',
+      );
     }
     if (data.cotacoes) {
       createData.cotacoesJson = data.cotacoes as any;
@@ -780,9 +865,16 @@ export class StockService {
       dataConfirmacao: new Date(),
     };
     if (dto.formaPagamento !== undefined) updateData.formaPagamento = dto.formaPagamento || null;
-    if (dto.nfUrl !== undefined) updateData.nfUrl = dto.nfUrl || null;
-    if (dto.comprovantePagamentoUrl !== undefined)
-      updateData.comprovantePagamentoUrl = dto.comprovantePagamentoUrl || null;
+    if (dto.nfUrl !== undefined) {
+      updateData.nfUrl = dto.nfUrl
+        ? await this.persistDataUrl(dto.nfUrl, 'stock')
+        : null;
+    }
+    if (dto.comprovantePagamentoUrl !== undefined) {
+      updateData.comprovantePagamentoUrl = dto.comprovantePagamentoUrl
+        ? await this.persistDataUrl(dto.comprovantePagamentoUrl, 'stock')
+        : null;
+    }
     if (dto.dataCompra) updateData.dataCompra = new Date(dto.dataCompra);
     if (dto.previsaoEntrega !== undefined)
       updateData.previsaoEntrega = dto.previsaoEntrega ? new Date(dto.previsaoEntrega) : null;
@@ -843,13 +935,17 @@ export class StockService {
       updateData.valorUnitario = data.valorUnitario;
     }
     if (data.imagemUrl !== undefined) {
-      updateData.imagemUrl = data.imagemUrl;
+      updateData.imagemUrl = data.imagemUrl
+        ? await this.persistDataUrl(data.imagemUrl, 'stock')
+        : null;
     }
     if (data.nfUrl !== undefined) {
-      updateData.nfUrl = data.nfUrl;
+      updateData.nfUrl = data.nfUrl ? await this.persistDataUrl(data.nfUrl, 'stock') : null;
     }
     if (data.comprovantePagamentoUrl !== undefined) {
-      updateData.comprovantePagamentoUrl = data.comprovantePagamentoUrl;
+      updateData.comprovantePagamentoUrl = data.comprovantePagamentoUrl
+        ? await this.persistDataUrl(data.comprovantePagamentoUrl, 'stock')
+        : null;
     }
     if (data.cotacoes !== undefined) {
       if (Array.isArray(data.cotacoes) && data.cotacoes.length > 0) {

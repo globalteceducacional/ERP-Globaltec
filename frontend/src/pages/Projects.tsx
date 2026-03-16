@@ -69,9 +69,13 @@ export default function Projects() {
       { validator: validators.minLength(3), message: errorMessages.minLength(3) },
       { validator: validators.maxLength(120), message: errorMessages.maxLength(120) },
     ],
-    valorTotal: form.valorTotal !== undefined && form.valorTotal !== null
-      ? [{ validator: validators.positive, message: errorMessages.positive }]
-      : [],
+    valorTotal:
+      form.valorTotal !== undefined && form.valorTotal !== null
+        ? [{
+            validator: (v: number) => v >= 0,
+            message: 'Informe um valor maior ou igual a zero',
+          }]
+        : [],
     supervisorId: form.supervisorId !== undefined && form.supervisorId !== null
       ? [{ validator: (v: number) => v > 0, message: 'Selecione um supervisor' }]
       : [],

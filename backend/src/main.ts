@@ -18,13 +18,29 @@ async function bootstrap() {
       extended: true,
     }),
   );
+  // Servir arquivos estáticos enviados
+  const uploadsDirEnv = process.env.UPLOADS_DIR;
+  const uploadsUrlPrefix = process.env.UPLOADS_URL_PREFIX || '/uploads';
 
-  // Servir arquivos estáticos enviados para o diretório local de uploads
-  const uploadsRoot = join(process.cwd(), 'uploads');
-  if (!fs.existsSync(uploadsRoot)) {
-    fs.mkdirSync(uploadsRoot, { recursive: true });
+  // Se UPLOADS_DIR for um caminho local (não URL), usar esse diretório
+  if (uploadsDirEnv && !/^https?:\/\//i.test(uploadsDirEnv)) {
+    const uploadsRoot = uploadsDirEnv.startsWith('.')
+      ? join(process.cwd(), uploadsDirEnv)
+      : uploadsDirEnv;
+
+    if (!fs.existsSync(uploadsRoot)) {
+      fs.mkdirSync(uploadsRoot, { recursive: true });
+    }
+
+    app.use(uploadsUrlPrefix, express.static(uploadsRoot));
+  } else {
+    // Fallback padrão: ./uploads
+    const uploadsRoot = join(process.cwd(), 'uploads');
+    if (!fs.existsSync(uploadsRoot)) {
+      fs.mkdirSync(uploadsRoot, { recursive: true });
+    }
+    app.use('/uploads', express.static(uploadsRoot));
   }
-  app.use('/uploads', express.static(uploadsRoot));
 
   app.useGlobalPipes(
     new ValidationPipe({

@@ -6,6 +6,7 @@ import {
   IsPositive,
   IsString,
   MaxLength,
+  Min,
 } from 'class-validator';
 
 export class CreateProjectDto {
@@ -27,7 +28,7 @@ export class CreateProjectDto {
 
   @IsOptional()
   @IsNumber()
-  @IsPositive()
+  @Min(0)
   valorTotal?: number;
 
   @IsOptional()
