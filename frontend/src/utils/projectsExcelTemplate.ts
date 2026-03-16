@@ -4,8 +4,8 @@ import * as XLSX from 'xlsx-js-style';
 // com abas Projetos, Etapas, Checklist e ChecklistSubitens,
 // incluindo estilos de cabeçalho, bordas e larguras de coluna.
 // maxRows define até quantas linhas por aba terão estilos/fórmulas pré-aplicados.
-// Aumentado para 1000 para não "cortar" exportações maiores.
-export function buildProjectsTemplateWorkbook(maxRows = 1000): XLSX.WorkBook {
+// Aumentado para 5000 para suportar projetos grandes sem "cortar" exportações.
+export function buildProjectsTemplateWorkbook(maxRows = 5000): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
 
   const headerStyle: XLSX.CellStyle = {

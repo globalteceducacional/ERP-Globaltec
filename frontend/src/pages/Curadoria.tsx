@@ -27,10 +27,24 @@ interface CuradoriaBudget {
   descontoAplicadoEm?: 'ITEM' | 'TOTAL';
   descontoTotal?: number;
   totalItens: number;
+  totalQuantidade: number;
   totalBruto: number;
   totalDesconto: number;
   totalLiquido: number;
   dataCriacao: string;
+}
+
+interface CuradoriaStockItem {
+  isbn: string;
+  nome: string;
+  categoriaId: number | null;
+  categoriaNome: string | null;
+  quantidadeTotal: number;
+  valorMedio: number;
+  valorTotal: number;
+  autor?: string | null;
+  editora?: string | null;
+  anoPublicacao?: string | null;
 }
 
 interface CuradoriaItemForm {
@@ -131,6 +145,25 @@ export default function Curadoria() {
   const [projects, setProjects] = useState<Projeto[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+
+  const [activeTab, setActiveTab] = useState<'orcamentos' | 'estoque'>('orcamentos');
+  const [stockItems, setStockItems] = useState<CuradoriaStockItem[]>([]);
+  const [stockLoading, setStockLoading] = useState(false);
+  const [stockSearch, setStockSearch] = useState('');
+  const [stockCategoryId, setStockCategoryId] = useState<number | 'all'>('all');
+  const [stockSortKey, setStockSortKey] = useState<'nome' | 'quantidade' | 'valorTotal'>('nome');
+  const [stockSortDir, setStockSortDir] = useState<'asc' | 'desc'>('asc');
+
+  const [budgetStatusFilter, setBudgetStatusFilter] = useState<
+    '' | 'PENDENTE' | 'COMPRADO_ACAMINHO' | 'ENTREGUE' | 'SOLICITADO' | 'REPROVADO'
+  >('');
+  const [budgetProjectFilter, setBudgetProjectFilter] = useState<number | 'all'>('all');
+
+  const [showStockItemModal, setShowStockItemModal] = useState(false);
+  const [stockItemForm, setStockItemForm] = useState<CuradoriaItemForm>(createEmptyItem());
+  const [stockItemSaving, setStockItemSaving] = useState(false);
+  const [stockIsbnLoading, setStockIsbnLoading] = useState(false);
+  const [stockItemMode, setStockItemMode] = useState<'add' | 'edit'>('add');
 
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
@@ -240,6 +273,28 @@ export default function Curadoria() {
     loadData();
   }, [canView]);
 
+  async function loadStock() {
+    if (!canView) {
+      return;
+    }
+    try {
+      setStockLoading(true);
+      const { data } = await api.get<CuradoriaStockItem[]>('/curadoria/estoque');
+      setStockItems(Array.isArray(data) ? data : []);
+    } catch (err: any) {
+      const message = formatApiError(err);
+      toast.error(message);
+    } finally {
+      setStockLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (activeTab === 'estoque' && canView && stockItems.length === 0 && !stockLoading) {
+      void loadStock();
+    }
+  }, [activeTab, canView, stockItems.length, stockLoading]);
+
   useEffect(() => {
     if (!importing) {
       importProgressStartedAtRef.current = null;
@@ -266,22 +321,63 @@ export default function Curadoria() {
 
   const filteredBudgets = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return budgets;
-    return budgets.filter(
-      (budget) =>
+    return budgets.filter((budget) => {
+      const matchesSearch =
+        !term ||
         budget.nome.toLowerCase().includes(term) ||
         budget.observacao?.toLowerCase().includes(term) ||
         budget.projeto?.nome?.toLowerCase().includes(term) ||
         budget.fornecedor?.nomeFantasia?.toLowerCase().includes(term) ||
-        budget.fornecedor?.razaoSocial?.toLowerCase().includes(term),
-    );
-  }, [budgets, search]);
+        budget.fornecedor?.razaoSocial?.toLowerCase().includes(term);
+
+      const matchesStatus = !budgetStatusFilter || (budget.status ?? 'PENDENTE') === budgetStatusFilter;
+      const matchesProject =
+        budgetProjectFilter === 'all' ||
+        (budget.projetoId != null && budget.projetoId === budgetProjectFilter);
+
+      return matchesSearch && matchesStatus && matchesProject;
+    });
+  }, [budgets, search, budgetStatusFilter, budgetProjectFilter]);
+
+  const filteredStockItems = useMemo(() => {
+    const term = stockSearch.trim().toLowerCase();
+    let data = stockItems.filter((item) => {
+      const inNome = item.nome.toLowerCase().includes(term);
+      const inIsbn = item.isbn.toLowerCase().includes(term);
+      const inCategoria = (item.categoriaNome ?? '').toLowerCase().includes(term);
+      const inAutor = (item.autor ?? '').toLowerCase().includes(term);
+      const inEditora = (item.editora ?? '').toLowerCase().includes(term);
+      return inNome || inIsbn || inCategoria || inAutor || inEditora;
+    });
+
+    if (stockCategoryId !== 'all') {
+      data = data.filter((item) => item.categoriaId === stockCategoryId);
+    }
+
+    const sorted = [...data].sort((a, b) => {
+      let cmp = 0;
+      if (stockSortKey === 'nome') {
+        cmp = a.nome.localeCompare(b.nome);
+      } else if (stockSortKey === 'quantidade') {
+        cmp = a.quantidadeTotal - b.quantidadeTotal;
+      } else if (stockSortKey === 'valorTotal') {
+        cmp = a.valorTotal - b.valorTotal;
+      }
+      return stockSortDir === 'asc' ? cmp : -cmp;
+    });
+
+    return sorted;
+  }, [stockItems, stockSearch, stockCategoryId, stockSortKey, stockSortDir]);
 
   function updateItem(index: number, field: keyof CuradoriaItemForm, value: string | number | undefined) {
     setCreateForm((prev) => ({
       ...prev,
       itens: prev.itens.map((item, itemIndex) => (itemIndex === index ? { ...item, [field]: value } : item)),
     }));
+  }
+
+  function updateStockItem(field: keyof CuradoriaItemForm, value: string | number | undefined) {
+    setStockItemForm((prev) => ({ ...prev, [field]: value as any }));
   }
 
   function addItem() {
@@ -425,6 +521,101 @@ export default function Curadoria() {
       toast.error(formatApiError(err));
     } finally {
       setIsbnLoadingByIndex((prev) => ({ ...prev, [index]: false }));
+    }
+  }
+
+  async function fetchIsbnForStock() {
+    const isbnRaw = stockItemForm.isbn ?? '';
+    const isbn = isbnRaw.toUpperCase().replace(/[^0-9X]/g, '');
+    if (!(isbn.length === 10 || isbn.length === 13)) return;
+
+    try {
+      setStockIsbnLoading(true);
+      const { data } = await api.get<IsbnBookData>(`/curadoria/books/isbn/${isbn}`);
+
+      setStockItemForm((prev) => {
+        const matchingCategory = categories.find((category) =>
+          data.categorias.some(
+            (bookCategory) =>
+              bookCategory.toLowerCase().includes(category.nome.toLowerCase()) ||
+              category.nome.toLowerCase().includes(bookCategory.toLowerCase()),
+          ),
+        );
+        return {
+          ...prev,
+          isbn: data.isbn || prev.isbn,
+          nome: data.titulo || prev.nome,
+          autor: data.autores?.join(', ') || prev.autor,
+          editora: data.editora || prev.editora,
+          anoPublicacao: data.anoPublicacao || prev.anoPublicacao,
+          categoriaId: prev.categoriaId || matchingCategory?.id,
+        };
+      });
+      toast.success('Dados do ISBN carregados.');
+    } catch (err: any) {
+      toast.error(formatApiError(err));
+    } finally {
+      setStockIsbnLoading(false);
+    }
+  }
+
+  async function handleSaveStockItem(event: FormEvent) {
+    event.preventDefault();
+    if (!canEdit) {
+      toast.error('Seu perfil não pode ajustar o estoque de curadoria.');
+      return;
+    }
+
+    if (!stockItemForm.isbn.trim()) {
+      toast.error('Informe o ISBN do livro.');
+      return;
+    }
+    if (!stockItemForm.categoriaId) {
+      toast.error('Selecione a categoria.');
+      return;
+    }
+    if (stockItemForm.quantidade == null || Number(stockItemForm.quantidade) <= 0) {
+      toast.error('Informe uma quantidade maior que zero.');
+      return;
+    }
+    if (stockItemForm.valor == null || Number(stockItemForm.valor) < 0) {
+      toast.error('Informe um valor válido.');
+      return;
+    }
+    if (stockItemForm.desconto != null && Number(stockItemForm.desconto) < 0) {
+      toast.error('Desconto inválido.');
+      return;
+    }
+
+    try {
+      setStockItemSaving(true);
+      await api.post('/curadoria/orcamentos', {
+        nome: 'Ajuste de estoque - Curadoria',
+        status: 'ENTREGUE',
+        descontoAplicadoEm: 'ITEM',
+        descontoTotal: 0,
+        itens: [
+          {
+            nome: stockItemForm.nome.trim(),
+            isbn: stockItemForm.isbn.trim(),
+            categoriaId: Number(stockItemForm.categoriaId),
+            quantidade: Number(stockItemForm.quantidade || 1),
+            valor: Number(stockItemForm.valor || 0),
+            desconto: Number(stockItemForm.desconto || 0),
+            autor: stockItemForm.autor?.trim() || undefined,
+            editora: stockItemForm.editora?.trim() || undefined,
+            anoPublicacao: stockItemForm.anoPublicacao?.trim() || undefined,
+          },
+        ],
+      });
+      toast.success('Item adicionado ao estoque da curadoria.');
+      setShowStockItemModal(false);
+      setStockItemForm(createEmptyItem());
+      await Promise.all([loadData(), loadStock()]);
+    } catch (err: any) {
+      toast.error(formatApiError(err));
+    } finally {
+      setStockItemSaving(false);
     }
   }
 
@@ -711,12 +902,44 @@ export default function Curadoria() {
       label: 'Fornecedor',
       render: (budget) => <span>{budget.fornecedor?.nomeFantasia ?? budget.fornecedor?.razaoSocial ?? '-'}</span>,
     },
-    { key: 'itens', label: 'Itens', align: 'right', render: (budget) => <span>{budget.totalItens}</span> },
     {
-      key: 'total',
-      label: 'Total líquido',
+      key: 'itens',
+      label: 'Itens',
       align: 'right',
-      render: (budget) => <span className="text-emerald-300">R$ {budget.totalLiquido.toFixed(2)}</span>,
+      render: (budget) => <span>{budget.totalItens}</span>,
+    },
+    {
+      key: 'quantidade',
+      label: 'Qtd total',
+      align: 'right',
+      render: (budget) => <span>{budget.totalQuantidade}</span>,
+    },
+    {
+      key: 'totais',
+      label: 'Totais',
+      align: 'right',
+      render: (budget) => (
+        <div className="text-right text-xs sm:text-sm leading-4 space-y-0.5">
+          <div>
+            <span className="text-white/60 mr-1">Bruto:</span>
+            <span className="text-white/90">
+              {budget.totalBruto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </span>
+          </div>
+          <div>
+            <span className="text-white/60 mr-1">Desc.:</span>
+            <span className="text-amber-300">
+              {budget.totalDesconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </span>
+          </div>
+          <div>
+            <span className="text-white/60 mr-1">Líquido:</span>
+            <span className="text-emerald-300">
+              {budget.totalLiquido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </span>
+          </div>
+        </div>
+      ),
     },
     {
       key: 'criado',
@@ -753,14 +976,95 @@ export default function Curadoria() {
     },
   ];
 
+  const stockColumns: DataTableColumn<CuradoriaStockItem>[] = [
+    {
+      key: 'isbn',
+      label: 'ISBN',
+      render: (item) => <span className="font-mono text-xs sm:text-sm">{item.isbn}</span>,
+    },
+    {
+      key: 'nome',
+      label: 'Título',
+      render: (item) => <span className="font-medium">{item.nome}</span>,
+    },
+    {
+      key: 'categoria',
+      label: 'Categoria',
+      render: (item) => <span>{item.categoriaNome ?? '-'}</span>,
+    },
+    {
+      key: 'autor',
+      label: 'Autor',
+      render: (item) => <span className="text-xs sm:text-sm text-white/80">{item.autor ?? '-'}</span>,
+    },
+    {
+      key: 'quantidadeTotal',
+      label: 'Qtd em estoque',
+      align: 'right',
+      render: (item) => <span>{item.quantidadeTotal}</span>,
+    },
+    {
+      key: 'valor',
+      label: 'Valores',
+      align: 'right',
+      render: (item) => (
+        <div className="text-right text-xs sm:text-sm leading-4 space-y-0.5">
+          <div>
+            <span className="text-white/60 mr-1">Médio:</span>
+            <span className="text-white/90">
+              {item.valorMedio.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </span>
+          </div>
+          <div>
+            <span className="text-white/60 mr-1">Total:</span>
+            <span className="text-emerald-300">
+              {item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </span>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'acoes',
+      label: 'Ações',
+      align: 'right',
+      stopRowClick: true,
+      render: (item) => (
+        <button
+          type="button"
+          className={btn.primarySm}
+          onClick={() => {
+            setStockItemMode('edit');
+            setStockItemForm({
+              nome: item.nome,
+              isbn: item.isbn,
+              categoriaId: item.categoriaId ?? undefined,
+              quantidade: item.quantidadeTotal,
+              valor: item.valorMedio,
+              desconto: 0,
+              autor: item.autor ?? '',
+              editora: item.editora ?? '',
+              anoPublicacao: item.anoPublicacao ?? '',
+            });
+            setShowStockItemModal(true);
+          }}
+        >
+          Editar
+        </button>
+      ),
+    },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold">Curadoria de Livros</h2>
-          <p className="text-sm text-white/60">Orçamentos de livros, separados do módulo de Compras.</p>
+          <p className="text-sm text-white/60">
+            Orçamentos de livros e estoque específico da curadoria, separados do módulo de Compras.
+          </p>
         </div>
-        {canEdit && (
+        {canEdit && activeTab === 'orcamentos' && (
           <div className="flex items-center gap-2">
             <button type="button" className={btn.secondary} onClick={() => setShowImportModal(true)}>
               Importar XLSX
@@ -770,26 +1074,112 @@ export default function Curadoria() {
             </button>
           </div>
         )}
+        {canEdit && activeTab === 'estoque' && (
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className={btn.primary}
+              onClick={() => {
+                setStockItemMode('add');
+                setStockItemForm(createEmptyItem());
+                setShowStockItemModal(true);
+              }}
+            >
+              Adicionar item ao estoque
+            </button>
+          </div>
+        )}
       </div>
 
-      <input
-        type="text"
-        value={search}
-        onChange={(event) => setSearch(event.target.value)}
-        placeholder="Buscar orçamento por nome, observação ou projeto..."
-        className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-      />
+      <div className="inline-flex rounded-lg bg-black/40 border border-white/10 p-0.5">
+        <button
+          type="button"
+          onClick={() => setActiveTab('orcamentos')}
+          className={`px-4 py-2 text-sm rounded-md transition ${
+            activeTab === 'orcamentos'
+              ? 'bg-primary text-white shadow-md'
+              : 'text-white/70 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          Orçamentos
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('estoque')}
+          className={`px-4 py-2 text-sm rounded-md transition ${
+            activeTab === 'estoque'
+              ? 'bg-primary text-white shadow-md'
+              : 'text-white/70 hover:text-white hover:bg-white/5'
+          }`}
+        >
+          Estoque da curadoria
+        </button>
+      </div>
 
-      {error && <div className="bg-danger/15 border border-danger/40 text-danger px-4 py-3 rounded-md">{error}</div>}
+      {activeTab === 'orcamentos' && (
+        <>
+          <input
+            type="text"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Buscar orçamento por nome, observação ou projeto..."
+            className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+          />
 
-      <DataTable<CuradoriaBudget>
-        data={filteredBudgets}
-        columns={columns}
-        keyExtractor={(budget) => budget.id}
-        loading={loading}
-        emptyMessage="Nenhum orçamento de curadoria encontrado."
-        onRowClick={(budget) => navigate(`/curadoria/${budget.id}`)}
-        renderMobileCard={(budget) => (
+          <div className="flex flex-col sm:flex-row gap-3">
+            <select
+              value={budgetStatusFilter}
+              onChange={(event) =>
+                setBudgetStatusFilter(
+                  event.target.value as
+                    | ''
+                    | 'PENDENTE'
+                    | 'COMPRADO_ACAMINHO'
+                    | 'ENTREGUE'
+                    | 'SOLICITADO'
+                    | 'REPROVADO',
+                )
+              }
+              className="w-full sm:w-56 bg-neutral/70 border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Todos os status</option>
+              {CURADORIA_STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={budgetProjectFilter === 'all' ? '' : budgetProjectFilter}
+              onChange={(event) =>
+                setBudgetProjectFilter(
+                  event.target.value ? Number(event.target.value) : 'all',
+                )
+              }
+              className="w-full sm:w-64 bg-neutral/70 border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Todos os projetos</option>
+              {projects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.nome}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {error && (
+            <div className="bg-danger/15 border border-danger/40 text-danger px-4 py-3 rounded-md">{error}</div>
+          )}
+
+          <DataTable<CuradoriaBudget>
+            data={filteredBudgets}
+            columns={columns}
+            keyExtractor={(budget) => budget.id}
+            loading={loading}
+            emptyMessage="Nenhum orçamento de curadoria encontrado."
+            onRowClick={(budget) => navigate(`/curadoria/${budget.id}`)}
+            renderMobileCard={(budget) => (
           <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-2">
             <p className="font-semibold">{budget.nome}</p>
             <p className="text-xs text-white/70">Status: {(budget.status ?? 'PENDENTE').replaceAll('_', ' ')}</p>
@@ -798,7 +1188,16 @@ export default function Curadoria() {
               Fornecedor: {budget.fornecedor?.nomeFantasia ?? budget.fornecedor?.razaoSocial ?? 'Não informado'}
             </p>
             <p className="text-xs text-white/60">
-              Itens: {budget.totalItens} | Líquido: R$ {budget.totalLiquido.toFixed(2)}
+              Itens: {budget.totalItens} | Qtd total: {budget.totalQuantidade}
+            </p>
+            <p className="text-xs text-white/60">
+              Bruto:{' '}
+              {budget.totalBruto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} | Desconto:{' '}
+              {budget.totalDesconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+            </p>
+            <p className="text-xs text-emerald-300">
+              Líquido:{' '}
+              {budget.totalLiquido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
             </p>
             {budget.arquivoOrcamentoUrl && (
               <a
@@ -846,8 +1245,254 @@ export default function Curadoria() {
               </button>
             </div>
           </div>
-        )}
-      />
+            )}
+          />
+        </>
+      )}
+
+      {activeTab === 'estoque' && (
+        <>
+          <input
+            type="text"
+            value={stockSearch}
+            onChange={(event) => setStockSearch(event.target.value)}
+            placeholder="Buscar por título, ISBN, categoria, autor ou editora..."
+            className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+
+          <div className="flex flex-col sm:flex-row gap-3">
+            <select
+              value={stockCategoryId === 'all' ? '' : stockCategoryId}
+              onChange={(event) =>
+                setStockCategoryId(
+                  event.target.value ? Number(event.target.value) : 'all',
+                )
+              }
+              className="w-full sm:w-64 bg-neutral/70 border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="">Todas as categorias</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.nome}
+                </option>
+              ))}
+            </select>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={stockSortKey}
+                onChange={(event) =>
+                  setStockSortKey(
+                    event.target.value as 'nome' | 'quantidade' | 'valorTotal',
+                  )
+                }
+                className="bg-neutral/70 border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="nome">Ordenar por título</option>
+                <option value="quantidade">Ordenar por quantidade</option>
+                <option value="valorTotal">Ordenar por valor total</option>
+              </select>
+              <button
+                type="button"
+                onClick={() =>
+                  setStockSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+                }
+                className="px-3 py-2 text-xs bg-neutral/70 border border-white/10 rounded-md hover:bg-neutral/60"
+              >
+                {stockSortDir === 'asc' ? 'Asc ↑' : 'Desc ↓'}
+              </button>
+            </div>
+          </div>
+
+          <DataTable<CuradoriaStockItem>
+            data={filteredStockItems}
+            columns={stockColumns}
+            keyExtractor={(item) => `${item.isbn}-${item.categoriaId ?? 'sem-categoria'}`}
+            loading={stockLoading}
+            emptyMessage="Nenhum item em estoque para orçamentos entregues."
+          />
+        </>
+      )}
+
+      {showStockItemModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-neutral border border-white/10 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
+              <h3 className="text-lg font-semibold">
+                {stockItemMode === 'add' ? 'Adicionar item ao estoque da curadoria' : 'Editar item do estoque da curadoria'}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowStockItemModal(false)}
+                className="text-white/50 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleSaveStockItem} className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Nome do livro (opcional)</label>
+                  <input
+                    type="text"
+                    value={stockItemForm.nome}
+                    onChange={(event) => updateStockItem('nome', event.target.value)}
+                    placeholder="Ex.: O Alquimista"
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>ISBN (obrigatório)</label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={stockItemForm.isbn}
+                      onChange={(event) => updateStockItem('isbn', event.target.value)}
+                      onBlur={() => {
+                        void fetchIsbnForStock();
+                      }}
+                      placeholder="Ex.: 9788532530783"
+                      className={fieldClass}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className={btn.secondary}
+                      onClick={() => {
+                        void fetchIsbnForStock();
+                      }}
+                      disabled={stockIsbnLoading}
+                    >
+                      {stockIsbnLoading ? '...' : 'Buscar'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <label className={labelClass}>Categoria</label>
+                  <select
+                    value={stockItemForm.categoriaId ?? ''}
+                    onChange={(event) =>
+                      updateStockItem(
+                        'categoriaId',
+                        event.target.value ? Number(event.target.value) : undefined,
+                      )
+                    }
+                    className={fieldClass}
+                    required
+                  >
+                    <option value="">Selecione</option>
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Quantidade</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={stockItemForm.quantidade ?? 1}
+                    onChange={(event) =>
+                      updateStockItem(
+                        'quantidade',
+                        event.target.value === '' ? undefined : Number(event.target.value),
+                      )
+                    }
+                    className={fieldClass}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Valor unitário (R$)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={stockItemForm.valor ?? 0}
+                    onChange={(event) =>
+                      updateStockItem(
+                        'valor',
+                        event.target.value === '' ? undefined : Number(event.target.value),
+                      )
+                    }
+                    className={fieldClass}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Desconto (R$)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={stockItemForm.desconto ?? 0}
+                    onChange={(event) =>
+                      updateStockItem(
+                        'desconto',
+                        event.target.value === '' ? undefined : Number(event.target.value),
+                      )
+                    }
+                    className={fieldClass}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className={labelClass}>Autor (opcional)</label>
+                  <input
+                    type="text"
+                    value={stockItemForm.autor ?? ''}
+                    onChange={(event) => updateStockItem('autor', event.target.value)}
+                    placeholder="Ex.: Machado de Assis"
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Editora (opcional)</label>
+                  <input
+                    type="text"
+                    value={stockItemForm.editora ?? ''}
+                    onChange={(event) => updateStockItem('editora', event.target.value)}
+                    placeholder="Ex.: Companhia das Letras"
+                    className={fieldClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Ano/Data publicação (opcional)</label>
+                  <input
+                    type="text"
+                    value={stockItemForm.anoPublicacao ?? ''}
+                    onChange={(event) => updateStockItem('anoPublicacao', event.target.value)}
+                    placeholder="Ex.: 2023 ou 2023-08-15"
+                    className={fieldClass}
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
+                <button
+                  type="button"
+                  className={btn.secondaryLg}
+                  onClick={() => setShowStockItemModal(false)}
+                  disabled={stockItemSaving}
+                >
+                  Cancelar
+                </button>
+                <button type="submit" className={btn.primaryLg} disabled={stockItemSaving}>
+                  {stockItemSaving ? 'Salvando...' : stockItemMode === 'add' ? 'Salvar item' : 'Salvar ajuste'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {showDeleteModal && budgetToDelete && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -1001,6 +1646,12 @@ export default function Curadoria() {
                       </option>
                     ))}
                   </select>
+                  {editForm.status === 'ENTREGUE' && (
+                    <p className="mt-2 text-xs text-amber-200 bg-amber-500/10 border border-amber-400/40 rounded-md px-3 py-2">
+                      Ao salvar com status <span className="font-semibold">Entregue</span>, todos os itens deste orçamento
+                      serão considerados no <span className="font-semibold">Estoque da curadoria</span>.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -1243,6 +1894,12 @@ export default function Curadoria() {
                       </option>
                     ))}
                   </select>
+                  {createForm.status === 'ENTREGUE' && (
+                    <p className="mt-2 text-xs text-amber-200 bg-amber-500/10 border border-amber-400/40 rounded-md px-3 py-2">
+                      Ao salvar com status <span className="font-semibold">Entregue</span>, todos os itens deste orçamento
+                      serão considerados no <span className="font-semibold">Estoque da curadoria</span>.
+                    </p>
+                  )}
                 </div>
               </div>
 

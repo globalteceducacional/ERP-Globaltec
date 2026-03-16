@@ -93,6 +93,8 @@ export default function CuradoriaBudgetDetails() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [showEditBudgetModal, setShowEditBudgetModal] = useState(false);
   const [showEditItemModal, setShowEditItemModal] = useState(false);
+  const [showDeleteItemModal, setShowDeleteItemModal] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<CuradoriaItem | null>(null);
   const [savingEditBudget, setSavingEditBudget] = useState(false);
   const [savingEditItem, setSavingEditItem] = useState(false);
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
@@ -122,6 +124,12 @@ export default function CuradoriaBudgetDetails() {
     editora: '',
     anoPublicacao: '',
   });
+  const [isbnLoading, setIsbnLoading] = useState(false);
+  const [itemsSearch, setItemsSearch] = useState('');
+  const [itemsSortKey, setItemsSortKey] = useState<'nome' | 'valor' | 'desconto' | 'liquido'>(
+    'nome',
+  );
+  const [itemsSortDir, setItemsSortDir] = useState<'asc' | 'desc'>('asc');
   const fieldClass =
     'w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary';
   const fileFieldClass =
@@ -210,6 +218,43 @@ export default function CuradoriaBudgetDetails() {
     load();
   }, [id]);
 
+  const filteredAndSortedItems = useMemo(() => {
+    if (!orcamento?.itens) return [];
+    const search = itemsSearch.trim().toLowerCase();
+    let result = orcamento.itens as CuradoriaItem[];
+
+    if (search) {
+      result = result.filter((item) => {
+        return (
+          item.nome.toLowerCase().includes(search) ||
+          item.isbn.toLowerCase().includes(search) ||
+          (item.categoria?.nome ?? '').toLowerCase().includes(search)
+        );
+      });
+    }
+
+    const key = itemsSortKey;
+    const dir = itemsSortDir === 'asc' ? 1 : -1;
+
+    result = [...result].sort((a, b) => {
+      if (key === 'nome') {
+        return a.nome.localeCompare(b.nome, 'pt-BR') * dir;
+      }
+      if (key === 'valor') {
+        return (a.valor - b.valor) * dir;
+      }
+      if (key === 'desconto') {
+        return (a.desconto - b.desconto) * dir;
+      }
+      if (key === 'liquido') {
+        return (a.valorLiquido - b.valorLiquido) * dir;
+      }
+      return 0;
+    });
+
+    return result;
+  }, [orcamento?.itens, itemsSearch, itemsSortKey, itemsSortDir]);
+
   const columns = useMemo<DataTableColumn<CuradoriaItem>[]>(
     () => [
       { key: 'nome', label: 'Livro', render: (item) => <span className="font-medium">{item.nome}</span> },
@@ -220,18 +265,35 @@ export default function CuradoriaBudgetDetails() {
         render: (item) => <span>{item.categoria?.nome ?? 'Sem categoria'}</span>,
       },
       { key: 'qtd', label: 'Qtd', align: 'right', render: (item) => <span>{item.quantidade}</span> },
-      { key: 'valor', label: 'Valor', align: 'right', render: (item) => <span>R$ {item.valor.toFixed(2)}</span> },
+      {
+        key: 'valor',
+        label: 'Valor',
+        align: 'right',
+        render: (item) => (
+          <span>
+            {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </span>
+        ),
+      },
       {
         key: 'desconto',
         label: 'Desconto',
         align: 'right',
-        render: (item) => <span>R$ {item.desconto.toFixed(2)}</span>,
+        render: (item) => (
+          <span>
+            {item.desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </span>
+        ),
       },
       {
         key: 'liquido',
         label: 'Líquido',
         align: 'right',
-        render: (item) => <span className="text-emerald-300">R$ {item.valorLiquido.toFixed(2)}</span>,
+        render: (item) => (
+          <span className="text-emerald-300">
+            {item.valorLiquido.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+          </span>
+        ),
       },
       {
         key: 'acoes',
@@ -265,19 +327,9 @@ export default function CuradoriaBudgetDetails() {
             <button
               type="button"
               className={btn.dangerSm}
-              onClick={async () => {
-                if (!orcamento) return;
-                const confirmed = window.confirm(
-                  `Remover o item "${item.nome}" deste orçamento?`,
-                );
-                if (!confirmed) return;
-                try {
-                  await api.delete(`/curadoria/orcamentos/${orcamento.id}/itens/${item.id}`);
-                  await loadBudget(String(orcamento.id));
-                  toast.success('Item removido com sucesso.');
-                } catch (err: any) {
-                  toast.error(formatApiError(err));
-                }
+              onClick={() => {
+                setItemToDelete(item);
+                setShowDeleteItemModal(true);
               }}
             >
               Remover
@@ -286,7 +338,7 @@ export default function CuradoriaBudgetDetails() {
         ),
       },
     ],
-    [],
+    [categories],
   );
 
   async function handleEditBudget(event: FormEvent) {
@@ -404,7 +456,7 @@ export default function CuradoriaBudgetDetails() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className={btn.primarySm}
+              className={btn.primary}
               onClick={() => {
                 setIsCreatingItem(true);
                 setEditingItemId(null);
@@ -418,12 +470,12 @@ export default function CuradoriaBudgetDetails() {
                   autor: '',
                   editora: '',
                   anoPublicacao: '',
-                });
-                setShowEditItemModal(true);
-              }}
-            >
-              Adicionar item
-            </button>
+              });
+              setShowEditItemModal(true);
+            }}
+          >
+            + Adicionar item
+          </button>
             <button
               type="button"
               className={btn.edit}
@@ -491,25 +543,75 @@ export default function CuradoriaBudgetDetails() {
             )}
           </div>
           {orcamento.observacao && <p className="text-sm text-white/80">{orcamento.observacao}</p>}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
+          <p className="text-xs text-white/60">
+            Itens distintos: {orcamento.itens.length} | Quantidade total:{' '}
+            {orcamento.itens.reduce((sum, item) => sum + item.quantidade, 0)}
+          </p>
+          <div className="mt-3 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
+              <input
+                type="text"
+                value={itemsSearch}
+                onChange={(event) => setItemsSearch(event.target.value)}
+                placeholder="Buscar item por nome, ISBN ou categoria..."
+                className="w-full sm:w-72 bg-neutral/80 border border-white/15 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <div className="flex items-center gap-2">
+                <select
+                  value={itemsSortKey}
+                  onChange={(event) =>
+                    setItemsSortKey(event.target.value as 'nome' | 'valor' | 'desconto' | 'liquido')
+                  }
+                  className="bg-neutral/80 border border-white/15 rounded-md px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="nome">Ordenar por nome</option>
+                  <option value="valor">Ordenar por valor</option>
+                  <option value="desconto">Ordenar por desconto</option>
+                  <option value="liquido">Ordenar por líquido</option>
+                </select>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded-md border border-white/20 bg-white/5 text-xs text-white hover:bg-white/10"
+                  onClick={() =>
+                    setItemsSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+                  }
+                >
+                  {itemsSortDir === 'asc' ? 'Asc' : 'Desc'}
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3">
             <div className="bg-black/20 border border-white/10 rounded-lg p-3">
               <p className="text-xs text-white/60">Total bruto</p>
-              <p className="font-semibold">R$ {orcamento.totalBruto.toFixed(2)}</p>
+              <p className="font-semibold">
+                {orcamento.totalBruto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
             </div>
             <div className="bg-black/20 border border-white/10 rounded-lg p-3">
               <p className="text-xs text-white/60">Desconto</p>
-              <p className="font-semibold text-amber-300">R$ {orcamento.totalDesconto.toFixed(2)}</p>
+              <p className="font-semibold text-amber-300">
+                {orcamento.totalDesconto.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
+              </p>
             </div>
             <div className="bg-black/20 border border-white/10 rounded-lg p-3">
               <p className="text-xs text-white/60">Total líquido</p>
-              <p className="font-semibold text-emerald-300">R$ {orcamento.totalLiquido.toFixed(2)}</p>
+              <p className="font-semibold text-emerald-300">
+                {orcamento.totalLiquido.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
+              </p>
             </div>
           </div>
         </div>
       )}
 
       <DataTable<CuradoriaItem>
-        data={orcamento?.itens ?? []}
+        data={filteredAndSortedItems}
         columns={columns}
         loading={loading}
         keyExtractor={(item) => item.id}
@@ -520,10 +622,22 @@ export default function CuradoriaBudgetDetails() {
             <p className="text-xs text-white/60">ISBN: {item.isbn}</p>
             <p className="text-xs text-white/60">Categoria: {item.categoria?.nome ?? 'Sem categoria'}</p>
             <p className="text-xs text-white/70">
-              Qtd: {item.quantidade} | Valor un.: R$ {item.valor.toFixed(2)} | Desconto un.: R$ {item.desconto.toFixed(2)}
+              Qtd: {item.quantidade} | Valor un.:{' '}
+              {item.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })} | Desconto
+              un.:{' '}
+              {item.desconto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
             </p>
             <p className="text-xs text-white/70">
-              Total item: R$ {(item.valor * item.quantidade).toFixed(2)} | Total líquido item: R$ {(item.valorLiquido * item.quantidade).toFixed(2)}
+              Total item:{' '}
+              {(item.valor * item.quantidade).toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}{' '}
+              | Total líquido item:{' '}
+              {(item.valorLiquido * item.quantidade).toLocaleString('pt-BR', {
+                style: 'currency',
+                currency: 'BRL',
+              })}
             </p>
           </div>
         )}
@@ -780,7 +894,9 @@ export default function CuradoriaBudgetDetails() {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-neutral border border-white/10 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Editar item do orçamento</h3>
+              <h3 className="text-lg font-semibold">
+                {isCreatingItem ? 'Adicionar item ao orçamento' : 'Editar item do orçamento'}
+              </h3>
               <button
                 type="button"
                 onClick={() => {
@@ -804,21 +920,67 @@ export default function CuradoriaBudgetDetails() {
                     }
                     placeholder="Ex.: O Alquimista"
                     className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                    required
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-xs text-white/70">ISBN (obrigatório)</label>
-                  <input
-                    type="text"
-                    value={editItemForm.isbn}
-                    onChange={(event) =>
-                      setEditItemForm((prev) => ({ ...prev, isbn: event.target.value }))
-                    }
-                    placeholder="Ex.: 9788532530783"
-                    className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                    required
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={editItemForm.isbn}
+                      onChange={(event) =>
+                        setEditItemForm((prev) => ({ ...prev, isbn: event.target.value }))
+                      }
+                      placeholder="Ex.: 9788532530783"
+                      className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className={btn.secondary}
+                      disabled={isbnLoading}
+                      onClick={async () => {
+                        const raw = editItemForm.isbn ?? '';
+                        const isbn = raw.toUpperCase().replace(/[^0-9X]/g, '');
+                        if (!(isbn.length === 10 || isbn.length === 13)) {
+                          toast.error('Informe um ISBN com 10 ou 13 dígitos.');
+                          return;
+                        }
+                        try {
+                          setIsbnLoading(true);
+                          const { data } = await api.get<any>(`/curadoria/books/isbn/${isbn}`);
+                          setEditItemForm((prev) => {
+                            const matchingCategory = categories.find((category) =>
+                              (data.categorias ?? []).some(
+                                (bookCategory: string) =>
+                                  bookCategory.toLowerCase().includes(category.nome.toLowerCase()) ||
+                                  category.nome.toLowerCase().includes(bookCategory.toLowerCase()),
+                              ),
+                            );
+                            return {
+                              ...prev,
+                              isbn: data.isbn || prev.isbn,
+                              nome: data.titulo || prev.nome,
+                              autor:
+                                (data.autores && data.autores.join(', ')) || prev.autor,
+                              editora: data.editora || prev.editora,
+                              anoPublicacao: data.anoPublicacao || prev.anoPublicacao,
+                              categoriaId: prev.categoriaId || matchingCategory?.id,
+                            };
+                          });
+                        } catch (err: any) {
+                          toast.error(
+                            formatApiError(err) ||
+                              'Não foi possível buscar dados para este ISBN.',
+                          );
+                        } finally {
+                          setIsbnLoading(false);
+                        }
+                      }}
+                    >
+                      {isbnLoading ? '...' : 'Buscar'}
+                    </button>
+                  </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
@@ -952,6 +1114,70 @@ export default function CuradoriaBudgetDetails() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showDeleteItemModal && orcamento && itemToDelete && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-white/15 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-white">Remover item do orçamento</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteItemModal(false);
+                  setItemToDelete(null);
+                }}
+                className="text-white/50 hover:text-white transition-colors text-2xl"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-white/80">
+                Tem certeza que deseja remover o item{' '}
+                <span className="font-semibold">"{itemToDelete.nome}"</span> deste orçamento?
+              </p>
+              <p className="text-xs text-white/60">
+                ISBN: <span className="font-mono">{itemToDelete.isbn}</span> • Quantidade:{' '}
+                {itemToDelete.quantidade} • Valor unitário:{' '}
+                {itemToDelete.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+              </p>
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDeleteItemModal(false);
+                    setItemToDelete(null);
+                  }}
+                  className={btn.secondary}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className={btn.danger}
+                  onClick={async () => {
+                    if (!orcamento || !itemToDelete) return;
+                    try {
+                      await api.delete(
+                        `/curadoria/orcamentos/${orcamento.id}/itens/${itemToDelete.id}`,
+                      );
+                      await loadBudget(String(orcamento.id));
+                      toast.success('Item removido com sucesso.');
+                    } catch (err: any) {
+                      toast.error(formatApiError(err));
+                    } finally {
+                      setShowDeleteItemModal(false);
+                      setItemToDelete(null);
+                    }
+                  }}
+                >
+                  Remover item
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

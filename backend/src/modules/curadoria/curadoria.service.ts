@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CompraStatus, CuradoriaDescontoAplicadoEm } from '@prisma/client';
 import * as XLSX from 'xlsx';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -9,6 +9,8 @@ import { UpdateCuradoriaItemDto } from './dto/update-curadoria-item.dto';
 
 @Injectable()
 export class CuradoriaService {
+  private readonly logger = new Logger(CuradoriaService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async resolveItemName(
@@ -101,6 +103,87 @@ export class CuradoriaService {
     }
   }
 
+  async listEstoqueCuradoria(search?: string) {
+    const where: any = {
+      orcamento: {
+        status: CompraStatus.ENTREGUE,
+      },
+    };
+
+    if (search?.trim()) {
+      const term = search.trim();
+      where.OR = [
+        { nome: { contains: term, mode: 'insensitive' } },
+        { isbn: { contains: term, mode: 'insensitive' } },
+        { categoria: { nome: { contains: term, mode: 'insensitive' } } },
+      ];
+    }
+
+    const items = await this.prisma.curadoriaItem.findMany({
+      where,
+      include: {
+        categoria: { select: { id: true, nome: true } },
+      },
+      orderBy: { nome: 'asc' },
+    });
+
+    type GroupKey = string;
+    const grouped = new Map<
+      GroupKey,
+      {
+        isbn: string;
+        nome: string;
+        categoriaId: number | null;
+        categoriaNome: string | null;
+        quantidadeTotal: number;
+        valorMedio: number;
+        valorTotal: number;
+        autor?: string | null;
+        editora?: string | null;
+        anoPublicacao?: string | null;
+      }
+    >();
+
+    for (const item of items) {
+      const key = `${item.isbn}::${item.categoriaId ?? 'null'}`;
+      const existing = grouped.get(key);
+      const quantidade = item.quantidade || 1;
+      const valorUnitario = item.valorLiquido ?? item.valor;
+      const valorTotalItem = Number((valorUnitario * quantidade).toFixed(2));
+
+      if (!existing) {
+        grouped.set(key, {
+          isbn: item.isbn,
+          nome: item.nome,
+          categoriaId: item.categoriaId ?? null,
+          categoriaNome: item.categoria?.nome ?? null,
+          quantidadeTotal: quantidade,
+          valorMedio: Number(valorUnitario.toFixed(2)),
+          valorTotal: valorTotalItem,
+          autor: item.autor,
+          editora: item.editora,
+          anoPublicacao: item.anoPublicacao,
+        });
+      } else {
+        const novaQuantidade = existing.quantidadeTotal + quantidade;
+        const novoValorTotal = Number((existing.valorTotal + valorTotalItem).toFixed(2));
+        const novoValorMedio = novaQuantidade > 0 ? Number((novoValorTotal / novaQuantidade).toFixed(2)) : 0;
+
+        grouped.set(key, {
+          ...existing,
+          quantidadeTotal: novaQuantidade,
+          valorTotal: novoValorTotal,
+          valorMedio: novoValorMedio,
+          autor: existing.autor || item.autor,
+          editora: existing.editora || item.editora,
+          anoPublicacao: existing.anoPublicacao || item.anoPublicacao,
+        });
+      }
+    }
+
+    return Array.from(grouped.values()).sort((a, b) => a.nome.localeCompare(b.nome));
+  }
+
   async listOrcamentos(search?: string) {
     const where = search?.trim()
       ? {
@@ -124,6 +207,7 @@ export class CuradoriaService {
     });
 
     return budgets.map((budget) => {
+      const totalQuantidade = budget.itens.reduce((sum, item) => sum + item.quantidade, 0);
       const totalBruto = Number(
         budget.itens.reduce((sum, item) => sum + item.valor * item.quantidade, 0).toFixed(2),
       );
@@ -151,6 +235,7 @@ export class CuradoriaService {
         dataCriacao: budget.dataCriacao,
         dataAtualizacao: budget.dataAtualizacao,
         totalItens: budget._count.itens,
+        totalQuantidade,
         totalBruto,
         totalDesconto,
         totalLiquido,
@@ -638,6 +723,11 @@ export class CuradoriaService {
   }
 
   async importXlsx(fileBuffer: Buffer, dto: ImportCuradoriaXlsxDto, userId: number) {
+    const startedAt = Date.now();
+    this.logger.log(
+      `Iniciando importação de Curadoria XLSX (user=${userId}, projetoId=${dto.projetoId ?? 'null'}, overwriteCurrent=${dto.overwriteCurrent ?? false})`,
+    );
+
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     const firstSheet = workbook.SheetNames[0];
     if (!firstSheet) {
@@ -649,6 +739,10 @@ export class CuradoriaService {
     if (!rows.length) {
       throw new BadRequestException('Planilha sem linhas de dados.');
     }
+
+    this.logger.log(
+      `Importação Curadoria: primeira aba="${firstSheet}", linhas lidas=${rows.length}`,
+    );
 
     await this.ensureProjectExists(dto.projetoId);
 
@@ -663,9 +757,21 @@ export class CuradoriaService {
       }
     }
 
+    const parsedItems: Array<{
+      nome: string;
+      isbn: string;
+      valor: number;
+      quantidade: number;
+      desconto: number;
+      categoriaId?: number;
+      editoraPlanilha?: string;
+    }> = [];
     const items: CreateCuradoriaItemDto[] = [];
     const missingTitleIsbns: string[] = [];
     let skipped = 0;
+
+    let processed = 0;
+    const logEvery = 50;
 
     for (const row of rows) {
       const rowMap = new Map<string, unknown>();
@@ -727,51 +833,100 @@ export class CuradoriaService {
         categoryNameMap.set(categoriaNomeNormalizado, createdCategory.id);
       }
 
-      let autor: string | undefined;
-      let editora: string | undefined = editoraPlanilha;
-      let anoPublicacao: string | undefined;
-
-      try {
-        const book = await this.fetchBookByIsbn(isbn);
-        if (!nome && book.titulo) {
-          nome = String(book.titulo).slice(0, 180);
-        }
-        if (Array.isArray(book.autores) && book.autores.length > 0) {
-          autor = book.autores.map((author) => String(author)).join(', ').slice(0, 180);
-        }
-        if (!editora && book.editora) {
-          editora = String(book.editora).slice(0, 120);
-        }
-        if (book.anoPublicacao) {
-          anoPublicacao = String(book.anoPublicacao).slice(0, 20);
-        }
-      } catch {
-        // Se a busca por ISBN falhar, seguimos apenas com os dados da planilha.
-      }
-
       let descontoCalculado = Number(descontoValor || 0);
       if (descontoPercentual > 0 && valor != null) {
         const descontoPorcentagem = Number(((Number(valor) * descontoPercentual) / 100).toFixed(2));
         descontoCalculado = descontoPorcentagem;
       }
 
-      const finalName = (nome || `Livro ISBN ${isbn}`).slice(0, 180);
-      if (!nome) {
-        missingTitleIsbns.push(isbn);
-      }
-
-      items.push({
-        nome: finalName,
+      parsedItems.push({
+        nome: nome.slice(0, 180),
         isbn: isbn.slice(0, 30),
         categoriaId,
         valor,
         quantidade: Math.max(1, Math.floor(quantidade)),
         desconto: descontoCalculado,
-        autor,
-        editora,
-        anoPublicacao,
+        editoraPlanilha,
       });
+      processed += 1;
+      if (processed % logEvery === 0) {
+        this.logger.log(
+          `Importação Curadoria: ${processed}/${rows.length} linhas processadas (válidas=${parsedItems.length}, ignoradas=${skipped})`,
+        );
+      }
     }
+
+    const isbnCache = new Map<string, any | null>();
+    const workersCount = Math.max(1, Math.min(8, parsedItems.length));
+    let enrichIndex = 0;
+    let enriched = 0;
+
+    const enrichWorker = async () => {
+      while (true) {
+        const currentIndex = enrichIndex;
+        enrichIndex += 1;
+        if (currentIndex >= parsedItems.length) return;
+
+        const parsed = parsedItems[currentIndex];
+        let nome = parsed.nome;
+        let autor: string | undefined;
+        let editora: string | undefined = parsed.editoraPlanilha;
+        let anoPublicacao: string | undefined;
+
+        if (!nome || !parsed.editoraPlanilha) {
+          let book = isbnCache.get(parsed.isbn) ?? null;
+          if (!isbnCache.has(parsed.isbn)) {
+            try {
+              book = await this.fetchBookByIsbn(parsed.isbn);
+            } catch {
+              book = null;
+            }
+            isbnCache.set(parsed.isbn, book);
+          }
+
+          if (book) {
+            if (!nome && book.titulo) {
+              nome = String(book.titulo).slice(0, 180);
+            }
+            if (Array.isArray(book.autores) && book.autores.length > 0) {
+              autor = book.autores.map((author) => String(author)).join(', ').slice(0, 180);
+            }
+            if (!editora && book.editora) {
+              editora = String(book.editora).slice(0, 120);
+            }
+            if (book.anoPublicacao) {
+              anoPublicacao = String(book.anoPublicacao).slice(0, 20);
+            }
+          }
+        }
+
+        const finalName = (nome || `Livro ISBN ${parsed.isbn}`).slice(0, 180);
+        if (!nome) {
+          missingTitleIsbns.push(parsed.isbn);
+        }
+
+        items[currentIndex] = {
+          nome: finalName,
+          isbn: parsed.isbn,
+          categoriaId: parsed.categoriaId,
+          valor: parsed.valor,
+          quantidade: parsed.quantidade,
+          desconto: parsed.desconto,
+          autor,
+          editora,
+          anoPublicacao,
+        };
+
+        enriched += 1;
+        if (enriched % logEvery === 0) {
+          this.logger.log(
+            `Importação Curadoria: enriquecimento ${enriched}/${parsedItems.length} (cache ISBN=${isbnCache.size})`,
+          );
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: workersCount }, () => enrichWorker()));
 
     if (!items.length) {
       throw new BadRequestException(
@@ -785,7 +940,8 @@ export class CuradoriaService {
       });
     }
 
-    const nomeArquivo = dto.nome?.trim() || `Orçamento importado ${new Date().toLocaleDateString('pt-BR')}`;
+    const nomeArquivo =
+      dto.nome?.trim() || `Orçamento importado ${new Date().toLocaleDateString('pt-BR')}`;
     const created = await this.createOrcamentoInternal({
       nome: nomeArquivo,
       projetoId: dto.projetoId,
@@ -796,6 +952,11 @@ export class CuradoriaService {
       itens: items,
       criadoPorId: userId,
     });
+
+    const elapsedMs = Date.now() - startedAt;
+    this.logger.log(
+      `Importação Curadoria concluída: orcamentoId=${created.id}, itens=${items.length}, ignorados=${skipped}, tempo=${elapsedMs}ms`,
+    );
 
     return {
       ...created,

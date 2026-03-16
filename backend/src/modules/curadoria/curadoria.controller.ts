@@ -35,6 +35,12 @@ export class CuradoriaController {
     return this.curadoriaService.listOrcamentos(search);
   }
 
+  @Get('estoque')
+  @Permissions('compras:solicitar', 'compras:aprovar', 'trabalhos:visualizar')
+  listEstoque(@Query('search') search?: string) {
+    return this.curadoriaService.listEstoqueCuradoria(search);
+  }
+
   @Get('orcamentos/:id')
   @Permissions('compras:solicitar', 'compras:aprovar', 'trabalhos:visualizar')
   getOrcamentoById(@Param('id', ParseIntPipe) id: number) {
