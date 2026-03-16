@@ -189,6 +189,7 @@ export default function ProjectDetails() {
   const [openEtapaMenuId, setOpenEtapaMenuId] = useState<number | null>(null);
   /** IDs das etapas expandidas (conteúdo visível). Inicializado com todas ao carregar o projeto. */
   const [expandedEtapas, setExpandedEtapas] = useState<Set<number>>(new Set());
+  const [expandedDescricaoEtapas, setExpandedDescricaoEtapas] = useState<Set<number>>(new Set());
   const [extraAbas, setExtraAbas] = useState<string[]>([]);
   const [selectedAba, setSelectedAba] = useState<string>('Todas');
   // Sessão: 'all' = todas, null = sem sessão, number = id da sessão
@@ -1898,14 +1899,35 @@ export default function ProjectDetails() {
                           {etapaIndex + 1}. {etapa.nome}
                         </h4>
                         {etapa.descricao && (
-                          <p
-                            className={`text-sm mt-1 ${
-                              expandedEtapas.has(etapa.id)
-                                ? 'text-white/70'
-                                : 'text-white/50 line-clamp-1'
-                            }`}
-                          >
-                            <LinkifiedText text={etapa.descricao} />
+                          <p className="text-sm mt-1 text-white/70">
+                            <LinkifiedText
+                              text={getTruncatedText(
+                                etapa.descricao,
+                                220,
+                                expandedDescricaoEtapas.has(etapa.id),
+                              )}
+                            />
+                            {etapa.descricao.trim().length > 220 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedDescricaoEtapas((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(etapa.id)) {
+                                      next.delete(etapa.id);
+                                    } else {
+                                      next.add(etapa.id);
+                                    }
+                                    return next;
+                                  })
+                                }
+                                className="ml-1 text-primary text-xs hover:underline"
+                              >
+                                {expandedDescricaoEtapas.has(etapa.id)
+                                  ? 'ver menos'
+                                  : 'ver mais'}
+                              </button>
+                            )}
                           </p>
                         )}
                       </div>
