@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { Notificacao } from '../types';
@@ -77,8 +77,9 @@ export function Notifications({ onClose, onUpdateCount, asPage }: NotificationsP
 
       if (!notification) return;
       onClose?.();
-      // Redirecionar para requerimento se houver
-      if (notification.requerimentoId != null) {
+      if (notification.etapa) {
+        navigate(`/tasks/my?etapaId=${notification.etapa.id}`);
+      } else if (notification.requerimentoId != null) {
         navigate('/communications?tab=received&id=' + notification.requerimentoId);
       }
     } catch (err) {
@@ -89,6 +90,9 @@ export function Notifications({ onClose, onUpdateCount, asPage }: NotificationsP
   function handleNotificationClick(notification: Notificacao) {
     if (!notification.lida) {
       markAsRead(notification.id, notification);
+    } else if (notification.etapa) {
+      onClose?.();
+      navigate(`/tasks/my?etapaId=${notification.etapa.id}`);
     } else if (notification.requerimentoId != null) {
       onClose?.();
       navigate('/communications?tab=received&id=' + notification.requerimentoId);
@@ -117,6 +121,28 @@ export function Notifications({ onClose, onUpdateCount, asPage }: NotificationsP
       default:
         return 'bg-blue-500/20 text-blue-300 border-blue-500/30';
     }
+  }
+
+  function getPrazoAlertClass(notification: Notificacao): string | null {
+    const etapaAny: any = notification.etapa as any;
+    if (!etapaAny || !etapaAny.dataFim) return null;
+
+    const today = new Date();
+    const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const fim = new Date(etapaAny.dataFim);
+    const fimDateOnly = new Date(fim.getFullYear(), fim.getMonth(), fim.getDate());
+
+    const diffMs = fimDateOnly.getTime() - todayDateOnly.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) {
+      return 'border-red-500/70 bg-red-500/10';
+    }
+    if (diffDays <= 7) {
+      return 'border-amber-400/70 bg-amber-500/10';
+    }
+    return null;
   }
 
   function formatDate(dateString: string | undefined | null) {
@@ -163,35 +189,62 @@ export function Notifications({ onClose, onUpdateCount, asPage }: NotificationsP
           </div>
         ) : (
           <div className="divide-y divide-white/10">
-            {notifications.map((notification) => (
-              <div
-                key={notification.id}
-                className={`p-4 hover:bg-white/5 transition-colors cursor-pointer ${
-                  !notification.lida ? 'bg-white/5' : ''
-                }`}
-                onClick={() => handleNotificationClick(notification)}
-              >
-                <div className="flex items-start gap-3">
-                  <div className={`flex-shrink-0 w-2 h-2 rounded-full mt-2 ${
-                    !notification.lida ? 'bg-primary' : 'bg-transparent'
-                  }`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-xs text-white/50">
-                        {formatDate(notification.dataCriacao ?? undefined)}
-                      </span>
-                      {notification.requerimentoId != null && (
-                        <span className="text-xs text-primary">
-                          Ver detalhes →
+            {notifications.map((notification) => {
+              const prazoAlertClass = getPrazoAlertClass(notification);
+
+              return (
+                <div
+                  key={notification.id}
+                  className={`p-4 hover:bg-white/5 transition-colors cursor-pointer border-l-4 ${
+                    !notification.lida ? 'bg-white/5' : ''
+                  } ${
+                    prazoAlertClass
+                      ? prazoAlertClass
+                      : 'border-l-transparent'
+                  }`}
+                  onClick={() => handleNotificationClick(notification)}
+                >
+                  <div className="flex items-start gap-3">
+                    <div
+                      className={`flex-shrink-0 w-2 h-2 rounded-full mt-2 ${
+                        !notification.lida ? 'bg-primary' : 'bg-transparent'
+                      }`}
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className="text-xs text-white/50">
+                          {formatDate(notification.dataCriacao ?? undefined)}
                         </span>
-                      )}
+                        {notification.etapa || notification.requerimentoId != null ? (
+                          <span className="text-xs text-primary font-medium">
+                            {notification.etapa ? 'Ir para etapa →' : 'Ver detalhes →'}
+                          </span>
+                        ) : null}
+                        {notification.etapa && prazoAlertClass && (
+                          <span
+                            className={`text-[11px] font-semibold rounded-full px-2 py-0.5 ${
+                              prazoAlertClass.includes('red')
+                                ? 'bg-red-500/30 text-red-50 border border-red-400/80'
+                                : 'bg-amber-500/30 text-amber-50 border border-amber-400/80'
+                            }`}
+                          >
+                            {prazoAlertClass.includes('red')
+                              ? 'Etapa vencida'
+                              : 'Etapa vence em até 7 dias'}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="font-semibold text-sm mb-1">
+                        {notification.titulo ?? 'Notificação'}
+                      </h4>
+                      <p className="text-sm text-white/70 line-clamp-2">
+                        {notification.mensagem ?? ''}
+                      </p>
                     </div>
-                    <h4 className="font-semibold text-sm mb-1">{notification.titulo ?? 'Notificação'}</h4>
-                    <p className="text-sm text-white/70 line-clamp-2">{notification.mensagem ?? ''}</p>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

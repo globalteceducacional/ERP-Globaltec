@@ -55,6 +55,7 @@ export default function Projects() {
   const [projectDescricaoArquivos, setProjectDescricaoArquivos] = useState<ProjetoArquivo[]>([]);
   const [projectDescricaoSaving, setProjectDescricaoSaving] = useState(false);
   const [projectDescricaoError, setProjectDescricaoError] = useState<string | null>(null);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<number>>(new Set());
 
   const statusOptions = [
     { value: 'EM_ANDAMENTO', label: 'Em Andamento' },
@@ -174,11 +175,34 @@ export default function Projects() {
     (sheet as any)[cellRef] = cell;
   };
 
-  async function handleExportAllExcel() {
+  const toggleProjectSelection = (projectId: number) => {
+    setSelectedProjectIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(projectId)) {
+        next.delete(projectId);
+      } else {
+        next.add(projectId);
+      }
+      return next;
+    });
+  };
+
+  const clearProjectSelection = () => {
+    setSelectedProjectIds(new Set());
+  };
+
+  async function handleExportSelectedExcel() {
     try {
-      const response = await api.get('/projects/export', {
-        responseType: 'blob',
-      });
+      if (selectedProjectIds.size === 0) {
+        toast.error('Selecione pelo menos um projeto para exportar.');
+        return;
+      }
+
+      const response = await api.post(
+        '/projects/export',
+        { projectIds: Array.from(selectedProjectIds) },
+        { responseType: 'blob' },
+      );
 
       const blob = new Blob([response.data], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -186,13 +210,14 @@ export default function Projects() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'projetos.xlsx';
+      a.download = selectedProjectIds.size === 1 ? 'projeto.xlsx' : 'projetos.xlsx';
       document.body.appendChild(a);
       a.click();
       a.remove();
       window.URL.revokeObjectURL(url);
 
       toast.success('Arquivo Excel exportado com sucesso!');
+      clearProjectSelection();
     } catch (err: any) {
       const errorMessage = formatApiError(err);
       toast.error(errorMessage);
@@ -572,17 +597,37 @@ export default function Projects() {
           >
             Importar do Excel
           </button>
-          <button
-            onClick={handleExportAllExcel}
-            className={`${btn.secondary} flex-1 sm:flex-none`}
-          >
-            Exportar todos (Excel)
-          </button>
           <button onClick={openCreateModal} className={`${btn.primary} flex-1 sm:flex-none`}>
             Novo Projeto
           </button>
         </div>
       </div>
+
+      {selectedProjectIds.size > 0 && (
+        <div className="flex items-center justify-between gap-2 text-sm text-white/80 bg-primary/10 border border-primary/30 rounded-lg px-3 py-2">
+          <span>
+            {selectedProjectIds.size === 1
+              ? '1 projeto selecionado para exportar.'
+              : `${selectedProjectIds.size} projetos selecionados para exportar.`}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleExportSelectedExcel}
+              className={btn.secondary}
+            >
+              Exportar selecionados (Excel)
+            </button>
+            <button
+              type="button"
+              onClick={clearProjectSelection}
+              className={btn.secondary}
+            >
+              Limpar seleção
+            </button>
+          </div>
+        </div>
+      )}
 
       {error && !showModal && (
         <div className="bg-danger/20 border border-danger/50 text-danger px-4 py-3 rounded-md">
@@ -657,6 +702,21 @@ export default function Projects() {
           );
         }}
         columns={[
+          {
+            key: 'selecionar',
+            label: '',
+            thClassName: 'w-10',
+            tdClassName: 'w-10',
+            stopRowClick: true,
+            render: (p) => (
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-white/40 bg-neutral/60 text-primary focus:ring-primary"
+                checked={selectedProjectIds.has(p.id)}
+                onChange={() => toggleProjectSelection(p.id)}
+              />
+            ),
+          },
           {
             key: 'nome',
             label: 'Nome',

@@ -127,8 +127,8 @@ export function Sidebar({ collapsed, onToggle, isMobile, mobileOpen, onCloseMobi
     const allowedMap: Record<string, string[]> = {
       DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
       GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-      SUPERVISOR: ['/tasks/my', '/curadoria', '/communications'],
-      EXECUTOR: ['/tasks/my', '/curadoria', '/communications'],
+      SUPERVISOR: ['/tasks/my', '/communications'],
+      EXECUTOR: ['/tasks/my', '/communications'],
       COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
       PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
     };
@@ -141,15 +141,12 @@ export function Sidebar({ collapsed, onToggle, isMobile, mobileOpen, onCloseMobi
   }
 
   const filteredLinks = links.filter((link) => {
-    if (link.to === '/curadoria') {
-      return true;
-    }
     if (paginasPermitidas.length === 0) {
       const allowedMap: Record<string, string[]> = {
         DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
         GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-        SUPERVISOR: ['/tasks/my', '/curadoria', '/communications'],
-        EXECUTOR: ['/tasks/my', '/curadoria', '/communications'],
+        SUPERVISOR: ['/tasks/my', '/communications'],
+        EXECUTOR: ['/tasks/my', '/communications'],
         COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
         PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
       };

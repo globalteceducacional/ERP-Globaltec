@@ -1876,6 +1876,7 @@ export default function ProjectDetails() {
 
               return (
                 <div
+                  id={`etapa-${etapa.id}`}
                   key={etapa.id}
                   className="bg-slate-950/80 border border-white/10 rounded-xl p-4 sm:p-5 shadow-xl shadow-black/40"
                 >

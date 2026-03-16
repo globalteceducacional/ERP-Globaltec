@@ -14,6 +14,8 @@ interface Etapa {
   integrantes?: Array<{ usuario: { id: number; nome: string } }>;
 }
 
+type DeadlineStatus = 'NONE' | 'SOON' | 'EXPIRED';
+
 interface ProjectDetails extends Omit<Projeto, 'responsaveis'> {
   etapas?: Etapa[];
   responsaveis?: Array<{ usuario: { id: number; nome: string; email: string } }>;
@@ -86,6 +88,23 @@ export default function Dashboard() {
 
     return paginasPermitidas.includes('/projects');
   }, [user]);
+
+  const getDeadlineStatus = (etapa: { dataFim?: string | null }): DeadlineStatus => {
+    if (!etapa.dataFim) return 'NONE';
+
+    const today = new Date();
+    const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const fim = new Date(etapa.dataFim);
+    const fimDateOnly = new Date(fim.getFullYear(), fim.getMonth(), fim.getDate());
+
+    const diffMs = fimDateOnly.getTime() - todayDateOnly.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) return 'EXPIRED';
+    if (diffDays <= 7) return 'SOON';
+    return 'NONE';
+  };
 
   // Carregar usuários para o filtro (apenas se for diretor)
   useEffect(() => {
@@ -355,6 +374,15 @@ export default function Dashboard() {
   const ativos = projects.filter((p) => p.status === 'EM_ANDAMENTO').length;
   const finalizados = projects.filter((p) => p.status === 'FINALIZADO').length;
 
+  const todasEtapas: any[] = projects.flatMap((p) => (p as any).etapas ?? []);
+  const etapasComDataFim = todasEtapas.filter((etapa) => etapa?.dataFim);
+  const etapasExpirando = etapasComDataFim.filter(
+    (etapa) => getDeadlineStatus(etapa) === 'SOON',
+  ).length;
+  const etapasVencidas = etapasComDataFim.filter(
+    (etapa) => getDeadlineStatus(etapa) === 'EXPIRED',
+  ).length;
+
   return (
     <div className="space-y-6">
       {/* Filtro de Usuário (apenas para Diretores) */}
@@ -402,7 +430,7 @@ export default function Dashboard() {
       )}
 
       {/* Cards de Métricas */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <div className="rounded-xl border border-blue-500/30 bg-gradient-to-br from-blue-500/10 to-blue-600/5 p-6 hover:border-blue-500/50 transition-all">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-sm text-blue-300/80 font-medium">Projetos Ativos</h3>
@@ -424,6 +452,33 @@ export default function Dashboard() {
             </div>
           </div>
           <p className="text-4xl font-bold text-green-100">{finalizados}</p>
+        </div>
+        <div className="rounded-xl border border-amber-500/50 bg-gradient-to-br from-amber-500/15 to-amber-700/10 p-6 hover:border-amber-400/70 transition-all">
+          <div className="flex items-center justify-between mb-2 gap-2">
+            <h3 className="text-sm text-amber-200/90 font-medium">Etapas vencendo em 7 dias</h3>
+            <div className="w-9 h-9 rounded-lg bg-amber-500/25 flex items-center justify-center">
+              <svg className="w-4 h-4 text-amber-200" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a1 1 0 00.86 1.5h18.64a1 1 0 00.86-1.5L13.71 3.86a1 1 0 00-1.72 0z"
+                />
+              </svg>
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-amber-100">{etapasExpirando}</p>
+        </div>
+        <div className="rounded-xl border border-red-500/60 bg-gradient-to-br from-red-600/20 to-red-800/20 p-6 hover:border-red-400/80 transition-all">
+          <div className="flex items-center justify-between mb-2 gap-2">
+            <h3 className="text-sm text-red-100 font-medium">Etapas vencidas</h3>
+            <div className="w-9 h-9 rounded-lg bg-red-500/25 flex items-center justify-center">
+              <svg className="w-4 h-4 text-red-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M4.93 4.93a10 10 0 0114.14 0m0 0a10 10 0 010 14.14m0 0a10 10 0 01-14.14 0m0 0a10 10 0 010-14.14" />
+              </svg>
+            </div>
+          </div>
+          <p className="text-3xl font-bold text-red-100">{etapasVencidas}</p>
         </div>
         {hasProjectsAccess && (
           <div className="rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 to-amber-600/5 p-6 hover:border-amber-500/50 transition-all min-w-0 overflow-hidden">

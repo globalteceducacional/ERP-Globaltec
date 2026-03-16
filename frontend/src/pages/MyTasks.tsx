@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, FormEvent, ChangeEvent } from 'react';
 import { btn } from '../utils/buttonStyles';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
 import { useAuthStore } from '../store/auth';
 import { ChecklistItemEntrega, ChecklistItem } from '../types';
@@ -86,6 +86,8 @@ interface MyTasksResponse {
   etapasPendentes: Etapa[];
 }
 
+type DeadlineStatus = 'NONE' | 'SOON' | 'EXPIRED';
+
 export default function MyTasks() {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
@@ -129,6 +131,9 @@ export default function MyTasks() {
     new Set(),
   );
   const [expandedDescricaoProjects, setExpandedDescricaoProjects] = useState<Set<number>>(
+    new Set(),
+  );
+  const [expandedDescricaoEtapas, setExpandedDescricaoEtapas] = useState<Set<number>>(
     new Set(),
   );
 
@@ -209,6 +214,7 @@ export default function MyTasks() {
   // Estado para controlar expansão de detalhes dos itens do checklist
   // Chave: "etapaId-itemIndex" ou "etapaId-itemIndex-subIndex" para subitens
   const [expandedChecklistDetails, setExpandedChecklistDetails] = useState<Set<string>>(new Set());
+  const [searchParams] = useSearchParams();
 
   const toggleChecklistDetails = (key: string) => {
     setExpandedChecklistDetails((prev) => {
@@ -255,6 +261,23 @@ export default function MyTasks() {
     return paginasPermitidas.includes('/projects');
   }, [user]);
 
+  const getDeadlineStatus = (etapa: Etapa): DeadlineStatus => {
+    if (!etapa.dataFim) return 'NONE';
+
+    const today = new Date();
+    const todayDateOnly = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+    const fim = new Date(etapa.dataFim);
+    const fimDateOnly = new Date(fim.getFullYear(), fim.getMonth(), fim.getDate());
+
+    const diffMs = fimDateOnly.getTime() - todayDateOnly.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffDays < 0) return 'EXPIRED';
+    if (diffDays <= 7) return 'SOON';
+    return 'NONE';
+  };
+
   async function fetchTasks() {
     try {
       setLoading(true);
@@ -272,6 +295,68 @@ export default function MyTasks() {
   useEffect(() => {
     fetchTasks();
   }, []);
+
+  useEffect(() => {
+    if (!data) return;
+    const etapaIdParam = searchParams.get('etapaId');
+    if (!etapaIdParam) return;
+    const etapaId = Number(etapaIdParam);
+    if (!etapaId || Number.isNaN(etapaId)) return;
+
+    const etapasPendentesLocal = Array.isArray(data.etapasPendentes) ? data.etapasPendentes : [];
+    const projetosLocal = Array.isArray(data.projetos) ? data.projetos : [];
+
+    const etapasPorProjetoLocal = etapasPendentesLocal.reduce((acc, etapa) => {
+      const projetoId = etapa.projeto.id;
+      if (!acc[projetoId]) {
+        acc[projetoId] = {
+          projeto: etapa.projeto,
+          etapas: [],
+        };
+      }
+      acc[projetoId].etapas.push(etapa);
+      return acc;
+    }, {} as Record<number, { projeto: Projeto; etapas: Etapa[] }>);
+
+    const projetosComEtapasLocal = [...projetosLocal.map((projeto) => {
+      const etapasDoProjeto = etapasPorProjetoLocal[projeto.id]?.etapas || [];
+      return {
+        projeto,
+        etapas: etapasDoProjeto,
+        temEtapasPendentes: etapasDoProjeto.length > 0,
+      };
+    })];
+
+    Object.values(etapasPorProjetoLocal).forEach(({ projeto, etapas }) => {
+      if (!projetosComEtapasLocal.find((p) => p.projeto.id === projeto.id)) {
+        projetosComEtapasLocal.push({
+          projeto,
+          etapas,
+          temEtapasPendentes: true,
+        });
+      }
+    });
+
+    const entry = projetosComEtapasLocal.find(({ etapas }) =>
+      etapas.some((et) => et.id === etapaId),
+    );
+    if (!entry) return;
+
+    const projetoId = entry.projeto.id;
+
+    setExpandedProjects((prev) => {
+      const next = new Set(prev);
+      next.add(projetoId);
+      return next;
+    });
+
+    setTimeout(() => {
+      const el = document.getElementById(`mytasks-etapa-${etapaId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    }, 300);
+  }, [searchParams, data]);
 
   function resetEntregaForm() {
     setEntregaDescricao('');
@@ -655,6 +740,14 @@ export default function MyTasks() {
     }
   });
 
+  const etapasComDataFim = etapasPendentes.filter((etapa) => etapa.dataFim);
+  const etapasExpirando = etapasComDataFim.filter(
+    (etapa) => getDeadlineStatus(etapa) === 'SOON',
+  ).length;
+  const etapasVencidas = etapasComDataFim.filter(
+    (etapa) => getDeadlineStatus(etapa) === 'EXPIRED',
+  ).length;
+
   const toggleProject = (projetoId: number) => {
     setExpandedProjects(prev => {
       const newSet = new Set(prev);
@@ -683,7 +776,7 @@ export default function MyTasks() {
       {(projetos.length > 0 || etapasPendentes.length > 0) && (
         <div className="bg-neutral/80 border border-white/10 rounded-xl p-6">
           <h2 className="text-xl font-semibold mb-4">Resumo</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
             <div className="bg-gradient-to-br from-slate-600/30 to-slate-700/20 rounded-xl p-4 border border-slate-500/30 shadow-lg">
               <p className="text-slate-300 text-sm mb-1 font-medium">Total de Projetos</p>
               <p className="text-3xl font-bold text-white">{projetosComEtapas.length}</p>
@@ -704,6 +797,18 @@ export default function MyTasks() {
               <p className="text-violet-200 text-sm mb-1 font-medium">Em Análise</p>
               <p className="text-3xl font-bold text-violet-300">
                 {etapasPendentes.filter(e => e.status === 'EM_ANALISE').length}
+              </p>
+            </div>
+            <div className="bg-gradient-to-br from-amber-500/30 to-amber-700/20 rounded-xl p-4 border border-amber-400/60 shadow-lg">
+              <p className="text-amber-100 text-sm mb-1 font-medium">Etapas vencendo em 7 dias</p>
+              <p className="text-3xl font-bold text-amber-200">
+                {etapasExpirando}
+              </p>
+            </div>
+            <div className="bg-gradient-to-br from-red-500/30 to-red-700/20 rounded-xl p-4 border border-red-400/60 shadow-lg">
+              <p className="text-red-100 text-sm mb-1 font-medium">Etapas vencidas</p>
+              <p className="text-3xl font-bold text-red-200">
+                {etapasVencidas}
               </p>
             </div>
           </div>
@@ -1107,10 +1212,35 @@ export default function MyTasks() {
                       ['PENDENTE', 'EM_ANDAMENTO', 'REPROVADA'].includes(etapa.status) &&
                       temItensMarcados;
 
+                    const deadlineStatus = getDeadlineStatus(etapa);
+
+                    const deadlineBorderClass =
+                      deadlineStatus === 'EXPIRED'
+                        ? 'border-red-500/70'
+                        : deadlineStatus === 'SOON'
+                          ? 'border-amber-400/70'
+                          : 'border-white/15';
+
+                    const deadlineBadge =
+                      deadlineStatus === 'EXPIRED'
+                        ? {
+                            label: 'Vencida',
+                            className:
+                              'px-2 py-0.5 rounded-full text-[11px] font-semibold bg-red-500/20 text-red-200 border border-red-400/60',
+                          }
+                        : deadlineStatus === 'SOON'
+                          ? {
+                              label: 'Vence em até 7 dias',
+                              className:
+                                'px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-500/20 text-amber-100 border border-amber-400/60',
+                            }
+                          : null;
+
                     return (
                       <div
                         key={etapa.id}
-                        className="bg-gradient-to-br from-neutral/80 to-neutral/60 border border-white/15 rounded-xl p-4 sm:p-5 shadow-md hover:shadow-lg transition-shadow"
+                        id={`mytasks-etapa-${etapa.id}`}
+                        className={`bg-gradient-to-br from-neutral/80 to-neutral/60 rounded-xl p-4 sm:p-5 shadow-md hover:shadow-lg transition-shadow border ${deadlineBorderClass}`}
                       >
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-3 mb-3">
                           <div className="flex-1 min-w-0">
@@ -1119,7 +1249,35 @@ export default function MyTasks() {
                             </h4>
                             {etapa.descricao && (
                               <p className="text-sm text-white/70 mt-1">
-                                <LinkifiedText text={etapa.descricao} />
+                                <LinkifiedText
+                                  text={getTruncatedText(
+                                    etapa.descricao,
+                                    220,
+                                    expandedDescricaoEtapas.has(etapa.id),
+                                  )}
+                                />
+                                {etapa.descricao.trim().length > 220 && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setExpandedDescricaoEtapas((prev) => {
+                                        const next = new Set(prev);
+                                        if (next.has(etapa.id)) {
+                                          next.delete(etapa.id);
+                                        } else {
+                                          next.add(etapa.id);
+                                        }
+                                        return next;
+                                      });
+                                    }}
+                                    className="ml-1 text-primary text-xs hover:underline"
+                                  >
+                                    {expandedDescricaoEtapas.has(etapa.id)
+                                      ? 'ver menos'
+                                      : 'ver mais'}
+                                  </button>
+                                )}
                               </p>
                             )}
                           </div>
@@ -1127,6 +1285,11 @@ export default function MyTasks() {
                             <span className={`px-2 py-1 rounded text-xs shrink-0 ${getStatusColor(etapa.status)}`}>
                               {getStatusLabel(etapa.status)}
                             </span>
+                            {deadlineBadge && (
+                              <span className={deadlineBadge.className}>
+                                {deadlineBadge.label}
+                              </span>
+                            )}
                             {podeInteragir && etapa.status === 'EM_ANALISE' && (
                               <span className="text-xs text-white/60 shrink-0">Aguardando revisão</span>
                             )}

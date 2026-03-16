@@ -58,13 +58,13 @@ async function main() {
     {
       nome: 'EXECUTOR',
       descricao: 'Executor de tarefas',
-      paginasPermitidas: ['/tasks/my', '/occurrences', '/requests'],
+      paginasPermitidas: ['/tasks/my', '/communications', '/notifications'],
       permissions: ['projetos:visualizar', 'trabalhos:visualizar', 'trabalhos:registrar'],
     },
     {
       nome: 'SUPERVISOR',
       descricao: 'Supervisor de projetos',
-      paginasPermitidas: ['/projects', '/tasks/my', '/occurrences', '/requests'],
+      paginasPermitidas: ['/tasks/my', '/communications', '/notifications'],
       permissions: [
         'projetos:visualizar',
         'projetos:editar',
@@ -75,9 +75,9 @@ async function main() {
       ],
     },
     {
-      nome: 'COMPRADOR',
-      descricao: 'Responsável por compras e estoque',
-      paginasPermitidas: ['/tasks/my', '/stock', '/requests'],
+      nome: 'COTADOR',
+      descricao: 'Responsável por cotações, estoque e curadoria',
+      paginasPermitidas: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/notifications'],
       permissions: [
         'projetos:visualizar',
         'compras:solicitar',
@@ -87,15 +87,25 @@ async function main() {
       ],
     },
     {
+      nome: 'PAGADOR',
+      descricao: 'Responsável por pagamentos e acompanhamento de compras',
+      paginasPermitidas: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/notifications'],
+      permissions: [
+        'projetos:visualizar',
+        'compras:aprovar',
+        'estoque:visualizar',
+      ],
+    },
+    {
       nome: 'DIRETOR',
       descricao: 'Diretor com acesso total ao sistema',
-      paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/stock', '/occurrences', '/requests', '/users', '/cargos'],
+      paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
       permissions: allPermissionKeys,
     },
     {
       nome: 'GM',
       descricao: 'Gerente Master com controle total do ERP',
-      paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/stock', '/occurrences', '/requests', '/users', '/cargos'],
+      paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
       permissions: allPermissionKeys,
     },
   ];

@@ -27,16 +27,7 @@ export function getFirstAllowedPage(user: Usuario | null): string {
     if (user.cargo.paginasPermitidas && Array.isArray(user.cargo.paginasPermitidas)) {
       paginasPermitidas = user.cargo.paginasPermitidas;
     } else {
-      // Fallback para compatibilidade com sistema antigo
-      const allowedMap: Record<string, string[]> = {
-        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-        GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-        SUPERVISOR: ['/tasks/my', '/curadoria', '/communications'],
-        EXECUTOR: ['/tasks/my', '/curadoria', '/communications'],
-        COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories'],
-        PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories'],
-      };
-      paginasPermitidas = allowedMap[user.cargo.nome] || [];
+      paginasPermitidas = [];
     }
   }
 

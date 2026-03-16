@@ -262,6 +262,7 @@ export class TasksService {
             titulo: 'Você foi adicionado a uma etapa',
             mensagem,
             tipo: 'INFO',
+            etapaId: created.id,
           });
         } catch (err) {
           this.logger.warn(`Falha ao criar notificação para integrante ${usuarioId} (etapa ${created.id}): ${err}`);
@@ -427,6 +428,7 @@ export class TasksService {
             titulo: 'Você foi adicionado a uma etapa',
             mensagem,
             tipo: 'INFO',
+            etapaId: updated.id,
           });
         } catch (err) {
           this.logger.warn(`Falha ao criar notificação para integrante ${usuarioId} (etapa ${id}): ${err}`);

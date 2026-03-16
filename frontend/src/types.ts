@@ -100,6 +100,12 @@ export interface Notificacao {
   lida: boolean;
   dataCriacao: string;
   requerimentoId?: number | null;
+  etapaId?: number | null;
+  etapa?: {
+    id: number;
+    projetoId: number;
+    dataFim?: string | null;
+  } | null;
 }
 
 // Checklist com suporte a subitens e descrição

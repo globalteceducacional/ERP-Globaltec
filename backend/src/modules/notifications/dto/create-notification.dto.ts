@@ -20,4 +20,8 @@ export class CreateNotificationDto {
   @IsOptional()
   @IsInt()
   requerimentoId?: number; // Link para o requerimento com detalhes completos
+
+  @IsOptional()
+  @IsInt()
+  etapaId?: number;
 }

@@ -72,16 +72,6 @@ export function AppLayout() {
         if (!paginasPermitidas.includes('/notifications')) {
           paginasPermitidas = [...paginasPermitidas, '/notifications'];
         }
-      } else {
-        const allowedMap: Record<string, string[]> = {
-          DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
-          GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
-          SUPERVISOR: ['/tasks/my', '/communications', '/notifications'],
-          EXECUTOR: ['/tasks/my', '/communications', '/notifications'],
-          COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/notifications'],
-          PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/notifications'],
-        };
-        paginasPermitidas = allowedMap[user.cargo.nome] || [];
       }
     }
 

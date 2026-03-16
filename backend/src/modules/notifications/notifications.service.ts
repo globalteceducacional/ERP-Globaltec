@@ -15,6 +15,13 @@ export class NotificationsService {
       orderBy: { dataCriacao: 'desc' },
       include: {
         requerimento: true, // Incluir o requerimento linkado
+        etapa: {
+          select: {
+            id: true,
+            projetoId: true,
+            dataFim: true,
+          },
+        },
       },
     });
   }
@@ -27,6 +34,7 @@ export class NotificationsService {
         mensagem: data.mensagem,
         tipo: data.tipo,
         requerimentoId: data.requerimentoId,
+        etapaId: data.etapaId,
       },
     });
   }

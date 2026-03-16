@@ -115,7 +115,7 @@ model Usuario {
   projetosResponsavel         ProjetoResponsavel[]
   projetos                    Projeto[]              @relation("Supervisor")
   etapasExecutadas            Etapa[]                @relation("Executor")
-  etapasComoResponsavel        Etapa[]                @relation("ResponsavelEtapa")
+  etapasComoResponsavel       Etapa[]                @relation("ResponsavelEtapa")
   etapasIntegrantes           EtapaIntegrante[]
   ocorrenciasEnviadas         Ocorrencia[]           @relation("OcorrenciasEnviadas")
   ocorrenciasRecebidas        Ocorrencia[]           @relation("OcorrenciasRecebidas")
@@ -132,27 +132,27 @@ model Usuario {
 }
 
 model Projeto {
-  id               Int                  @id @default(autoincrement())
-  nome             String               @unique
-  resumo           String?
-  objetivo         String?
-  descricaoLonga   String?
-  descricaoArquivos Json?
-  valorTotal       Float                @default(0)
-  valorInsumos     Float                @default(0)
-  status           ProjetoStatus        @default(EM_ANDAMENTO)
-  dataCriacao      DateTime             @default(now())
-  dataFinalizacao  DateTime?
-  planilhaJson     Json?
-  supervisorId     Int?
-  supervisor       Usuario?             @relation("Supervisor", fields: [supervisorId], references: [id])
-  sessoes          Sessao[]
-  etapas           Etapa[]
-  responsaveis     ProjetoResponsavel[]
-  compras          Compra[]
+  id                  Int                  @id @default(autoincrement())
+  nome                String               @unique
+  resumo              String?
+  objetivo            String?
+  descricaoLonga      String?
+  descricaoArquivos   Json?
+  valorTotal          Float                @default(0)
+  valorInsumos        Float                @default(0)
+  status              ProjetoStatus        @default(EM_ANDAMENTO)
+  dataCriacao         DateTime             @default(now())
+  dataFinalizacao     DateTime?
+  planilhaJson        Json?
+  supervisorId        Int?
+  supervisor          Usuario?             @relation("Supervisor", fields: [supervisorId], references: [id])
+  sessoes             Sessao[]
+  etapas              Etapa[]
+  responsaveis        ProjetoResponsavel[]
+  compras             Compra[]
   curadoriaOrcamentos CuradoriaOrcamento[]
-  estoqueItems     Estoque[]
-  estoqueAlocacoes EstoqueAlocacao[]
+  estoqueItems        Estoque[]
+  estoqueAlocacoes    EstoqueAlocacao[]
 }
 
 enum CuradoriaDescontoAplicadoEm {
@@ -161,25 +161,25 @@ enum CuradoriaDescontoAplicadoEm {
 }
 
 model CuradoriaOrcamento {
-  id                 Int                         @id @default(autoincrement())
-  nome               String
-  observacao         String?
-  nfUrl              String?
-  arquivoOrcamentoUrl String?
+  id                      Int                         @id @default(autoincrement())
+  nome                    String
+  observacao              String?
+  nfUrl                   String?
+  arquivoOrcamentoUrl     String?
   comprovantePagamentoUrl String?
-  formaPagamento     String?
-  status             CompraStatus                @default(PENDENTE)
-  descontoAplicadoEm CuradoriaDescontoAplicadoEm @default(ITEM)
-  descontoTotal      Float                       @default(0)
-  projetoId          Int?
-  projeto            Projeto?                    @relation(fields: [projetoId], references: [id], onDelete: SetNull)
-  fornecedorId       Int?
-  fornecedor         Fornecedor?                 @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
-  criadoPorId        Int?
-  criadoPor          Usuario?                    @relation(fields: [criadoPorId], references: [id], onDelete: SetNull)
-  dataCriacao        DateTime                    @default(now())
-  dataAtualizacao    DateTime                    @updatedAt
-  itens              CuradoriaItem[]
+  formaPagamento          String?
+  status                  CompraStatus                @default(PENDENTE)
+  descontoAplicadoEm      CuradoriaDescontoAplicadoEm @default(ITEM)
+  descontoTotal           Float                       @default(0)
+  projetoId               Int?
+  projeto                 Projeto?                    @relation(fields: [projetoId], references: [id], onDelete: SetNull)
+  fornecedorId            Int?
+  fornecedor              Fornecedor?                 @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+  criadoPorId             Int?
+  criadoPor               Usuario?                    @relation(fields: [criadoPorId], references: [id], onDelete: SetNull)
+  dataCriacao             DateTime                    @default(now())
+  dataAtualizacao         DateTime                    @updatedAt
+  itens                   CuradoriaItem[]
 
   @@index([projetoId])
   @@index([criadoPorId])
@@ -187,21 +187,21 @@ model CuradoriaOrcamento {
 }
 
 model CuradoriaItem {
-  id              Int               @id @default(autoincrement())
-  orcamentoId     Int
-  orcamento       CuradoriaOrcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
-  nome            String
-  isbn            String
-  quantidade      Int               @default(1)
-  categoriaId     Int?
-  categoria       CategoriaCompra?  @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
-  valor           Float
-  desconto        Float             @default(0)
-  valorLiquido    Float
-  autor           String?
-  editora         String?
-  anoPublicacao   String?
-  dataCriacao     DateTime          @default(now())
+  id            Int                @id @default(autoincrement())
+  orcamentoId   Int
+  orcamento     CuradoriaOrcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  nome          String
+  isbn          String
+  quantidade    Int                @default(1)
+  categoriaId   Int?
+  categoria     CategoriaCompra?   @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+  valor         Float
+  desconto      Float              @default(0)
+  valorLiquido  Float
+  autor         String?
+  editora       String?
+  anoPublicacao String?
+  dataCriacao   DateTime           @default(now())
 
   @@index([orcamentoId])
   @@index([categoriaId])
@@ -210,7 +210,7 @@ model CuradoriaItem {
 model Sessao {
   id        Int     @id @default(autoincrement())
   projetoId Int
-  nome      String  // Ex.: "Módulo 1", "Fase Inicial"
+  nome      String // Ex.: "Módulo 1", "Fase Inicial"
   ordem     Int     @default(0) // Ordem de exibição no projeto
   projeto   Projeto @relation(fields: [projetoId], references: [id], onDelete: Cascade)
   etapas    Etapa[]
@@ -242,8 +242,8 @@ model Etapa {
   ordem             Int                    @default(0) // Ordem de exibição no projeto
   nome              String
   descricao         String?
-  sessaoId          Int?                   // Sessão (ex.: Módulo 1) -> abas -> etapas
-  aba               String?                // Nome da aba/grupo (ex.: "Software", "Hardware")
+  sessaoId          Int? // Sessão (ex.: Módulo 1) -> abas -> etapas
+  aba               String? // Nome da aba/grupo (ex.: "Software", "Hardware")
   status            EtapaStatus            @default(PENDENTE)
   dataInicio        DateTime?
   dataFim           DateTime?
@@ -265,6 +265,7 @@ model Etapa {
   checklistEntregas ChecklistItemEntrega[]
   compras           Compra[]
   estoqueAlocacoes  EstoqueAlocacao[]
+  Notificacao       Notificacao[]
 }
 
 model EtapaEntrega {
@@ -289,22 +290,22 @@ model EtapaEntrega {
 }
 
 model ChecklistItemEntrega {
-  id             Int                 @id @default(autoincrement())
-  etapaId        Int
-  checklistIndex Int // Índice do item no array checklistJson
-  subitemIndex   Int? // Índice do subitem (null se for entrega do item principal)
-  descricao      String
-  imagemUrl      String? // Mantido para compatibilidade (deprecated)
-  documentoUrl   String? // Mantido para compatibilidade (deprecated)
-  imagensUrls    Json? // Array de URLs/imagens (base64 ou URLs)
-  documentosUrls Json? // Array de URLs/documentos (base64 ou URLs)
+  id                Int                 @id @default(autoincrement())
+  etapaId           Int
+  checklistIndex    Int // Índice do item no array checklistJson
+  subitemIndex      Int? // Índice do subitem (null se for entrega do item principal)
+  descricao         String
+  imagemUrl         String? // Mantido para compatibilidade (deprecated)
+  documentoUrl      String? // Mantido para compatibilidade (deprecated)
+  imagensUrls       Json? // Array de URLs/imagens (base64 ou URLs)
+  documentosUrls    Json? // Array de URLs/documentos (base64 ou URLs)
   arquivosRemovidos Json? // Array de URLs de arquivos antigos para apagar do storage após aprovação
-  status         ChecklistItemStatus @default(PENDENTE)
-  dataEnvio      DateTime            @default(now())
-  comentario     String?
-  executorId     Int
-  avaliadoPorId  Int?
-  dataAvaliacao  DateTime?
+  status            ChecklistItemStatus @default(PENDENTE)
+  dataEnvio         DateTime            @default(now())
+  comentario        String?
+  executorId        Int
+  avaliadoPorId     Int?
+  dataAvaliacao     DateTime?
 
   etapa       Etapa    @relation(fields: [etapaId], references: [id], onDelete: Cascade)
   executor    Usuario  @relation("ChecklistItemEntregaExecutor", fields: [executorId], references: [id])
@@ -408,7 +409,7 @@ model EstoqueAlocacao {
   usuario      Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   quantidade   Int // Quantidade alocada para este projeto/etapa/usuário
   dataAlocacao DateTime @default(now())
-  
+
   @@index([estoqueId])
   @@index([projetoId])
   @@index([etapaId])
@@ -457,35 +458,39 @@ model Notificacao {
   usuario        Usuario         @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
   requerimentoId Int? // Link para o requerimento com detalhes completos
   requerimento   Requerimento?   @relation(fields: [requerimentoId], references: [id], onDelete: SetNull)
+  etapaId        Int?
+  etapa          Etapa?          @relation(fields: [etapaId], references: [id], onDelete: SetNull)
+
+  @@index([etapaId])
 }
 
 model Fornecedor {
-  id              Int      @id @default(autoincrement())
-  razaoSocial     String
-  nomeFantasia    String
-  cnpj            String   @unique
-  endereco        String?
-  contato         String?
-  ativo           Boolean  @default(true)
-  dataCriacao     DateTime @default(now())
-  dataAtualizacao DateTime @updatedAt
+  id                  Int                  @id @default(autoincrement())
+  razaoSocial         String
+  nomeFantasia        String
+  cnpj                String               @unique
+  endereco            String?
+  contato             String?
+  ativo               Boolean              @default(true)
+  dataCriacao         DateTime             @default(now())
+  dataAtualizacao     DateTime             @updatedAt
   curadoriaOrcamentos CuradoriaOrcamento[]
 
   @@map("Fornecedor")
 }
 
 model CategoriaCompra {
-  id              Int       @id @default(autoincrement())
+  id              Int                 @id @default(autoincrement())
   nome            String
   descricao       String?
   tipo            CategoriaCompraTipo @default(ITEM)
-  ativo           Boolean   @default(true)
-  dataCriacao     DateTime  @default(now())
-  dataAtualizacao DateTime  @updatedAt
+  ativo           Boolean             @default(true)
+  dataCriacao     DateTime            @default(now())
+  dataAtualizacao DateTime            @updatedAt
   compras         Compra[]
   curadoriaItens  CuradoriaItem[]
   estoqueItems    Estoque[]
 
-  @@map("CategoriaCompra")
   @@unique([nome, tipo])
+  @@map("CategoriaCompra")
 }
