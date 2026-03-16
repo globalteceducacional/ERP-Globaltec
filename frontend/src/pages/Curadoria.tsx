@@ -1618,6 +1618,7 @@ export default function Curadoria() {
                             quantidadeTotal: stockQuotesForm[0]?.quantidade ?? 0,
                             valorMedio: stockQuotesForm[0]?.valor ?? 0,
                             valorTotal: 0,
+                            descontoMedio: 0,
                             autor: stockItemForm.autor ?? null,
                             editora: stockItemForm.editora ?? null,
                             anoPublicacao: stockItemForm.anoPublicacao ?? null,
