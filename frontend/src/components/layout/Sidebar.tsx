@@ -2,16 +2,17 @@ import { NavLink } from 'react-router-dom';
 import { useAuthStore } from '../../store/auth';
 
 const links = [
-  { to: '/dashboard', label: 'Dashboard', icon: IconDashboard },
-  { to: '/projects', label: 'Projetos', icon: IconFolder },
-  { to: '/tasks/my', label: 'Meu Trabalho', icon: IconClipboard },
-  { to: '/curadoria', label: 'Curadoria', icon: IconClipboard },
-  { to: '/stock', label: 'Compras & Estoque', icon: IconCart },
-  { to: '/suppliers', label: 'Fornecedores', icon: IconTruck },
   { to: '/categories', label: 'Categorias', icon: IconTag },
+  { to: '/stock', label: 'Compras & Estoque', icon: IconCart },
+  { to: '/curadoria', label: 'Curadoria', icon: IconBook },
+  { to: '/dashboard', label: 'Dashboard', icon: IconDashboard },
+  { to: '/suppliers', label: 'Fornecedores', icon: IconTruck },
+  { to: '/tasks/my', label: 'Meu Trabalho', icon: IconClipboard },
+  { to: '/projects', label: 'Projetos', icon: IconFolder },
   { to: '/communications', label: 'Requerimentos', icon: IconMail },
-  { to: '/users', label: 'Usuários', icon: IconUsers },
   { to: '/cargos', label: 'Cargos', icon: IconBadge },
+  { to: '/setores', label: 'Setores', icon: IconBuilding },
+  { to: '/users', label: 'Usuários', icon: IconUsers },
 ];
 
 function IconDashboard({ className }: { className?: string }) {
@@ -81,6 +82,33 @@ function IconBadge({ className }: { className?: string }) {
   );
 }
 
+function IconBook({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M12 6c-2.2-1.6-4.7-2.3-7-2.6A2 2 0 003 5.4V19a2 2 0 001.8 2c2.3.3 4.8 1 7.2 2.6 2.4-1.6 4.9-2.3 7.2-2.6A2 2 0 0021 19V5.4a2 2 0 00-2-2c-2.3.3-4.8 1-7 2.6z"
+      />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v17" />
+    </svg>
+  );
+}
+
+function IconBuilding({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M4 21V5a2 2 0 012-2h8a2 2 0 012 2v16M4 21h16M8 7h4M8 11h4M8 15h4M16 21v-6a2 2 0 00-2-2h-2"
+      />
+    </svg>
+  );
+}
+
 const SIDEBAR_STORAGE_KEY = 'erp-sidebar-collapsed';
 
 export function getSidebarCollapsedDefault(): boolean {
@@ -125,8 +153,8 @@ export function Sidebar({ collapsed, onToggle, isMobile, mobileOpen, onCloseMobi
   if (typeof user.cargo === 'string') {
     userCargoNome = user.cargo;
     const allowedMap: Record<string, string[]> = {
-      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-      GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
+      GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
       SUPERVISOR: ['/tasks/my', '/communications'],
       EXECUTOR: ['/tasks/my', '/communications'],
       COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
@@ -143,8 +171,8 @@ export function Sidebar({ collapsed, onToggle, isMobile, mobileOpen, onCloseMobi
   const filteredLinks = links.filter((link) => {
     if (paginasPermitidas.length === 0) {
       const allowedMap: Record<string, string[]> = {
-        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-        GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
+        GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
         SUPERVISOR: ['/tasks/my', '/communications'],
         EXECUTOR: ['/tasks/my', '/communications'],
         COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],

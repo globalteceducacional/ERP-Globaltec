@@ -10,6 +10,7 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 export class UpdateCuradoriaOrcamentoDto {
@@ -23,6 +24,13 @@ export class UpdateCuradoriaOrcamentoDto {
   @IsInt()
   @IsPositive()
   projetoId?: number | null;
+
+  @IsOptional()
+  @Type(() => Number)
+  @ValidateIf((obj) => (obj as any).setorId !== null && (obj as any).setorId !== undefined)
+  @IsInt()
+  @IsPositive()
+  setorId?: number | null;
 
   @IsOptional()
   @Type(() => Number)

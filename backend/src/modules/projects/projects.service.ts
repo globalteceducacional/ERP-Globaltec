@@ -44,6 +44,7 @@ export class ProjectsService {
       orderBy: { dataCriacao: 'desc' },
       include: {
         supervisor: { include: { cargo: true } },
+        setor: { select: { id: true, nome: true } },
         responsaveis: { include: { usuario: { include: { cargo: true } } } },
         _count: { select: { etapas: true } },
         etapas: {
@@ -161,6 +162,7 @@ export class ProjectsService {
       where: { id },
       include: {
         supervisor: { include: { cargo: true } },
+        setor: { select: { id: true, nome: true } },
         responsaveis: { include: { usuario: { include: { cargo: true } } } },
         sessoes: { orderBy: { ordem: 'asc' } },
         etapas: {
@@ -187,6 +189,7 @@ export class ProjectsService {
         compras: {
           include: {
             etapa: true,
+            setor: { select: { id: true, nome: true } },
             solicitadoPor: { include: { cargo: true } },
           },
         },
@@ -239,6 +242,14 @@ export class ProjectsService {
       valorInsumos: 0, // Sempre inicia com 0, será calculado automaticamente quando houver etapas
       planilhaJson: data.planilhaJson ?? null,
     };
+
+    if (data.setorId) {
+      const setor = await this.prisma.setor.findUnique({ where: { id: data.setorId }, select: { id: true } });
+      if (!setor) {
+        throw new BadRequestException('Setor informado não existe');
+      }
+      payload.setor = { connect: { id: data.setorId } };
+    }
 
     if (data.supervisorId) {
       const supervisorExists = await this.prisma.usuario.findUnique({ where: { id: data.supervisorId } });
@@ -302,6 +313,18 @@ export class ProjectsService {
       status: data.status,
       planilhaJson: data.planilhaJson,
     };
+
+    if (data.setorId !== undefined) {
+      if (data.setorId === null || data.setorId === 0) {
+        payload.setor = { disconnect: true };
+      } else {
+        const setor = await this.prisma.setor.findUnique({ where: { id: data.setorId as number }, select: { id: true } });
+        if (!setor) {
+          throw new BadRequestException('Setor informado não existe');
+        }
+        payload.setor = { connect: { id: data.setorId as number } };
+      }
+    }
 
     // Tratar supervisor (relação) - não pode ser removido, apenas alterado
     if (data.supervisorId !== undefined) {

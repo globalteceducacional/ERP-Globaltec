@@ -50,6 +50,13 @@ export class CreatePurchaseDto {
   @IsPositive()
   etapaId?: number;
 
+  @IsOptional()
+  @ValidateIf((obj) => obj.setorId !== null && obj.setorId !== undefined)
+  @Type(() => Number)
+  @IsInt()
+  @IsPositive()
+  setorId?: number | null;
+
   @IsString()
   @MaxLength(120)
   item: string;

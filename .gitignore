@@ -43,3 +43,5 @@ prisma/migrations/
 # storage (manter pasta, ignorar arquivos reais)
 backend/uploads/*
 !backend/uploads/.gitkeep
+
+mobile/

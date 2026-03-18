@@ -17,6 +17,7 @@ const titles: Record<string, { title: string; subtitle?: string }> = {
   '/communications': { title: 'Requerimentos', subtitle: 'Solicitações e direcionamentos' },
   '/users': { title: 'Usuários', subtitle: 'Administração de acesso e perfis' },
   '/cargos': { title: 'Cargos', subtitle: 'Gerenciamento de cargos e permissões' },
+  '/setores': { title: 'Setores', subtitle: 'Formação de equipes e associação' },
   '/notifications': { title: 'Notificações', subtitle: 'Central de notificações' },
 };
 
@@ -58,8 +59,8 @@ export function AppLayout() {
     
     if (typeof user.cargo === 'string') {
       const allowedMap: Record<string, string[]> = {
-        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
-        GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
+        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores', '/notifications'],
+        GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores', '/notifications'],
         SUPERVISOR: ['/tasks/my', '/communications', '/notifications'],
         EXECUTOR: ['/tasks/my', '/communications', '/notifications'],
         COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/notifications'],

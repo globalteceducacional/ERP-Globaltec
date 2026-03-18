@@ -39,6 +39,8 @@ export interface Purchase {
   valorUnitario: number;
   status: string;
   projetoId: number;
+  setorId?: number | null;
+  setor?: { id: number; nome: string } | null;
   descricao?: string | null;
   imagemUrl?: string | null;
   nfUrl?: string | null;
@@ -119,6 +121,7 @@ export interface CreateItemForm {
 
 export interface CreatePurchaseForm extends Omit<CreateItemForm, 'valorUnitario'> {
   projetoId: number;
+  setorId?: number;
   cotacoes: Cotacao[];
   selectedCotacaoIndex: number;
   dataCompra?: string;

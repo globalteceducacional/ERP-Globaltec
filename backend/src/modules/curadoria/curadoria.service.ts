@@ -91,6 +91,12 @@ export class CuradoriaService {
     if (!supplier) throw new BadRequestException('Fornecedor não encontrado.');
   }
 
+  private async ensureSetorExists(id?: number | null) {
+    if (!id) return;
+    const setor = await this.prisma.setor.findUnique({ where: { id }, select: { id: true } });
+    if (!setor) throw new BadRequestException('Setor não encontrado.');
+  }
+
   private async ensureCategoriesExist(categoryIds: number[]) {
     if (!categoryIds.length) return;
     const uniqueCategoryIds = Array.from(new Set(categoryIds));
@@ -294,6 +300,7 @@ export class CuradoriaService {
       where,
       include: {
         projeto: { select: { id: true, nome: true } },
+        setor: { select: { id: true, nome: true } },
         fornecedor: { select: { id: true, nomeFantasia: true, razaoSocial: true, cnpj: true } },
         _count: { select: { itens: true } },
         itens: { select: { valor: true, desconto: true, valorLiquido: true, quantidade: true } },
@@ -318,6 +325,8 @@ export class CuradoriaService {
         observacao: budget.observacao,
         projetoId: budget.projetoId,
         projeto: budget.projeto,
+        setorId: (budget as any).setorId ?? null,
+        setor: (budget as any).setor ?? null,
         fornecedorId: budget.fornecedorId,
         fornecedor: budget.fornecedor,
         nfUrl: budget.nfUrl,
@@ -343,6 +352,7 @@ export class CuradoriaService {
       where: { id },
       include: {
         projeto: { select: { id: true, nome: true } },
+        setor: { select: { id: true, nome: true } },
         fornecedor: { select: { id: true, nomeFantasia: true, razaoSocial: true, cnpj: true } },
         criadoPor: { select: { id: true, nome: true } },
         itens: {
@@ -380,6 +390,7 @@ export class CuradoriaService {
     input: {
       nome: string;
       projetoId?: number;
+      setorId?: number | null;
       fornecedorId?: number;
       nfUrl?: string;
       arquivoOrcamentoUrl?: string;
@@ -398,6 +409,7 @@ export class CuradoriaService {
     }
 
     await this.ensureProjectExists(input.projetoId);
+    await this.ensureSetorExists(input.setorId ?? undefined);
     await this.ensureSupplierExists(input.fornecedorId);
     await this.ensureCategoriesExist(
       input.itens.map((item) => item.categoriaId).filter((id): id is number => Boolean(id)),
@@ -437,6 +449,7 @@ export class CuradoriaService {
       data: {
         nome: input.nome.trim(),
         projetoId: input.projetoId ?? null,
+        setorId: input.setorId ?? null,
         fornecedorId: input.fornecedorId ?? null,
         nfUrl: input.nfUrl?.trim() || null,
         arquivoOrcamentoUrl: input.arquivoOrcamentoUrl?.trim() || null,
@@ -483,6 +496,7 @@ export class CuradoriaService {
     return this.createOrcamentoInternal({
       nome: dto.nome,
       projetoId: dto.projetoId,
+      setorId: dto.setorId ?? null,
       fornecedorId: dto.fornecedorId,
       nfUrl: dto.nfUrl,
       arquivoOrcamentoUrl: dto.arquivoOrcamentoUrl,
@@ -532,6 +546,10 @@ export class CuradoriaService {
     if (dto.projetoId !== undefined) {
       await this.ensureProjectExists(dto.projetoId ?? undefined);
       data.projetoId = dto.projetoId ?? null;
+    }
+    if (dto.setorId !== undefined) {
+      await this.ensureSetorExists(dto.setorId ?? undefined);
+      data.setorId = dto.setorId ?? null;
     }
     if (dto.fornecedorId !== undefined) {
       await this.ensureSupplierExists(dto.fornecedorId ?? undefined);

@@ -229,7 +229,16 @@ export function usePurchaseFilters(
           const searchLower = searchTerm.toLowerCase();
           const itemName = purchase.item?.toLowerCase() || '';
           const itemDesc = purchase.descricao?.toLowerCase() || '';
-          if (!itemName.includes(searchLower) && !itemDesc.includes(searchLower)) {
+          const solicitadoPor = purchase.solicitadoPor?.nome?.toLowerCase() || '';
+          const projetoNome = (purchase as any).projeto?.nome?.toLowerCase?.() || '';
+          const setorNome = (purchase as any).setor?.nome?.toLowerCase?.() || '';
+          if (
+            !itemName.includes(searchLower) &&
+            !itemDesc.includes(searchLower) &&
+            !solicitadoPor.includes(searchLower) &&
+            !projetoNome.includes(searchLower) &&
+            !setorNome.includes(searchLower)
+          ) {
             return false;
           }
         }

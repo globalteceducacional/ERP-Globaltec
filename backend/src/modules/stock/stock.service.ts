@@ -627,6 +627,7 @@ export class StockService {
       include: { 
         projeto: true, 
         etapa: true,
+        setor: { select: { id: true, nome: true } },
         solicitadoPor: { include: { cargo: true } },
         categoria: true,
       } as any,
@@ -641,6 +642,13 @@ export class StockService {
     
     if (data.etapaId) {
       await this.ensureTaskExists(data.etapaId);
+    }
+
+    if (data.setorId) {
+      const setor = await this.prisma.setor.findUnique({ where: { id: data.setorId }, select: { id: true } });
+      if (!setor) {
+        throw new BadRequestException('Setor informado não existe');
+      }
     }
 
     // Se não houver cotação, definir status como SOLICITADO
@@ -662,6 +670,10 @@ export class StockService {
 
     if (data.etapaId) {
       createData.etapaId = data.etapaId;
+    }
+
+    if (data.setorId !== undefined) {
+      createData.setorId = data.setorId || null;
     }
 
     // Adicionar campos opcionais apenas se existirem
@@ -960,6 +972,18 @@ export class StockService {
         updateData.etapaId = data.etapaId;
       } else {
         updateData.etapaId = null;
+      }
+    }
+
+    if (data.setorId !== undefined) {
+      if (data.setorId) {
+        const setor = await this.prisma.setor.findUnique({ where: { id: data.setorId }, select: { id: true } });
+        if (!setor) {
+          throw new BadRequestException('Setor informado não existe');
+        }
+        updateData.setorId = data.setorId;
+      } else {
+        updateData.setorId = null;
       }
     }
     if (data.status !== undefined) {

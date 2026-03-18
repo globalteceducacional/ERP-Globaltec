@@ -11,6 +11,7 @@ import {
   IsString,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 
@@ -72,6 +73,13 @@ export class CreateCuradoriaOrcamentoDto {
   @IsInt()
   @IsPositive()
   projetoId?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @ValidateIf((obj) => obj.setorId !== null && obj.setorId !== undefined)
+  @IsInt()
+  @IsPositive()
+  setorId?: number | null;
 
   @IsOptional()
   @IsString()

@@ -48,6 +48,9 @@ import { useStockData } from '../hooks/useStockData';
 import { usePurchaseFilters } from '../hooks/usePurchaseFilters';
 import { DataTable, DataTableColumn } from '../components/DataTable';
 import { FileDropInput } from '../components/FileDropInput';
+import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
+import { AppInput } from '../components/ui/AppInput';
+import { AppSelect } from '../components/ui/AppSelect';
 
 export default function Stock() {
   // Hook para gerenciar dados do estoque
@@ -62,6 +65,13 @@ export default function Stock() {
     setSuppliers,
     setCategories,
   } = useStockData();
+
+  interface SimpleSetor {
+    id: number;
+    nome: string;
+  }
+
+  const [setores, setSetores] = useState<SimpleSetor[]>([]);
 
   const [etapas, setEtapas] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -89,6 +99,10 @@ export default function Stock() {
   const [newObservacao, setNewObservacao] = useState<string>('');
   const [selectedProjectFilter, setSelectedProjectFilter] = useState<number | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [showQuickFilters, setShowQuickFilters] = useState(false);
+  const [estoqueOnlyAvailable, setEstoqueOnlyAvailable] = useState(false);
+  const [estoqueMinDisponivel, setEstoqueMinDisponivel] = useState<string>('');
+  const [solicitanteFilter, setSolicitanteFilter] = useState<number | 'all'>('all');
   const [selectedPurchases, setSelectedPurchases] = useState<number[]>([]);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showBatchAcaminhoModal, setShowBatchAcaminhoModal] = useState(false);
@@ -176,6 +190,7 @@ export default function Stock() {
     comprovantePagamentoUrl: '',
     cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }],
     projetoId: 0,
+    setorId: undefined,
     selectedCotacaoIndex: 0,
     dataCompra: '',
     categoriaId: undefined,
@@ -262,6 +277,23 @@ export default function Stock() {
     }
   }, [activeTab, setPurchaseSubTab]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await api.get<SimpleSetor[]>('/setores/options');
+        if (!cancelled) {
+          setSetores(Array.isArray(data) ? data : []);
+        }
+      } catch {
+        if (!cancelled) setSetores([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Função load para compatibilidade (usa o hook)
   const load = loadData;
 
@@ -276,9 +308,30 @@ export default function Stock() {
         return false;
       }
     }
+
+    const disponivel = item.quantidadeDisponivel ?? item.quantidade ?? 0;
+    if (estoqueOnlyAvailable && disponivel <= 0) {
+      return false;
+    }
+
+    if (estoqueMinDisponivel.trim()) {
+      const min = Number(estoqueMinDisponivel);
+      if (!Number.isNaN(min) && disponivel < min) {
+        return false;
+      }
+    }
     
     return true;
   });
+
+  const filteredSolicitacoes = useMemo(() => {
+    if (activeTab !== 'solicitacoes') return [];
+    return sortedPurchases.filter((p) => {
+      if (solicitanteFilter === 'all') return true;
+      const solicitanteId = (p as any).solicitadoPor?.id;
+      return solicitanteId === solicitanteFilter;
+    });
+  }, [activeTab, sortedPurchases, solicitanteFilter]);
 
   // A ordenação do hook não inclui a lógica especial de 'cotacoes', então vamos usar sortedPurchases do hook
   // mas aplicar ordenação adicional se necessário para 'cotacoes'
@@ -1147,6 +1200,10 @@ export default function Stock() {
         payload.projetoId = Number(purchaseForm.projetoId);
       }
 
+      if (purchaseForm.setorId) {
+        payload.setorId = Number(purchaseForm.setorId);
+      }
+
       // Adicionar campos opcionais apenas se tiverem valor válido (não vazio)
       if (purchaseForm.descricao && purchaseForm.descricao.trim().length > 0) {
         payload.descricao = purchaseForm.descricao.trim();
@@ -1244,6 +1301,7 @@ export default function Stock() {
         comprovantePagamentoUrl: '',
         cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }],
         projetoId: 0,
+        setorId: undefined,
         selectedCotacaoIndex: 0,
         dataCompra: '',
         categoriaId: undefined,
@@ -1406,6 +1464,10 @@ export default function Stock() {
       if (purchaseForm.quantidade && purchaseForm.quantidade > 0) {
         payload.quantidade = Number(purchaseForm.quantidade);
       }
+
+      if (purchaseForm.setorId) {
+        payload.setorId = Number(purchaseForm.setorId);
+      }
       
       // Recalcular valorUnitario baseado na cotação selecionada
       if (purchaseForm.cotacoes.length > 0) {
@@ -1520,6 +1582,7 @@ export default function Stock() {
         comprovantePagamentoUrl: '',
         cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }],
         projetoId: 0,
+        setorId: undefined,
         selectedCotacaoIndex: 0,
         dataCompra: '',
         categoriaId: undefined,
@@ -1610,46 +1673,89 @@ export default function Stock() {
         </div>
       </div>
 
-      {/* Filtros */}
-      <div className="bg-white/5 rounded-xl border border-white/10 p-4">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-white/70 mb-2">
-              Buscar
-            </label>
-            <input
-              type="text"
-              placeholder="Buscar por nome ou descrição..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full px-4 py-2 rounded-md bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
-            />
-          </div>
-          <div className="flex-1">
-            <label className="block text-sm font-medium text-white/70 mb-2">
-              Filtrar por Projeto
-            </label>
-            <select
-              value={selectedProjectFilter}
-              onChange={(e) => setSelectedProjectFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-              className="w-full px-4 py-2 rounded-md bg-neutral border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent appearance-none cursor-pointer"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 1rem center',
-                paddingRight: '2.5rem'
-              }}
-            >
-              <option value="all" className="bg-neutral text-white">Todos os Projetos</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id} className="bg-neutral text-white">
-                  {project.nome}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-      </div>
+      {/* Filtros (somente Estoque/Solicitações) */}
+      {activeTab !== 'compras' && (
+        <CollapsibleFilters
+          show={showQuickFilters}
+          setShow={setShowQuickFilters}
+          hasActiveFilters={
+            searchTerm.trim().length > 0 ||
+            (activeTab === 'solicitacoes' && (selectedProjectFilter !== 'all' || solicitanteFilter !== 'all')) ||
+            (activeTab === 'estoque' && (estoqueOnlyAvailable || estoqueMinDisponivel.trim().length > 0))
+          }
+          onClear={() => {
+            setSearchTerm('');
+            setSelectedProjectFilter('all');
+            setSolicitanteFilter('all');
+            setEstoqueOnlyAvailable(false);
+            setEstoqueMinDisponivel('');
+          }}
+        >
+          {activeTab === 'estoque' ? (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <AppInput
+                className="md:col-span-2"
+                label="Buscar"
+                value={searchTerm}
+                onChange={setSearchTerm}
+                placeholder="Item ou descrição..."
+              />
+
+              <AppInput
+                label="Mín. disponível"
+                type="number"
+                min={0}
+                value={estoqueMinDisponivel}
+                onChange={setEstoqueMinDisponivel}
+                placeholder="Ex.: 1"
+              />
+
+              <div className="md:col-span-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={estoqueOnlyAvailable}
+                    onChange={(e) => setEstoqueOnlyAvailable(e.target.checked)}
+                    className="w-4 h-4 rounded border-white/30 bg-white/10 text-primary focus:ring-primary"
+                  />
+                  <span className="text-sm text-white/80">Somente com disponível &gt; 0</span>
+                </label>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <AppInput
+                className="md:col-span-2"
+                label="Buscar"
+                value={searchTerm}
+                onChange={setSearchTerm}
+                placeholder="Item, motivo, solicitante, projeto..."
+              />
+
+              <AppSelect
+                label="Projeto"
+                value={selectedProjectFilter}
+                onChange={(value) => setSelectedProjectFilter(value === 'all' ? 'all' : Number(value))}
+                options={[
+                  { value: 'all', label: 'Todos os Projetos' },
+                  ...projects.map((project) => ({ value: project.id, label: project.nome })),
+                ]}
+              />
+
+              <AppSelect
+                className="md:col-span-3"
+                label="Solicitante"
+                value={solicitanteFilter}
+                onChange={(value) => setSolicitanteFilter(value === 'all' ? 'all' : Number(value))}
+                options={[
+                  { value: 'all', label: 'Todos' },
+                  ...users.map((u) => ({ value: u.id, label: u.nome })),
+                ]}
+              />
+            </div>
+          )}
+        </CollapsibleFilters>
+      )}
 
       {/* Conteúdo da aba Estoque */}
       {activeTab === 'estoque' && (
@@ -1946,6 +2052,9 @@ export default function Stock() {
           clearFilters={clearPurchaseFilters}
           hasActiveFilters={hasActiveFilters}
           categories={categories}
+          projects={projects}
+          selectedProjectFilter={selectedProjectFilter}
+          setSelectedProjectFilter={setSelectedProjectFilter}
         />
         
         {/* Cards mobile para aba Compras */}
@@ -2050,6 +2159,7 @@ export default function Stock() {
                             ? purchase.cotacoesJson.map((cot: any) => ({ valorUnitario: cot.valorUnitario || 0, frete: cot.frete || 0, impostos: cot.impostos || 0, desconto: cot.desconto || 0, descontoTipo: cot.descontoTipo || 'valor', link: cot.link || '', fornecedorId: cot.fornecedorId, formaPagamento: cot.formaPagamento || '' }))
                             : [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }],
                           projetoId: purchase.projetoId, selectedCotacaoIndex: 0,
+                          setorId: (purchase as any).setor?.id ?? (purchase as any).setorId ?? undefined,
                           dataCompra: purchase.dataCompra ? new Date(purchase.dataCompra).toISOString().split('T')[0] : '',
                           categoriaId: (purchase as any).categoriaId || undefined, observacao: purchase.observacao || '',
                         });
@@ -2355,7 +2465,7 @@ export default function Stock() {
           <h3 className="text-xl font-semibold">Solicitações de Compra</h3>
         </div>
         <DataTable<Purchase>
-          data={purchases.filter((p) => p.status === 'SOLICITADO')}
+          data={filteredSolicitacoes}
           keyExtractor={(p) => p.id}
           emptyMessage="Nenhuma solicitação pendente"
           rowClassName={() => 'bg-yellow-500/10'}
@@ -3165,6 +3275,31 @@ export default function Stock() {
                   ))}
                 </select>
               </div>
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Setor</label>
+                <select
+                  value={purchaseForm.setorId ?? ''}
+                  onChange={(e) =>
+                    setPurchaseForm({ ...purchaseForm, setorId: e.target.value ? Number(e.target.value) : undefined })
+                  }
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem',
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">
+                    Sem setor (opcional)
+                  </option>
+                  {setores.map((setor) => (
+                    <option key={setor.id} value={setor.id} className="bg-neutral text-white">
+                      {setor.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Nome do Item *</label>
@@ -3656,6 +3791,7 @@ export default function Stock() {
                     comprovantePagamentoUrl: '',
                     cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0, desconto: 0, descontoTipo: 'valor', link: '', fornecedorId: undefined, formaPagamento: '' }],
                     projetoId: 0,
+                    setorId: undefined,
                     selectedCotacaoIndex: 0,
                     dataCompra: '',
                     categoriaId: undefined,

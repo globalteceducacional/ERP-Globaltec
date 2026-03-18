@@ -6,6 +6,7 @@ import { DataTable, DataTableColumn } from '../components/DataTable';
 import { formatApiError, toast } from '../utils/toast';
 import { Category, Projeto, Supplier } from '../types/stock';
 import { FileDropInput } from '../components/FileDropInput';
+import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
 
 interface CuradoriaItem {
   id: number;
@@ -25,6 +26,7 @@ interface CuradoriaOrcamentoDetails {
   id: number;
   nome: string;
   projetoId?: number | null;
+  setorId?: number | null;
   fornecedorId?: number | null;
   fornecedor?: { id: number; nomeFantasia: string; razaoSocial: string; cnpj: string } | null;
   nfUrl?: string | null;
@@ -34,6 +36,7 @@ interface CuradoriaOrcamentoDetails {
   status?: 'PENDENTE' | 'COMPRADO_ACAMINHO' | 'ENTREGUE' | 'SOLICITADO' | 'REPROVADO';
   observacao?: string | null;
   projeto?: { id: number; nome: string } | null;
+  setor?: { id: number; nome: string } | null;
   descontoAplicadoEm: 'ITEM' | 'TOTAL';
   descontoTotal: number;
   totalBruto: number;
@@ -46,6 +49,7 @@ interface CuradoriaOrcamentoDetails {
 interface CuradoriaEditBudgetForm {
   nome: string;
   projetoId?: number;
+  setorId?: number;
   fornecedorId?: number;
   nfUrl: string;
   formaPagamento: string;
@@ -55,6 +59,11 @@ interface CuradoriaEditBudgetForm {
   observacao: string;
   descontoAplicadoEm: 'ITEM' | 'TOTAL';
   descontoTotal: number;
+}
+
+interface SimpleSetor {
+  id: number;
+  nome: string;
 }
 
 interface CuradoriaEditItemForm {
@@ -89,6 +98,7 @@ export default function CuradoriaBudgetDetails() {
   const [error, setError] = useState<string | null>(null);
   const [orcamento, setOrcamento] = useState<CuradoriaOrcamentoDetails | null>(null);
   const [projects, setProjects] = useState<Projeto[]>([]);
+  const [setores, setSetores] = useState<SimpleSetor[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [showEditBudgetModal, setShowEditBudgetModal] = useState(false);
@@ -103,6 +113,7 @@ export default function CuradoriaBudgetDetails() {
   const [editBudgetForm, setEditBudgetForm] = useState<CuradoriaEditBudgetForm>({
     nome: '',
     projetoId: undefined,
+    setorId: undefined,
     fornecedorId: undefined,
     nfUrl: '',
     formaPagamento: '',
@@ -130,6 +141,7 @@ export default function CuradoriaBudgetDetails() {
     'nome',
   );
   const [itemsSortDir, setItemsSortDir] = useState<'asc' | 'desc'>('asc');
+  const [showItemsFilters, setShowItemsFilters] = useState(false);
   const fieldClass =
     'w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary';
   const fileFieldClass =
@@ -185,18 +197,21 @@ export default function CuradoriaBudgetDetails() {
       try {
         setLoading(true);
         setError(null);
-        const [budgetData, projectsRes, categoriesRes, suppliersRes] = await Promise.all([
+        const [budgetData, projectsRes, setoresRes, categoriesRes, suppliersRes] = await Promise.all([
           loadBudget(id),
           api.get<Projeto[]>('/projects/options'),
+          api.get<SimpleSetor[]>('/setores/options').catch(() => ({ data: [] as SimpleSetor[] })),
           api.get<Category[]>('/categories/all?tipo=LIVRO').catch(() => ({ data: [] as Category[] })),
           api.get<Supplier[]>('/suppliers').catch(() => ({ data: [] as Supplier[] })),
         ]);
         setProjects(Array.isArray(projectsRes.data) ? projectsRes.data : []);
+        setSetores(Array.isArray(setoresRes.data) ? setoresRes.data : []);
         setCategories(Array.isArray(categoriesRes.data) ? categoriesRes.data : []);
         setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : []);
         setEditBudgetForm({
           nome: budgetData.nome ?? '',
           projetoId: budgetData.projeto?.id ?? undefined,
+          setorId: budgetData.setor?.id ?? budgetData.setorId ?? undefined,
           fornecedorId: budgetData.fornecedor?.id ?? undefined,
           nfUrl: budgetData.nfUrl ?? '',
           formaPagamento: budgetData.formaPagamento ?? '',
@@ -360,6 +375,7 @@ export default function CuradoriaBudgetDetails() {
       await api.patch(`/curadoria/orcamentos/${orcamento.id}`, {
         nome: editBudgetForm.nome.trim(),
         projetoId: editBudgetForm.projetoId || undefined,
+        setorId: editBudgetForm.setorId || undefined,
         fornecedorId: editBudgetForm.fornecedorId || undefined,
         nfUrl: editBudgetForm.nfUrl.trim() || undefined,
         formaPagamento: editBudgetForm.formaPagamento.trim() || undefined,
@@ -547,39 +563,62 @@ export default function CuradoriaBudgetDetails() {
             Itens distintos: {orcamento.itens.length} | Quantidade total:{' '}
             {orcamento.itens.reduce((sum, item) => sum + item.quantidade, 0)}
           </p>
-          <div className="mt-3 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
-            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
-              <input
-                type="text"
-                value={itemsSearch}
-                onChange={(event) => setItemsSearch(event.target.value)}
-                placeholder="Buscar item por título, ISBN ou gênero literário..."
-                className="w-full sm:w-72 bg-neutral/80 border border-white/15 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary"
-              />
-              <div className="flex items-center gap-2">
-                <select
-                  value={itemsSortKey}
-                  onChange={(event) =>
-                    setItemsSortKey(event.target.value as 'nome' | 'valor' | 'desconto' | 'liquido')
-                  }
-                  className="bg-neutral/80 border border-white/15 rounded-md px-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="nome">Ordenar por título</option>
-                  <option value="valor">Ordenar por valor</option>
-                  <option value="desconto">Ordenar por desconto</option>
-                  <option value="liquido">Ordenar por líquido</option>
-                </select>
-                <button
-                  type="button"
-                  className="px-2 py-1 rounded-md border border-white/20 bg-white/5 text-xs text-white hover:bg-white/10"
-                  onClick={() =>
-                    setItemsSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-                  }
-                >
-                  {itemsSortDir === 'asc' ? 'Asc' : 'Desc'}
-                </button>
+          <div className="mt-3">
+            <CollapsibleFilters
+              show={showItemsFilters}
+              setShow={setShowItemsFilters}
+              hasActiveFilters={itemsSearch.trim().length > 0 || itemsSortKey !== 'nome' || itemsSortDir !== 'asc'}
+              onClear={() => {
+                setItemsSearch('');
+                setItemsSortKey('nome');
+                setItemsSortDir('asc');
+              }}
+              title="Busca e ordenação dos itens"
+            >
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-medium text-white/90 mb-1">Buscar</label>
+                  <input
+                    type="text"
+                    value={itemsSearch}
+                    onChange={(event) => setItemsSearch(event.target.value)}
+                    placeholder="Buscar item por título, ISBN ou gênero literário..."
+                    className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-white/90 mb-1">Ordenar</label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={itemsSortKey}
+                      onChange={(event) =>
+                        setItemsSortKey(event.target.value as 'nome' | 'valor' | 'desconto' | 'liquido')
+                      }
+                      className="flex-1 bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                      style={{
+                        backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                        backgroundRepeat: 'no-repeat',
+                        backgroundPosition: 'right 0.75rem center',
+                        paddingRight: '2rem',
+                      }}
+                    >
+                      <option value="nome" className="bg-neutral text-white">Ordenar por título</option>
+                      <option value="valor" className="bg-neutral text-white">Ordenar por valor</option>
+                      <option value="desconto" className="bg-neutral text-white">Ordenar por desconto</option>
+                      <option value="liquido" className="bg-neutral text-white">Ordenar por líquido</option>
+                    </select>
+                    <button
+                      type="button"
+                      className="px-3 py-2 text-xs bg-neutral border border-white/30 rounded-md hover:bg-neutral/60"
+                      onClick={() => setItemsSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                    >
+                      {itemsSortDir === 'asc' ? 'Asc ↑' : 'Desc ↓'}
+                    </button>
+                  </div>
+                </div>
               </div>
-            </div>
+            </CollapsibleFilters>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-3">
             <div className="bg-black/20 border border-white/10 rounded-lg p-3">
@@ -686,6 +725,26 @@ export default function CuradoriaBudgetDetails() {
                     {projects.map((project) => (
                       <option key={project.id} value={project.id}>
                         {project.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Setor</label>
+                  <select
+                    value={editBudgetForm.setorId ?? ''}
+                    onChange={(event) =>
+                      setEditBudgetForm((prev) => ({
+                        ...prev,
+                        setorId: event.target.value ? Number(event.target.value) : undefined,
+                      }))
+                    }
+                    className={fieldClass}
+                  >
+                    <option value="">Sem setor</option>
+                    {setores.map((setor) => (
+                      <option key={setor.id} value={setor.id}>
+                        {setor.nome}
                       </option>
                     ))}
                   </select>

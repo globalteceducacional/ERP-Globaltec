@@ -14,8 +14,8 @@ export function getFirstAllowedPage(user: Usuario | null): string {
   if (typeof user.cargo === 'string') {
     // Formato antigo: cargo é uma string
     const allowedMap: Record<string, string[]> = {
-      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
-      GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos'],
+      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
+      GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
       SUPERVISOR: ['/tasks/my', '/curadoria', '/communications'],
       EXECUTOR: ['/tasks/my', '/curadoria', '/communications'],
       COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],

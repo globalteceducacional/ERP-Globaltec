@@ -1,4 +1,4 @@
-import type { Category } from '../../../types/stock';
+import type { Category, Projeto } from '../../../types/stock';
 import type { PurchaseFilters as PurchaseFiltersType } from '../../../hooks/usePurchaseFilters';
 
 interface PurchaseFiltersProps {
@@ -9,6 +9,9 @@ interface PurchaseFiltersProps {
   clearFilters: () => void;
   hasActiveFilters: boolean;
   categories: Category[];
+  projects: Projeto[];
+  selectedProjectFilter: number | 'all';
+  setSelectedProjectFilter: (value: number | 'all') => void;
 }
 
 export function PurchaseFilters({
@@ -19,6 +22,9 @@ export function PurchaseFilters({
   clearFilters,
   hasActiveFilters,
   categories,
+  projects,
+  selectedProjectFilter,
+  setSelectedProjectFilter,
 }: PurchaseFiltersProps) {
   return (
     <div className="mb-4 bg-white/5 rounded-lg border border-white/10 overflow-hidden">
@@ -59,6 +65,33 @@ export function PurchaseFilters({
                 onChange={(e) => setFilters({ ...filters, searchTerm: e.target.value })}
                 className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
               />
+            </div>
+
+            {/* Projeto */}
+            <div>
+              <label className="block text-xs font-medium text-white/90 mb-1">Projeto</label>
+              <select
+                value={selectedProjectFilter}
+                onChange={(e) =>
+                  setSelectedProjectFilter(
+                    e.target.value === 'all' ? 'all' : Number(e.target.value),
+                  )
+                }
+                className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                style={{
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat',
+                  backgroundPosition: 'right 0.75rem center',
+                  paddingRight: '2rem',
+                }}
+              >
+                <option value="all" className="bg-neutral text-white">Todos os Projetos</option>
+                {projects.map((p) => (
+                  <option key={p.id} value={p.id} className="bg-neutral text-white">
+                    {p.nome}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Categoria */}

@@ -129,6 +129,30 @@ model Usuario {
   checklistEntregasAvaliadas  ChecklistItemEntrega[] @relation("ChecklistItemEntregaAvaliador")
   estoqueAlocacoes            EstoqueAlocacao[]
   curadoriaOrcamentos         CuradoriaOrcamento[]
+  setores                     SetorUsuario[]
+}
+
+model Setor {
+  id                Int            @id @default(autoincrement())
+  nome              String         @unique
+  descricao         String?
+  ativo             Boolean        @default(true)
+  dataCriacao       DateTime       @default(now())
+  dataAtualizacao   DateTime       @updatedAt
+  membros           SetorUsuario[]
+  projetos          Projeto[]
+  compras           Compra[]
+  curadoriaOrcamentos CuradoriaOrcamento[]
+}
+
+model SetorUsuario {
+  setorId   Int
+  usuarioId Int
+  setor     Setor   @relation(fields: [setorId], references: [id], onDelete: Cascade)
+  usuario   Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@id([setorId, usuarioId])
+  @@index([usuarioId])
 }
 
 model Projeto {
@@ -146,6 +170,8 @@ model Projeto {
   planilhaJson        Json?
   supervisorId        Int?
   supervisor          Usuario?             @relation("Supervisor", fields: [supervisorId], references: [id])
+  setorId             Int?
+  setor               Setor?               @relation(fields: [setorId], references: [id], onDelete: SetNull)
   sessoes             Sessao[]
   etapas              Etapa[]
   responsaveis        ProjetoResponsavel[]
@@ -153,6 +179,8 @@ model Projeto {
   curadoriaOrcamentos CuradoriaOrcamento[]
   estoqueItems        Estoque[]
   estoqueAlocacoes    EstoqueAlocacao[]
+
+  @@index([setorId])
 }
 
 enum CuradoriaDescontoAplicadoEm {
@@ -173,6 +201,8 @@ model CuradoriaOrcamento {
   descontoTotal           Float                       @default(0)
   projetoId               Int?
   projeto                 Projeto?                    @relation(fields: [projetoId], references: [id], onDelete: SetNull)
+  setorId                 Int?
+  setor                   Setor?                      @relation(fields: [setorId], references: [id], onDelete: SetNull)
   fornecedorId            Int?
   fornecedor              Fornecedor?                 @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
   criadoPorId             Int?
@@ -182,6 +212,7 @@ model CuradoriaOrcamento {
   itens                   CuradoriaItem[]
 
   @@index([projetoId])
+  @@index([setorId])
   @@index([criadoPorId])
   @@index([fornecedorId])
 }
@@ -365,6 +396,8 @@ model Compra {
   projeto                 Projeto?         @relation(fields: [projetoId], references: [id], onDelete: Cascade)
   etapaId                 Int?
   etapa                   Etapa?           @relation(fields: [etapaId], references: [id], onDelete: SetNull)
+  setorId                 Int?
+  setor                   Setor?           @relation(fields: [setorId], references: [id], onDelete: SetNull)
   solicitadoPorId         Int?
   solicitadoPor           Usuario?         @relation("SolicitadoPor", fields: [solicitadoPorId], references: [id], onDelete: SetNull)
   motivoRejeicao          String? // Motivo da rejeição quando status for REPROVADO
@@ -377,6 +410,8 @@ model Compra {
   enderecoEntrega         String? // Endereço de entrega
   recebidoPor             String? // Nome de quem recebeu o material
   observacao              String? // Observações gerais
+
+  @@index([setorId])
 }
 
 model Estoque {

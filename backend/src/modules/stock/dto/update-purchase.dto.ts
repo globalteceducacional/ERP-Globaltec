@@ -46,6 +46,12 @@ export class UpdatePurchaseDto {
   etapaId?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsPositive()
+  setorId?: number | null;
+
+  @IsOptional()
   @IsString()
   @MaxLength(120)
   item?: string;

@@ -211,18 +211,45 @@ export class CargosService {
       return { modulo, acao, chave: key };
     });
 
-    const permissions = await this.prisma.permission.findMany({
-      where: {
-        OR: parsed.map(({ modulo, acao }) => ({ modulo, acao })),
-      },
+    // Em ambientes onde o seed não foi executado, ainda queremos permitir salvar o cargo.
+    // Então, criamos automaticamente as permissões ausentes.
+    const permissions = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.permission.findMany({
+        where: {
+          OR: parsed.map(({ modulo, acao }) => ({ modulo, acao })),
+        },
+      });
+
+      const foundKeys = new Set(existing.map((p) => `${p.modulo}:${p.acao}`));
+      const missing = parsed.filter((item) => !foundKeys.has(item.chave));
+
+      if (missing.length > 0) {
+        await Promise.all(
+          missing.map((item) =>
+            tx.permission.upsert({
+              where: {
+                modulo_acao: {
+                  modulo: item.modulo,
+                  acao: item.acao,
+                },
+              },
+              update: {},
+              create: {
+                modulo: item.modulo,
+                acao: item.acao,
+                descricao: `Permissão criada automaticamente: ${item.modulo}:${item.acao}`,
+              },
+            }),
+          ),
+        );
+      }
+
+      return tx.permission.findMany({
+        where: {
+          OR: parsed.map(({ modulo, acao }) => ({ modulo, acao })),
+        },
+      });
     });
-
-    const foundKeys = new Set(permissions.map((p) => `${p.modulo}:${p.acao}`));
-    const missing = parsed.filter((item) => !foundKeys.has(item.chave)).map((item) => item.chave);
-
-    if (missing.length > 0) {
-      throw new BadRequestException(`Permissões não encontradas: ${missing.join(', ')}`);
-    }
 
     return permissions;
   }

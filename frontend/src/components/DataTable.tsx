@@ -103,7 +103,7 @@ export function DataTable<T>({
       <div
         className={`${hasMobileCards ? 'hidden sm:block' : ''} overflow-x-auto rounded-xl border border-white/10 ${wrapperClassName}`}
       >
-        <table className={`min-w-full text-sm ${tableClassName}`}>
+        <table className={`w-full min-w-full text-sm table-auto ${tableClassName}`}>
           <thead className="bg-white/5 text-white/70">
             <tr>
               {columns.map((col) => {
@@ -113,7 +113,7 @@ export function DataTable<T>({
                 return (
                   <th
                     key={col.key}
-                    className={`px-4 py-3 ${align} ${col.thClassName ?? ''}`}
+                    className={`px-4 py-3 ${align} whitespace-normal break-words ${col.thClassName ?? ''}`}
                   >
                     {col.label}
                   </th>
@@ -162,7 +162,7 @@ export function DataTable<T>({
                       return (
                         <td
                           key={col.key}
-                          className={`px-4 py-3 ${align} ${col.tdClassName ?? ''}`}
+                          className={`px-4 py-3 min-w-0 whitespace-normal break-words ${align} ${col.tdClassName ?? ''}`}
                           onClick={
                             col.stopRowClick
                               ? (e) => e.stopPropagation()

@@ -10,11 +10,13 @@ import { ExcelDownloadButton } from '../components/ExcelDownloadButton';
 import { FileDropInput } from '../components/FileDropInput';
 import { buildCuradoriaTemplateWorkbook } from '../utils/curadoriaExcelTemplate';
 import * as XLSX from 'xlsx-js-style';
+import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
 
 interface CuradoriaBudget {
   id: number;
   nome: string;
   projetoId?: number | null;
+  setorId?: number | null;
   fornecedorId?: number | null;
   observacao?: string | null;
   status?: 'PENDENTE' | 'COMPRADO_ACAMINHO' | 'ENTREGUE' | 'SOLICITADO' | 'REPROVADO';
@@ -23,6 +25,7 @@ interface CuradoriaBudget {
   arquivoOrcamentoUrl?: string | null;
   comprovantePagamentoUrl?: string | null;
   projeto?: { id: number; nome: string } | null;
+  setor?: { id: number; nome: string } | null;
   fornecedor?: { id: number; nomeFantasia: string; razaoSocial: string; cnpj: string } | null;
   descontoAplicadoEm?: 'ITEM' | 'TOTAL';
   descontoTotal?: number;
@@ -87,6 +90,7 @@ interface CuradoriaStockQuoteForm {
 interface CuradoriaCreateForm {
   nome: string;
   projetoId?: number;
+  setorId?: number;
   fornecedorId?: number;
   nfUrl: string;
   formaPagamento: string;
@@ -102,6 +106,7 @@ interface CuradoriaCreateForm {
 interface CuradoriaEditForm {
   nome: string;
   projetoId?: number;
+  setorId?: number;
   fornecedorId?: number;
   nfUrl: string;
   formaPagamento: string;
@@ -111,6 +116,11 @@ interface CuradoriaEditForm {
   observacao: string;
   descontoAplicadoEm: 'ITEM' | 'TOTAL';
   descontoTotal: number;
+}
+
+interface SimpleSetor {
+  id: number;
+  nome: string;
 }
 
 type TotalDiscountInputType = 'VALOR' | 'PERCENTUAL';
@@ -177,6 +187,7 @@ export default function Curadoria() {
   const [error, setError] = useState<string | null>(null);
   const [budgets, setBudgets] = useState<CuradoriaBudget[]>([]);
   const [projects, setProjects] = useState<Projeto[]>([]);
+  const [setores, setSetores] = useState<SimpleSetor[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
 
@@ -187,11 +198,15 @@ export default function Curadoria() {
   const [stockCategoryId, setStockCategoryId] = useState<number | 'all'>('all');
   const [stockSortKey, setStockSortKey] = useState<'nome' | 'quantidade' | 'valorTotal'>('nome');
   const [stockSortDir, setStockSortDir] = useState<'asc' | 'desc'>('asc');
+  const [showEstoqueFilters, setShowEstoqueFilters] = useState(false);
 
   const [budgetStatusFilter, setBudgetStatusFilter] = useState<
     '' | 'PENDENTE' | 'COMPRADO_ACAMINHO' | 'ENTREGUE' | 'SOLICITADO' | 'REPROVADO'
   >('');
   const [budgetProjectFilter, setBudgetProjectFilter] = useState<number | 'all'>('all');
+  const [budgetSetorFilter, setBudgetSetorFilter] = useState<number | 'all'>('all');
+  const [budgetSupplierFilter, setBudgetSupplierFilter] = useState<number | 'all'>('all');
+  const [showOrcamentosFilters, setShowOrcamentosFilters] = useState(false);
 
   const [showStockItemModal, setShowStockItemModal] = useState(false);
   const [stockItemForm, setStockItemForm] = useState<CuradoriaItemForm>(createEmptyItem());
@@ -224,6 +239,7 @@ export default function Curadoria() {
   const [createForm, setCreateForm] = useState<CuradoriaCreateForm>({
     nome: '',
     projetoId: undefined,
+    setorId: undefined,
     fornecedorId: undefined,
     nfUrl: '',
     formaPagamento: '',
@@ -237,7 +253,6 @@ export default function Curadoria() {
   });
 
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importModalContext, setImportModalContext] = useState<'orcamentos' | 'estoque'>('orcamentos');
   const [importName, setImportName] = useState('');
   const [importProjectId, setImportProjectId] = useState<number | undefined>(undefined);
   const [importCategoryId, setImportCategoryId] = useState<number | undefined>(undefined);
@@ -254,6 +269,7 @@ export default function Curadoria() {
   const [editForm, setEditForm] = useState<CuradoriaEditForm>({
     nome: '',
     projetoId: undefined,
+    setorId: undefined,
     fornecedorId: undefined,
     nfUrl: '',
     formaPagamento: '',
@@ -301,14 +317,16 @@ export default function Curadoria() {
     try {
       setLoading(true);
       setError(null);
-      const [budgetsRes, projectsRes, categoriesRes, suppliersRes] = await Promise.all([
+      const [budgetsRes, projectsRes, setoresRes, categoriesRes, suppliersRes] = await Promise.all([
         api.get<CuradoriaBudget[]>('/curadoria/orcamentos'),
         api.get<Projeto[]>('/projects/options'),
+        api.get<SimpleSetor[]>('/setores/options').catch(() => ({ data: [] as SimpleSetor[] })),
         api.get<Category[]>('/categories/all?tipo=LIVRO').catch(() => ({ data: [] as Category[] })),
         api.get<Supplier[]>('/suppliers').catch(() => ({ data: [] as Supplier[] })),
       ]);
       setBudgets(Array.isArray(budgetsRes.data) ? budgetsRes.data : []);
       setProjects(Array.isArray(projectsRes.data) ? projectsRes.data : []);
+      setSetores(Array.isArray(setoresRes.data) ? setoresRes.data : []);
       setCategories(Array.isArray(categoriesRes.data) ? categoriesRes.data : []);
       setSuppliers(Array.isArray(suppliersRes.data) ? suppliersRes.data : []);
     } catch (err: any) {
@@ -386,9 +404,16 @@ export default function Curadoria() {
         budgetProjectFilter === 'all' ||
         (budget.projetoId != null && budget.projetoId === budgetProjectFilter);
 
-      return matchesSearch && matchesStatus && matchesProject;
+      const matchesSetor =
+        budgetSetorFilter === 'all' ||
+        (budget.setorId != null && budget.setorId === budgetSetorFilter);
+      const matchesSupplier =
+        budgetSupplierFilter === 'all' ||
+        (budget.fornecedorId != null && budget.fornecedorId === budgetSupplierFilter);
+
+      return matchesSearch && matchesStatus && matchesProject && matchesSetor && matchesSupplier;
     });
-  }, [budgets, search, budgetStatusFilter, budgetProjectFilter]);
+  }, [budgets, search, budgetStatusFilter, budgetProjectFilter, budgetSetorFilter, budgetSupplierFilter]);
 
   const filteredStockItems = useMemo(() => {
     const term = stockSearch.trim().toLowerCase();
@@ -789,6 +814,7 @@ export default function Curadoria() {
       await api.post('/curadoria/orcamentos', {
         nome: createForm.nome.trim(),
         projetoId: createForm.projetoId || undefined,
+        setorId: createForm.setorId || undefined,
         fornecedorId: createForm.fornecedorId || undefined,
         nfUrl: createForm.nfUrl.trim() || undefined,
         formaPagamento: createForm.formaPagamento.trim() || undefined,
@@ -815,6 +841,7 @@ export default function Curadoria() {
       setCreateForm({
         nome: '',
         projetoId: undefined,
+        setorId: undefined,
         fornecedorId: undefined,
         nfUrl: '',
         formaPagamento: '',
@@ -915,6 +942,7 @@ export default function Curadoria() {
     setEditForm({
       nome: budget.nome ?? '',
       projetoId: budget.projeto?.id ?? undefined,
+        setorId: budget.setor?.id ?? budget.setorId ?? undefined,
       fornecedorId: budget.fornecedor?.id ?? undefined,
       nfUrl: budget.nfUrl ?? '',
       formaPagamento: budget.formaPagamento ?? '',
@@ -952,6 +980,7 @@ export default function Curadoria() {
       await api.patch(`/curadoria/orcamentos/${editingBudgetId}`, {
         nome: editForm.nome.trim(),
         projetoId: editForm.projetoId || undefined,
+        setorId: editForm.setorId || undefined,
         fornecedorId: editForm.fornecedorId || undefined,
         nfUrl: editForm.nfUrl.trim() || undefined,
         formaPagamento: editForm.formaPagamento.trim() || undefined,
@@ -1226,7 +1255,6 @@ export default function Curadoria() {
                   type="button"
                   className={btn.secondary}
                   onClick={() => {
-                    setImportModalContext('orcamentos');
                     setShowImportModal(true);
                   }}
                 >
@@ -1239,16 +1267,6 @@ export default function Curadoria() {
             )}
             {activeTab === 'estoque' && (
               <>
-                <button
-                  type="button"
-                  className={btn.secondary}
-                  onClick={() => {
-                    setImportModalContext('estoque');
-                    setShowImportModal(true);
-                  }}
-                >
-                  Importar planilha
-                </button>
                 <button
                   type="button"
                   className={btn.primary}
@@ -1294,55 +1312,143 @@ export default function Curadoria() {
 
       {activeTab === 'orcamentos' && (
         <>
-          <input
-            type="text"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Buscar orçamento por nome, observação ou projeto..."
-            className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-          />
+          <CollapsibleFilters
+            show={showOrcamentosFilters}
+            setShow={setShowOrcamentosFilters}
+            hasActiveFilters={
+              search.trim().length > 0 ||
+              budgetStatusFilter !== '' ||
+              budgetProjectFilter !== 'all' ||
+              budgetSetorFilter !== 'all' ||
+              budgetSupplierFilter !== 'all'
+            }
+            onClear={() => {
+              setSearch('');
+              setBudgetStatusFilter('');
+              setBudgetProjectFilter('all');
+              setBudgetSetorFilter('all');
+              setBudgetSupplierFilter('all');
+            }}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-white/90 mb-1">Buscar</label>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Buscar orçamento por nome, observação ou projeto..."
+                  className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                />
+              </div>
 
-          <div className="flex flex-col sm:flex-row gap-3">
-            <select
-              value={budgetStatusFilter}
-              onChange={(event) =>
-                setBudgetStatusFilter(
-                  event.target.value as
-                    | ''
-                    | 'PENDENTE'
-                    | 'COMPRADO_ACAMINHO'
-                    | 'ENTREGUE'
-                    | 'SOLICITADO'
-                    | 'REPROVADO',
-                )
-              }
-              className="w-full sm:w-56 bg-neutral/70 border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">Todos os status</option>
-              {CURADORIA_STATUS_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+              <div>
+                <label className="block text-xs font-medium text-white/90 mb-1">Status</label>
+                <select
+                  value={budgetStatusFilter}
+                  onChange={(event) =>
+                    setBudgetStatusFilter(
+                      event.target.value as
+                        | ''
+                        | 'PENDENTE'
+                        | 'COMPRADO_ACAMINHO'
+                        | 'ENTREGUE'
+                        | 'SOLICITADO'
+                        | 'REPROVADO',
+                    )
+                  }
+                  className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 0.75rem center',
+                    paddingRight: '2rem',
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">Todos os status</option>
+                  {CURADORIA_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value} className="bg-neutral text-white">
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <select
-              value={budgetProjectFilter === 'all' ? '' : budgetProjectFilter}
-              onChange={(event) =>
-                setBudgetProjectFilter(
-                  event.target.value ? Number(event.target.value) : 'all',
-                )
-              }
-              className="w-full sm:w-64 bg-neutral/70 border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">Todos os projetos</option>
-              {projects.map((project) => (
-                <option key={project.id} value={project.id}>
-                  {project.nome}
-                </option>
-              ))}
-            </select>
-          </div>
+              <div className="md:col-span-3">
+                <label className="block text-xs font-medium text-white/90 mb-1">Projeto</label>
+                <select
+                  value={budgetProjectFilter === 'all' ? '' : budgetProjectFilter}
+                  onChange={(event) =>
+                    setBudgetProjectFilter(
+                      event.target.value ? Number(event.target.value) : 'all',
+                    )
+                  }
+                  className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 0.75rem center',
+                    paddingRight: '2rem',
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">Todos os projetos</option>
+                  {projects.map((project) => (
+                    <option key={project.id} value={project.id} className="bg-neutral text-white">
+                      {project.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-white/90 mb-1">Setor</label>
+                <select
+                  value={budgetSetorFilter === 'all' ? '' : budgetSetorFilter}
+                  onChange={(event) =>
+                    setBudgetSetorFilter(event.target.value ? Number(event.target.value) : 'all')
+                  }
+                  className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 0.75rem center',
+                    paddingRight: '2rem',
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">Todos os setores</option>
+                  {setores.map((s) => (
+                    <option key={s.id} value={s.id} className="bg-neutral text-white">
+                      {s.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-white/90 mb-1">Fornecedor</label>
+                <select
+                  value={budgetSupplierFilter === 'all' ? '' : budgetSupplierFilter}
+                  onChange={(event) =>
+                    setBudgetSupplierFilter(event.target.value ? Number(event.target.value) : 'all')
+                  }
+                  className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 0.75rem center',
+                    paddingRight: '2rem',
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">Todos os fornecedores</option>
+                  {suppliers.map((f) => (
+                    <option key={f.id} value={f.id} className="bg-neutral text-white">
+                      {f.nomeFantasia || f.razaoSocial}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </CollapsibleFilters>
 
           {error && (
             <div className="bg-danger/15 border border-danger/40 text-danger px-4 py-3 rounded-md">{error}</div>
@@ -1428,57 +1534,93 @@ export default function Curadoria() {
 
       {activeTab === 'estoque' && (
         <>
-          <input
-            type="text"
-            value={stockSearch}
-            onChange={(event) => setStockSearch(event.target.value)}
-            placeholder="Buscar por título, ISBN, gênero literário, autor ou editora..."
-            className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-          />
+          <CollapsibleFilters
+            show={showEstoqueFilters}
+            setShow={setShowEstoqueFilters}
+            hasActiveFilters={
+              stockSearch.trim().length > 0 ||
+              stockCategoryId !== 'all' ||
+              stockSortKey !== 'nome' ||
+              stockSortDir !== 'asc'
+            }
+            onClear={() => {
+              setStockSearch('');
+              setStockCategoryId('all');
+              setStockSortKey('nome');
+              setStockSortDir('asc');
+            }}
+          >
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-white/90 mb-1">Buscar</label>
+                <input
+                  type="text"
+                  value={stockSearch}
+                  onChange={(event) => setStockSearch(event.target.value)}
+                  placeholder="Buscar por título, ISBN, gênero literário, autor ou editora..."
+                  className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+                />
+              </div>
 
-          <div className="flex flex-col sm:flex-row gap-3">
-            <select
-              value={stockCategoryId === 'all' ? '' : stockCategoryId}
-              onChange={(event) =>
-                setStockCategoryId(
-                  event.target.value ? Number(event.target.value) : 'all',
-                )
-              }
-              className="w-full sm:w-64 bg-neutral/70 border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="">Todos os gêneros literários</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.nome}
-                </option>
-              ))}
-            </select>
+              <div>
+                <label className="block text-xs font-medium text-white/90 mb-1">Gênero</label>
+                <select
+                  value={stockCategoryId === 'all' ? '' : stockCategoryId}
+                  onChange={(event) =>
+                    setStockCategoryId(
+                      event.target.value ? Number(event.target.value) : 'all',
+                    )
+                  }
+                  className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 0.75rem center',
+                    paddingRight: '2rem',
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">Todos os gêneros literários</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id} className="bg-neutral text-white">
+                      {category.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="flex items-center gap-2">
-              <select
-                value={stockSortKey}
-                onChange={(event) =>
-                  setStockSortKey(
-                    event.target.value as 'nome' | 'quantidade' | 'valorTotal',
-                  )
-                }
-                className="bg-neutral/70 border border-white/10 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-              >
-                <option value="nome">Ordenar por título</option>
-                <option value="quantidade">Ordenar por quantidade</option>
-                <option value="valorTotal">Ordenar por valor total</option>
-              </select>
-              <button
-                type="button"
-                onClick={() =>
-                  setStockSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-                }
-                className="px-3 py-2 text-xs bg-neutral/70 border border-white/10 rounded-md hover:bg-neutral/60"
-              >
-                {stockSortDir === 'asc' ? 'Asc ↑' : 'Desc ↓'}
-              </button>
+              <div className="md:col-span-3 flex flex-wrap items-end gap-2">
+                <div>
+                  <label className="block text-xs font-medium text-white/90 mb-1">Ordenar</label>
+                  <select
+                    value={stockSortKey}
+                    onChange={(event) =>
+                      setStockSortKey(
+                        event.target.value as 'nome' | 'quantidade' | 'valorTotal',
+                      )
+                    }
+                    className="bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 0.75rem center',
+                      paddingRight: '2rem',
+                    }}
+                  >
+                    <option value="nome" className="bg-neutral text-white">Ordenar por título</option>
+                    <option value="quantidade" className="bg-neutral text-white">Ordenar por quantidade</option>
+                    <option value="valorTotal" className="bg-neutral text-white">Ordenar por valor total</option>
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setStockSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                  className="px-3 py-2 text-xs bg-neutral border border-white/30 rounded-md hover:bg-neutral/60"
+                >
+                  {stockSortDir === 'asc' ? 'Asc ↑' : 'Desc ↓'}
+                </button>
+              </div>
             </div>
-          </div>
+          </CollapsibleFilters>
 
           <DataTable<CuradoriaStockItem>
             data={filteredStockItems}
@@ -2109,6 +2251,26 @@ export default function Curadoria() {
                     ))}
                   </select>
                 </div>
+                <div>
+                  <label className={labelClass}>Setor</label>
+                  <select
+                    value={editForm.setorId ?? ''}
+                    onChange={(event) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        setorId: event.target.value ? Number(event.target.value) : undefined,
+                      }))
+                    }
+                    className={fieldClass}
+                  >
+                    <option value="">Sem setor</option>
+                    {setores.map((setor) => (
+                      <option key={setor.id} value={setor.id}>
+                        {setor.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2353,6 +2515,26 @@ export default function Curadoria() {
                     {projects.map((project) => (
                       <option key={project.id} value={project.id}>
                         {project.nome}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={labelClass}>Setor</label>
+                  <select
+                    value={createForm.setorId ?? ''}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        setorId: event.target.value ? Number(event.target.value) : undefined,
+                      }))
+                    }
+                    className={fieldClass}
+                  >
+                    <option value="">Sem setor</option>
+                    {setores.map((setor) => (
+                      <option key={setor.id} value={setor.id}>
+                        {setor.nome}
                       </option>
                     ))}
                   </select>
@@ -2685,22 +2867,14 @@ export default function Curadoria() {
         <div className="fixed inset-0 bg-black/60 z-50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
           <div className="bg-neutral border border-white/10 rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">
-                {importModalContext === 'estoque'
-                  ? 'Importar planilha para Curadoria (.xlsx)'
-                  : 'Importar orçamento (.xlsx)'}
-              </h3>
+              <h3 className="text-lg font-semibold">Importar orçamento (.xlsx)</h3>
               <button type="button" onClick={() => setShowImportModal(false)} className="text-white/50 hover:text-white">
                 ✕
               </button>
             </div>
             <form onSubmit={handleImportXlsx} className="p-6 space-y-4">
               <div className="flex items-center justify-between gap-2 bg-black/20 border border-white/10 rounded-md p-3">
-                <p className="text-xs text-white/70">
-                  {importModalContext === 'estoque'
-                    ? 'Use o mesmo modelo de planilha da curadoria para entrada organizada de itens.'
-                    : 'Baixe o modelo para importar orçamentos de livros.'}
-                </p>
+                <p className="text-xs text-white/70">Baixe o modelo para importar orçamentos de livros.</p>
                 <ExcelDownloadButton
                   buildWorkbook={buildCuradoriaTemplateWorkbook}
                   fileName="modelo-curadoria-livros.xlsx"

@@ -31,6 +31,13 @@ export interface Usuario {
   dataNascimento?: string | null;
 }
 
+export interface Setor {
+  id: number;
+  nome: string;
+  descricao?: string | null;
+  ativo?: boolean;
+}
+
 export interface ProjetoArquivo {
   originalName: string;
   url: string;
@@ -42,6 +49,8 @@ export interface Projeto {
   id: number;
   nome: string;
   status: 'EM_ANDAMENTO' | 'FINALIZADO';
+  setorId?: number | null;
+  setor?: { id: number; nome: string } | null;
   resumo?: string | null;
   objetivo?: string | null;
   descricaoLonga?: string | null;

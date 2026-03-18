@@ -3,11 +3,14 @@ import {
   IsArray,
   IsNumber,
   IsOptional,
+  IsInt,
   IsPositive,
   IsString,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateProjectDto {
   @IsString()
@@ -39,6 +42,13 @@ export class CreateProjectDto {
   @IsNumber()
   @IsPositive()
   supervisorId: number;
+
+  @IsOptional()
+  @ValidateIf((obj) => obj.setorId !== null && obj.setorId !== undefined)
+  @Type(() => Number)
+  @IsInt()
+  @IsPositive()
+  setorId?: number | null;
 
   @IsOptional()
   @IsArray()

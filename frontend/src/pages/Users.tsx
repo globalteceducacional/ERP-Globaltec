@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/auth';
 import { DataTable, DataTableColumn } from '../components/DataTable';
 import { toast, formatApiError } from '../utils/toast';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
+import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
 
 interface CreateUserForm {
   nome: string;
@@ -36,6 +37,7 @@ export default function Users() {
   const [searchNome, setSearchNome] = useState('');
   const [filterCargo, setFilterCargo] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [showFilters, setShowFilters] = useState(false);
   const [form, setForm] = useState<CreateUserForm>({
     nome: '',
     email: '',
@@ -334,37 +336,46 @@ export default function Users() {
         </div>
       )}
 
-      {/* Filtros de Busca */}
-      <div className="bg-white/5 rounded-xl border border-white/10 p-4">
-        <div className="grid md:grid-cols-3 gap-4">
+      <CollapsibleFilters
+        show={showFilters}
+        setShow={setShowFilters}
+        hasActiveFilters={searchNome.trim().length > 0 || filterCargo !== 'all' || filterStatus !== 'all'}
+        onClear={() => {
+          setSearchNome('');
+          setFilterCargo('all');
+          setFilterStatus('all');
+        }}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium text-white/70 mb-2">
-              Buscar por Nome
+            <label className="block text-xs font-medium text-white/90 mb-1">
+              Buscar
             </label>
             <input
               type="text"
               placeholder="Digite o nome do usuário..."
               value={searchNome}
               onChange={(e) => setSearchNome(e.target.value)}
-              className="w-full px-4 py-2 rounded-md bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
             />
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-white/70 mb-2">
-              Filtrar por Cargo
+            <label className="block text-xs font-medium text-white/90 mb-1">
+              Cargo
             </label>
             <select
               value={filterCargo}
               onChange={(e) => setFilterCargo(e.target.value)}
-              className="w-full px-4 py-2 rounded-md bg-neutral border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent appearance-none cursor-pointer"
+              className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
                 backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 1rem center',
-                paddingRight: '2.5rem'
+                backgroundPosition: 'right 0.75rem center',
+                paddingRight: '2rem',
               }}
             >
-              <option value="all" className="bg-neutral text-white">Todos os Cargos</option>
+              <option value="all" className="bg-neutral text-white">Todos</option>
               {cargos.map((cargo) => (
                 <option key={cargo.id} value={cargo.nome} className="bg-neutral text-white">
                   {cargo.nome}
@@ -372,19 +383,20 @@ export default function Users() {
               ))}
             </select>
           </div>
+
           <div>
-            <label className="block text-sm font-medium text-white/70 mb-2">
-              Filtrar por Status
+            <label className="block text-xs font-medium text-white/90 mb-1">
+              Status
             </label>
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
-              className="w-full px-4 py-2 rounded-md bg-neutral border border-white/20 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent appearance-none cursor-pointer"
+              className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
                 backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 1rem center',
-                paddingRight: '2.5rem'
+                backgroundPosition: 'right 0.75rem center',
+                paddingRight: '2rem',
               }}
             >
               <option value="all" className="bg-neutral text-white">Todos</option>
@@ -393,24 +405,7 @@ export default function Users() {
             </select>
           </div>
         </div>
-        {(searchNome || filterCargo !== 'all' || filterStatus !== 'all') && (
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              onClick={() => {
-                setSearchNome('');
-                setFilterCargo('all');
-                setFilterStatus('all');
-              }}
-              className={btn.secondary}
-            >
-              Limpar Filtros
-            </button>
-            <span className="text-xs text-white/50">
-              {users.length} {users.length === 1 ? 'usuário encontrado' : 'usuários encontrados'}
-            </span>
-          </div>
-        )}
-      </div>
+      </CollapsibleFilters>
 
       <DataTable<Usuario>
         data={users}
@@ -465,14 +460,14 @@ export default function Users() {
             key: 'nome',
             label: 'Nome',
             render: (u) => (
-              <span className="block truncate" title={u.nome}>{u.nome}</span>
+              <span className="block whitespace-normal break-words" title={u.nome}>{u.nome}</span>
             ),
           },
           {
             key: 'email',
             label: 'E-mail',
             render: (u) => (
-              <span className="block truncate text-white/80" title={u.email}>{u.email}</span>
+              <span className="block whitespace-normal break-words text-white/80" title={u.email}>{u.email}</span>
             ),
           },
           {

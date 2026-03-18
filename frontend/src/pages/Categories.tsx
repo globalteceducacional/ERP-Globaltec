@@ -4,6 +4,8 @@ import { toast, formatApiError } from '../utils/toast';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
 import { DataTable, DataTableColumn } from '../components/DataTable';
 import { btn } from '../utils/buttonStyles';
+import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
+import { useTextFilter } from '../hooks/useTextFilter';
 
 interface Category {
   id: number;
@@ -32,6 +34,8 @@ export default function Categories() {
   const [submitting, setSubmitting] = useState(false);
   const [showInactive, setShowInactive] = useState(false);
   const [tipoFilter, setTipoFilter] = useState<'ITEM' | 'LIVRO'>('ITEM');
+  const [showFilters, setShowFilters] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const [form, setForm] = useState<CreateCategoryForm>({
     nome: '',
     descricao: '',
@@ -158,9 +162,12 @@ export default function Categories() {
     }
   }
 
-  const filteredCategories = showInactive
+  const categoriesWithActive = showInactive
     ? categories
     : categories.filter((c) => c.ativo);
+
+  const filteredCategories = useTextFilter(categoriesWithActive, searchTerm, (c) => [c.nome, c.descricao]);
+  const hasActiveFilters = searchTerm.trim().length > 0;
 
   if (loading) {
     return (
@@ -190,6 +197,26 @@ export default function Categories() {
           {error}
         </div>
       )}
+
+      <CollapsibleFilters
+        show={showFilters}
+        setShow={setShowFilters}
+        hasActiveFilters={hasActiveFilters}
+        onClear={() => setSearchTerm('')}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-white/90 mb-1">Buscar</label>
+            <input
+              type="text"
+              placeholder="Nome ou descrição..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-neutral border border-white/30 rounded-md px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
+            />
+          </div>
+        </div>
+      </CollapsibleFilters>
 
       <div className="bg-white/5 rounded-xl border border-white/10 p-4">
         <div className="flex items-center gap-2 mb-3">
@@ -280,7 +307,7 @@ export default function Categories() {
             key: 'nome',
             label: 'Nome',
             render: (c) => (
-              <span className="font-medium text-white/90 block truncate" title={c.nome}>
+              <span className="font-medium text-white/90 block whitespace-normal break-words" title={c.nome}>
                 {c.nome}
               </span>
             ),
@@ -289,7 +316,7 @@ export default function Categories() {
             key: 'descricao',
             label: 'Descrição',
             render: (c) => (
-              <span className="block max-w-[220px] truncate text-white/70" title={c.descricao || undefined}>
+              <span className="block max-w-[220px] whitespace-normal break-words text-white/70" title={c.descricao || undefined}>
                 {c.descricao || '-'}
               </span>
             ),

@@ -13,6 +13,7 @@ import { RequestsModule } from './modules/requests/requests.module';
 import { SuppliersModule } from './modules/suppliers/suppliers.module';
 import { CategoriesModule } from './modules/categories/categories.module';
 import { CuradoriaModule } from './modules/curadoria/curadoria.module';
+import { SetoresModule } from './modules/setores/setores.module';
 import { HealthController } from './common/health.controller';
 
 @Module({
@@ -31,6 +32,7 @@ import { HealthController } from './common/health.controller';
     SuppliersModule,
     CategoriesModule,
     CuradoriaModule,
+    SetoresModule,
   ],
   controllers: [HealthController],
 })

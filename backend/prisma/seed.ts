@@ -20,6 +20,8 @@ async function main() {
     { modulo: 'estoque', acao: 'movimentar', descricao: 'Registrar movimentações de estoque' },
     { modulo: 'curadoria', acao: 'visualizar', descricao: 'Visualizar orçamentos e estoque de curadoria' },
     { modulo: 'curadoria', acao: 'gerenciar', descricao: 'Criar, editar, importar e ajustar curadoria' },
+    { modulo: 'setores', acao: 'visualizar', descricao: 'Visualizar setores e equipes' },
+    { modulo: 'setores', acao: 'gerenciar', descricao: 'Criar e gerenciar setores e membros' },
     { modulo: 'usuarios', acao: 'gerenciar', descricao: 'Gerenciar usuários e cargos' },
     { modulo: 'sistema', acao: 'administrar', descricao: 'Administrar configurações avançadas do sistema' },
   ];
@@ -104,13 +106,13 @@ async function main() {
     {
       nome: 'DIRETOR',
       descricao: 'Diretor com acesso total ao sistema',
-      paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
+      paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores', '/notifications'],
       permissions: allPermissionKeys,
     },
     {
       nome: 'GM',
       descricao: 'Gerente Master com controle total do ERP',
-      paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/notifications'],
+      paginasPermitidas: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores', '/notifications'],
       permissions: allPermissionKeys,
     },
   ];

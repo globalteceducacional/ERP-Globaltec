@@ -105,10 +105,17 @@ interface ProjectDetails {
   valorInsumos: number;
   dataCriacao: string;
   supervisor?: Usuario | null;
+  setorId?: number | null;
+  setor?: { id: number; nome: string } | null;
   responsaveis: Responsavel[];
   sessoes?: Sessao[];
   etapas: Etapa[];
   compras: Compra[];
+}
+
+interface SimpleSetor {
+  id: number;
+  nome: string;
 }
 
 interface EditProjectForm {
@@ -117,6 +124,7 @@ interface EditProjectForm {
   objetivo?: string;
   valorTotal?: number;
   supervisorId?: number;
+  setorId?: number;
   responsavelIds: number[];
   status?: 'EM_ANDAMENTO' | 'FINALIZADO';
 }
@@ -129,6 +137,7 @@ export default function ProjectDetails() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [users, setUsers] = useState<Usuario[]>([]);
+  const [setores, setSetores] = useState<SimpleSetor[]>([]);
   const [showEtapaModal, setShowEtapaModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [editingEtapa, setEditingEtapa] = useState<Etapa | null>(null);
@@ -144,6 +153,7 @@ export default function ProjectDetails() {
     objetivo: '',
     valorTotal: undefined,
     supervisorId: undefined,
+    setorId: undefined,
     responsavelIds: [],
     status: 'EM_ANDAMENTO',
   });
@@ -216,6 +226,7 @@ export default function ProjectDetails() {
       objetivo: project.objetivo ?? '',
       valorTotal: project.valorTotal ?? undefined,
       supervisorId: project.supervisor?.id ?? undefined,
+      setorId: project.setor?.id ?? project.setorId ?? undefined,
       responsavelIds: project.responsaveis
         ? project.responsaveis
             .filter((r) => !!r.usuario)
@@ -250,6 +261,9 @@ export default function ProjectDetails() {
       }
       if (typeof editProjectForm.supervisorId !== 'undefined') {
         payload.supervisorId = editProjectForm.supervisorId;
+      }
+      if (typeof editProjectForm.setorId !== 'undefined') {
+        payload.setorId = editProjectForm.setorId || null;
       }
       if (editProjectForm.status) {
         payload.status = editProjectForm.status;
@@ -787,8 +801,19 @@ export default function ProjectDetails() {
       }
     }
 
+    async function loadSetores() {
+      try {
+        const { data } = await api.get<SimpleSetor[]>('/setores/options');
+        setSetores(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Erro ao carregar setores:', err);
+        setSetores([]);
+      }
+    }
+
     refreshProject(true);
     loadUsers();
+    loadSetores();
   }, [id]);
 
   // Projetos criados sem sessão (ex.: antes do backend criar "Geral"): criar sessão padrão ao abrir
@@ -5018,6 +5043,33 @@ export default function ProjectDetails() {
                 >
                   <option value="EM_ANDAMENTO">Em Andamento</option>
                   <option value="FINALIZADO">Finalizado</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Setor</label>
+                <select
+                  value={editProjectForm.setorId ?? ''}
+                  onChange={(e) => {
+                    const setorId = e.target.value ? Number(e.target.value) : undefined;
+                    setEditProjectForm((prev) => ({ ...prev, setorId }));
+                  }}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem',
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">
+                    Sem setor
+                  </option>
+                  {setores.map((setor) => (
+                    <option key={setor.id} value={setor.id} className="bg-neutral text-white">
+                      {setor.nome}
+                    </option>
+                  ))}
                 </select>
               </div>
 

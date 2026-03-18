@@ -9,8 +9,17 @@ import { FileDropInput } from '../components/FileDropInput';
 import { toast, formatApiError } from '../utils/toast';
 import { buildProjectsTemplateWorkbook } from '../utils/projectsExcelTemplate';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
+import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
+import { useTextFilter } from '../hooks/useTextFilter';
+import { AppInput } from '../components/ui/AppInput';
+import { AppSelect } from '../components/ui/AppSelect';
 
 interface SimpleUser {
+  id: number;
+  nome: string;
+}
+
+interface SimpleSetor {
   id: number;
   nome: string;
 }
@@ -21,6 +30,7 @@ interface CreateProjectForm {
   objetivo?: string;
   valorTotal?: number;
   supervisorId?: number;
+  setorId?: number;
   responsavelIds: number[];
   status?: 'EM_ANDAMENTO' | 'FINALIZADO';
   descricaoLonga?: string;
@@ -35,6 +45,7 @@ export default function Projects() {
   const [showModal, setShowModal] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [users, setUsers] = useState<SimpleUser[]>([]);
+  const [setores, setSetores] = useState<SimpleSetor[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -47,6 +58,7 @@ export default function Projects() {
     objetivo: '',
     valorTotal: undefined,
     supervisorId: undefined,
+    setorId: undefined,
     responsavelIds: [],
     status: 'EM_ANDAMENTO',
     descricaoLonga: '',
@@ -56,11 +68,68 @@ export default function Projects() {
   const [projectDescricaoSaving, setProjectDescricaoSaving] = useState(false);
   const [projectDescricaoError, setProjectDescricaoError] = useState<string | null>(null);
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<number>>(new Set());
+  const [showFilters, setShowFilters] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'EM_ANDAMENTO' | 'FINALIZADO'>('all');
+  const [setorFilter, setSetorFilter] = useState<number | 'all'>('all');
+  const [supervisorFilter, setSupervisorFilter] = useState<number | 'all'>('all');
+  const [valorMin, setValorMin] = useState<string>('');
+  const [valorMax, setValorMax] = useState<string>('');
+  const [progressMin, setProgressMin] = useState<string>('');
+  const [progressMax, setProgressMax] = useState<string>('');
 
   const statusOptions = [
     { value: 'EM_ANDAMENTO', label: 'Em Andamento' },
     { value: 'FINALIZADO', label: 'Finalizado' },
   ];
+
+  const textFilteredProjects = useTextFilter(projects, searchTerm, (p) => [
+    p.nome,
+    p.resumo,
+    p.objetivo,
+    (p as any).setor?.nome,
+    p.supervisor?.nome,
+    ...(Array.isArray((p as any).responsaveis) ? (p as any).responsaveis.map((r: any) => r?.nome) : []),
+  ]);
+
+  const filteredProjects = useMemo(() => {
+    return textFilteredProjects.filter((p) => {
+      if (statusFilter !== 'all' && (p as any).status !== statusFilter) return false;
+      if (setorFilter !== 'all' && (p as any).setorId !== setorFilter) return false;
+      if (supervisorFilter !== 'all' && (p as any).supervisorId !== supervisorFilter) return false;
+
+      const valor = Number((p as any).valorTotal ?? 0);
+      if (valorMin.trim()) {
+        const min = Number(valorMin);
+        if (!Number.isNaN(min) && valor < min) return false;
+      }
+      if (valorMax.trim()) {
+        const max = Number(valorMax);
+        if (!Number.isNaN(max) && valor > max) return false;
+      }
+
+      const progress = Number((p as any).progress ?? 0);
+      if (progressMin.trim()) {
+        const min = Number(progressMin);
+        if (!Number.isNaN(min) && progress < min) return false;
+      }
+      if (progressMax.trim()) {
+        const max = Number(progressMax);
+        if (!Number.isNaN(max) && progress > max) return false;
+      }
+      return true;
+    });
+  }, [textFilteredProjects, statusFilter, setorFilter, supervisorFilter, valorMin, valorMax, progressMin, progressMax]);
+
+  const hasActiveFilters =
+    searchTerm.trim().length > 0 ||
+    statusFilter !== 'all' ||
+    setorFilter !== 'all' ||
+    supervisorFilter !== 'all' ||
+    valorMin.trim().length > 0 ||
+    valorMax.trim().length > 0 ||
+    progressMin.trim().length > 0 ||
+    progressMax.trim().length > 0;
 
   // Regras de validação
   const validationRules = useMemo(() => ({
@@ -160,6 +229,16 @@ export default function Projects() {
       setUsers(data);
     } catch (err) {
       console.error('Erro ao carregar usuários:', err);
+    }
+  }
+
+  async function loadSetores() {
+    try {
+      const { data } = await api.get<SimpleSetor[]>('/setores/options');
+      setSetores(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Erro ao carregar setores:', err);
+      setSetores([]);
     }
   }
 
@@ -383,6 +462,7 @@ export default function Projects() {
   useEffect(() => {
     loadProjects(true);
     loadUsers();
+    loadSetores();
 
     // Recarregar projetos quando a página ganha foco novamente
     const handleFocus = () => {
@@ -439,6 +519,7 @@ export default function Projects() {
         // descricaoArquivos agora é gerenciado pelos endpoints específicos
         if (typeof form.valorTotal === 'number') payload.valorTotal = form.valorTotal;
         if (typeof form.supervisorId !== 'undefined') payload.supervisorId = form.supervisorId;
+        if (typeof form.setorId !== 'undefined') payload.setorId = form.setorId || null;
         if (form.status) payload.status = form.status;
 
         await api.patch(`/projects/${editingProject.id}`, payload);
@@ -460,6 +541,7 @@ export default function Projects() {
         // descricaoArquivos será anexado depois, na edição
         if (typeof form.valorTotal === 'number') payload.valorTotal = form.valorTotal;
         if (form.supervisorId) payload.supervisorId = form.supervisorId;
+        if (form.setorId) payload.setorId = form.setorId;
         if (form.responsavelIds.length > 0) {
           payload.responsavelIds = form.responsavelIds;
         }
@@ -506,6 +588,7 @@ export default function Projects() {
       objetivo: '',
       valorTotal: undefined,
       supervisorId: undefined,
+      setorId: undefined,
       responsavelIds: [],
       status: 'EM_ANDAMENTO',
       descricaoLonga: '',
@@ -526,6 +609,7 @@ export default function Projects() {
       objetivo: project.objetivo ?? '',
       valorTotal: project.valorTotal ?? undefined,
       supervisorId: project.supervisor?.id ?? undefined,
+      setorId: (project as any).setor?.id ?? (project as any).setorId ?? undefined,
       responsavelIds: project.responsaveis ? project.responsaveis.map((r) => r.usuario.id) : [],
       status: project.status,
       descricaoLonga: project.descricaoLonga ?? '',
@@ -639,8 +723,101 @@ export default function Projects() {
         </div>
       )}
 
+      <CollapsibleFilters
+        show={showFilters}
+        setShow={setShowFilters}
+        hasActiveFilters={hasActiveFilters}
+        onClear={() => {
+          setSearchTerm('');
+          setStatusFilter('all');
+          setSetorFilter('all');
+          setSupervisorFilter('all');
+          setValorMin('');
+          setValorMax('');
+          setProgressMin('');
+          setProgressMax('');
+        }}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <AppInput
+            label="Buscar"
+            value={searchTerm}
+            onChange={setSearchTerm}
+            placeholder="Nome, resumo, objetivo, setor, supervisor..."
+          />
+
+          <AppSelect
+            label="Status"
+            value={statusFilter}
+            onChange={(value) => setStatusFilter(value as any)}
+            options={[
+              { value: 'all', label: 'Todos' },
+              ...statusOptions.map((s) => ({ value: s.value, label: s.label })),
+            ]}
+          />
+
+          <AppSelect
+            label="Setor"
+            value={setorFilter}
+            onChange={(value) => setSetorFilter(value === 'all' ? 'all' : Number(value))}
+            options={[
+              { value: 'all', label: 'Todos' },
+              ...setores.map((s) => ({ value: s.id, label: s.nome })),
+            ]}
+          />
+
+          <AppSelect
+            label="Supervisor"
+            value={supervisorFilter}
+            onChange={(value) => setSupervisorFilter(value === 'all' ? 'all' : Number(value))}
+            options={[
+              { value: 'all', label: 'Todos' },
+              ...users.map((u) => ({ value: u.id, label: u.nome })),
+            ]}
+          />
+
+          <AppInput
+            label="Progresso (mín %)"
+            type="number"
+            min={0}
+            max={100}
+            value={progressMin}
+            onChange={setProgressMin}
+            placeholder="Ex.: 0"
+          />
+
+          <AppInput
+            label="Progresso (máx %)"
+            type="number"
+            min={0}
+            max={100}
+            value={progressMax}
+            onChange={setProgressMax}
+            placeholder="Ex.: 100"
+          />
+
+          <AppInput
+            label="Valor total (mín)"
+            type="number"
+            min={0}
+            value={valorMin}
+            onChange={setValorMin}
+            placeholder="Ex.: 0"
+          />
+
+          <AppInput
+            label="Valor total (máx)"
+            type="number"
+            min={0}
+            value={valorMax}
+            onChange={setValorMax}
+            placeholder="Ex.: 100000"
+          />
+        </div>
+      </CollapsibleFilters>
+
       <DataTable<Projeto>
-        data={projects}
+        data={filteredProjects}
         keyExtractor={(p) => p.id}
         emptyMessage="Nenhum projeto cadastrado"
         onRowClick={(p) => navigate(`/projects/${p.id}`)}
@@ -655,7 +832,7 @@ export default function Projects() {
             >
               {/* Cabeçalho: nome + status */}
               <div className="flex items-start justify-between gap-2">
-                <p className="font-semibold text-white truncate flex-1">{p.nome}</p>
+                <p className="font-semibold text-white whitespace-normal break-words flex-1">{p.nome}</p>
                 <span className={`shrink-0 text-xs px-2 py-0.5 rounded font-medium ${status.className}`}>
                   {status.label}
                 </span>
@@ -682,7 +859,7 @@ export default function Projects() {
               <div className="grid grid-cols-2 gap-2 bg-white/5 rounded-lg p-3 text-sm">
                 <div>
                   <p className="text-xs text-white/50 mb-0.5">Supervisor</p>
-                  <p className="text-white/90 truncate">{p.supervisor?.nome ?? '—'}</p>
+                  <p className="text-white/90 whitespace-normal break-words">{p.supervisor?.nome ?? '—'}</p>
                 </div>
                 <div>
                   <p className="text-xs text-white/50 mb-0.5">Valor Total</p>
@@ -724,8 +901,11 @@ export default function Projects() {
           {
             key: 'nome',
             label: 'Nome',
+            tdClassName: 'max-w-[28rem] align-top',
             render: (p) => (
-              <span className="block truncate font-medium" title={p.nome}>{p.nome}</span>
+              <span className="block whitespace-normal break-words font-medium" title={p.nome}>
+                {p.nome}
+              </span>
             ),
           },
           {
@@ -1084,6 +1264,33 @@ export default function Projects() {
                   </select>
                 </div>
               )}
+
+              <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Setor</label>
+                <select
+                  value={form.setorId ?? ''}
+                  onChange={(e) => {
+                    const setorId = e.target.value ? Number(e.target.value) : undefined;
+                    setForm((prev) => ({ ...prev, setorId }));
+                  }}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem',
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">
+                    Sem setor
+                  </option>
+                  {setores.map((setor) => (
+                    <option key={setor.id} value={setor.id} className="bg-neutral text-white">
+                      {setor.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Supervisor *</label>

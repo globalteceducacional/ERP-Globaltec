@@ -14,6 +14,7 @@ import Categories from './pages/Categories';
 import NotificationsPage from './pages/NotificationsPage';
 import Curadoria from './pages/Curadoria';
 import CuradoriaBudgetDetails from './pages/CuradoriaBudgetDetails';
+import Setores from './pages/Setores';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
 import { ToastContainer } from './components/ToastContainer';
@@ -50,6 +51,7 @@ export default function App() {
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/users" element={<Users />} />
             <Route path="/cargos" element={<Cargos />} />
+            <Route path="/setores" element={<Setores />} />
             <Route path="/suppliers" element={<Suppliers />} />
             <Route path="/categories" element={<Categories />} />
           </Route>
