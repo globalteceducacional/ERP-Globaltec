@@ -11,6 +11,9 @@ import { FileDropInput } from '../components/FileDropInput';
 import { buildCuradoriaTemplateWorkbook } from '../utils/curadoriaExcelTemplate';
 import * as XLSX from 'xlsx-js-style';
 import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
+import { AppModal } from '../components/ui/AppModal';
+import { AppSelect } from '../components/ui/AppSelect';
+import { ConfirmDeleteByNameModal } from '../components/ui/ConfirmDeleteByNameModal';
 
 interface CuradoriaBudget {
   id: number;
@@ -1693,8 +1696,14 @@ export default function Curadoria() {
       )}
 
       {showStockItemModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral border border-white/10 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <AppModal
+          open={showStockItemModal}
+          onClose={() => setShowStockItemModal(false)}
+          title=""
+          showHeader={false}
+          size="lg"
+          bodyClassName="p-0"
+        >
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
               <h3 className="text-lg font-semibold">
                 {stockItemMode === 'add' ? 'Adicionar item ao estoque da curadoria' : 'Editar item do estoque da curadoria'}
@@ -1992,13 +2001,22 @@ export default function Curadoria() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </AppModal>
       )}
 
       {showStockQuotesModal && stockQuotesItem && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral border border-white/10 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <AppModal
+          open={showStockQuotesModal && !!stockQuotesItem}
+          onClose={() => {
+            setShowStockQuotesModal(false);
+            setStockQuotes([]);
+            setStockQuotesItem(null);
+          }}
+          title=""
+          showHeader={false}
+          size="xl"
+          bodyClassName="p-0"
+        >
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-semibold">Cotações do item</h3>
@@ -2074,75 +2092,42 @@ export default function Curadoria() {
                 </div>
               )}
             </div>
-          </div>
-        </div>
+        </AppModal>
       )}
 
       {showDeleteModal && budgetToDelete && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
-            <div className="px-8 py-6 border-b border-white/20">
-              <h2 className="text-2xl font-bold text-white">Confirmar Exclusão</h2>
-            </div>
-            <div className="p-8">
-              <p className="text-white/90 mb-2">Tem certeza que deseja remover o orçamento:</p>
-              <p className="text-xl font-semibold text-white mb-6">"{budgetToDelete.nome}"</p>
-              <p className="text-sm text-white/70 mb-4">
-                Esta ação não pode ser desfeita. Para confirmar, digite o nome do orçamento:
-              </p>
-              <div className="mb-6">
-                <input
-                  type="text"
-                  value={deleteConfirmName}
-                  onChange={(event) => setDeleteConfirmName(event.target.value)}
-                  placeholder="Digite o nome do orçamento"
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                  autoFocus
-                />
-              </div>
-              {deleteError && (
-                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md mb-4 text-sm">
-                  {deleteError}
-                </div>
-              )}
-              <div className="flex justify-end space-x-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setBudgetToDelete(null);
-                    setDeleteConfirmName('');
-                    setDeleteError(null);
-                  }}
-                  className={btn.secondaryLg}
-                  disabled={deletingBudgetId === budgetToDelete.id}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleConfirmDeleteBudget()}
-                  className={btn.dangerLg}
-                  disabled={
-                    deletingBudgetId === budgetToDelete.id ||
-                    deleteConfirmName.trim() !== budgetToDelete.nome.trim()
-                  }
-                >
-                  {deletingBudgetId === budgetToDelete.id ? 'Removendo...' : 'Confirmar Remoção'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ConfirmDeleteByNameModal
+          open={showDeleteModal}
+          title="Confirmar Exclusão"
+          entityLabel="o orçamento"
+          entityName={budgetToDelete.nome}
+          confirmValue={deleteConfirmName}
+          onConfirmValueChange={setDeleteConfirmName}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setBudgetToDelete(null);
+            setDeleteConfirmName('');
+            setDeleteError(null);
+          }}
+          onConfirm={() => void handleConfirmDeleteBudget()}
+          loading={deletingBudgetId === budgetToDelete.id}
+          errorMessage={deleteError}
+          confirmButtonLabel="Confirmar Remoção"
+        />
       )}
 
       {showStockDeleteModal && stockItemToDelete && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
-            <div className="px-8 py-6 border-b border-white/20">
-              <h2 className="text-2xl font-bold text-white">Remover item do estoque da curadoria</h2>
-            </div>
-            <div className="p-8 space-y-4">
+        <AppModal
+          open={showStockDeleteModal}
+          onClose={() => {
+            setShowStockDeleteModal(false);
+            setStockItemToDelete(null);
+          }}
+          title="Remover item do estoque da curadoria"
+          size="sm"
+          stickyHeader={false}
+          bodyClassName="p-8 space-y-4"
+        >
               <p className="text-white/90">
                 Tem certeza que deseja remover todo o estoque do título{' '}
                 <span className="font-semibold">"{stockItemToDelete.nome}"</span> (ISBN{' '}
@@ -2198,14 +2183,21 @@ export default function Curadoria() {
                   {stockDeleting ? 'Removendo...' : 'Remover do estoque'}
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
+        </AppModal>
       )}
 
       {showEditModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral border border-white/10 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <AppModal
+          open={showEditModal}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditingBudgetId(null);
+          }}
+          title=""
+          showHeader={false}
+          size="lg"
+          bodyClassName="p-0"
+        >
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
               <h3 className="text-lg font-semibold">Editar orçamento de curadoria</h3>
               <button
@@ -2233,90 +2225,77 @@ export default function Curadoria() {
                 </div>
                 <div>
                   <label className={labelClass}>Projeto</label>
-                  <select
+                  <AppSelect
                     value={editForm.projetoId ?? ''}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setEditForm((prev) => ({
                         ...prev,
-                        projetoId: event.target.value ? Number(event.target.value) : undefined,
+                        projetoId: value ? Number(value) : undefined,
                       }))
                     }
-                    className={fieldClass}
-                  >
-                    <option value="">Sem projeto</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.nome}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Sem projeto"
+                    options={projects.map((project) => ({
+                      value: project.id,
+                      label: project.nome,
+                    }))}
+                    selectClassName={fieldClass}
+                  />
                 </div>
                 <div>
                   <label className={labelClass}>Setor</label>
-                  <select
+                  <AppSelect
                     value={editForm.setorId ?? ''}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setEditForm((prev) => ({
                         ...prev,
-                        setorId: event.target.value ? Number(event.target.value) : undefined,
+                        setorId: value ? Number(value) : undefined,
                       }))
                     }
-                    className={fieldClass}
-                  >
-                    <option value="">Sem setor</option>
-                    {setores.map((setor) => (
-                      <option key={setor.id} value={setor.id}>
-                        {setor.nome}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Sem setor"
+                    options={setores.map((setor) => ({
+                      value: setor.id,
+                      label: setor.nome,
+                    }))}
+                    selectClassName={fieldClass}
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className={labelClass}>Fornecedor</label>
-                  <select
+                  <AppSelect
                     value={editForm.fornecedorId ?? ''}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setEditForm((prev) => ({
                         ...prev,
-                        fornecedorId: event.target.value ? Number(event.target.value) : undefined,
+                        fornecedorId: value ? Number(value) : undefined,
                       }))
                     }
-                    className={fieldClass}
-                  >
-                    <option value="">Fornecedor (opcional)</option>
-                    {suppliers.map((supplier) => (
-                      <option key={supplier.id} value={supplier.id}>
-                        {supplier.nomeFantasia || supplier.razaoSocial}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Fornecedor (opcional)"
+                    options={suppliers.map((supplier) => ({
+                      value: supplier.id,
+                      label: supplier.nomeFantasia || supplier.razaoSocial,
+                    }))}
+                    selectClassName={fieldClass}
+                  />
                 </div>
                 <div>
                   <label className={labelClass}>Status</label>
-                  <select
+                  <AppSelect
                     value={editForm.status}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setEditForm((prev) => ({
                         ...prev,
-                        status: event.target.value as CuradoriaEditForm['status'],
+                        status: value as CuradoriaEditForm['status'],
                       }))
                     }
-                    className={fieldClass}
-                  >
-                    {CURADORIA_STATUS_OPTIONS.map((option) => (
-                    <option
-                      key={option.value}
-                      value={option.value}
-                      className="bg-neutral text-white"
-                      style={{ color: '#111827', backgroundColor: '#f3f4f6' }}
-                    >
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={CURADORIA_STATUS_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    }))}
+                    selectClassName={fieldClass}
+                  />
                   {editForm.status === 'ENTREGUE' && (
                     <p className="mt-2 text-xs text-amber-200 bg-amber-500/10 border border-amber-400/40 rounded-md px-3 py-2">
                       Ao salvar com status <span className="font-semibold">Entregue</span>, todos os itens deste orçamento
@@ -2399,31 +2378,33 @@ export default function Curadoria() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <select
+                <AppSelect
                   value={editForm.descontoAplicadoEm}
-                  onChange={(event) =>
+                  onChange={(value) =>
                     setEditForm((prev) => ({
                       ...prev,
-                      descontoAplicadoEm: event.target.value as 'ITEM' | 'TOTAL',
+                      descontoAplicadoEm: value as 'ITEM' | 'TOTAL',
                     }))
                   }
-                  className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="ITEM">Desconto por item</option>
-                  <option value="TOTAL">Desconto no total</option>
-                </select>
+                  options={[
+                    { value: 'ITEM', label: 'Desconto por item' },
+                    { value: 'TOTAL', label: 'Desconto no total' },
+                  ]}
+                  selectClassName="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
                 {editForm.descontoAplicadoEm === 'TOTAL' && (
                   <div className="bg-black/20 border border-primary/30 rounded-md p-3 space-y-2">
                     <p className="text-xs text-white/80 font-medium">Tipo de desconto no total</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      <select
+                      <AppSelect
                         value={editDiscountTotalType}
-                        onChange={(event) => setEditDiscountTotalType(event.target.value as TotalDiscountInputType)}
-                        className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                      >
-                        <option value="VALOR">Valor (R$)</option>
-                        <option value="PERCENTUAL">Porcentagem (%)</option>
-                      </select>
+                        onChange={(value) => setEditDiscountTotalType(value as TotalDiscountInputType)}
+                        options={[
+                          { value: 'VALOR', label: 'Valor (R$)' },
+                          { value: 'PERCENTUAL', label: 'Porcentagem (%)' },
+                        ]}
+                        selectClassName="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
                       <input
                         type="number"
                         min="0"
@@ -2474,13 +2455,18 @@ export default function Curadoria() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </AppModal>
       )}
 
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral border border-white/10 rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+        <AppModal
+          open={showCreateModal}
+          onClose={() => setShowCreateModal(false)}
+          title=""
+          showHeader={false}
+          size="xl"
+          bodyClassName="p-0"
+        >
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
               <h3 className="text-lg font-semibold">Novo orçamento de curadoria</h3>
               <button type="button" onClick={() => setShowCreateModal(false)} className="text-white/50 hover:text-white">
@@ -2501,90 +2487,77 @@ export default function Curadoria() {
                 </div>
                 <div>
                   <label className={labelClass}>Projeto</label>
-                  <select
+                  <AppSelect
                     value={createForm.projetoId ?? ''}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setCreateForm((prev) => ({
                         ...prev,
-                        projetoId: event.target.value ? Number(event.target.value) : undefined,
+                        projetoId: value ? Number(value) : undefined,
                       }))
                     }
-                    className={fieldClass}
-                  >
-                    <option value="">Sem projeto</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.nome}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Sem projeto"
+                    options={projects.map((project) => ({
+                      value: project.id,
+                      label: project.nome,
+                    }))}
+                    selectClassName={fieldClass}
+                  />
                 </div>
                 <div>
                   <label className={labelClass}>Setor</label>
-                  <select
+                  <AppSelect
                     value={createForm.setorId ?? ''}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setCreateForm((prev) => ({
                         ...prev,
-                        setorId: event.target.value ? Number(event.target.value) : undefined,
+                        setorId: value ? Number(value) : undefined,
                       }))
                     }
-                    className={fieldClass}
-                  >
-                    <option value="">Sem setor</option>
-                    {setores.map((setor) => (
-                      <option key={setor.id} value={setor.id}>
-                        {setor.nome}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Sem setor"
+                    options={setores.map((setor) => ({
+                      value: setor.id,
+                      label: setor.nome,
+                    }))}
+                    selectClassName={fieldClass}
+                  />
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className={labelClass}>Fornecedor</label>
-                  <select
+                  <AppSelect
                     value={createForm.fornecedorId ?? ''}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setCreateForm((prev) => ({
                         ...prev,
-                        fornecedorId: event.target.value ? Number(event.target.value) : undefined,
+                        fornecedorId: value ? Number(value) : undefined,
                       }))
                     }
-                    className={fieldClass}
-                  >
-                    <option value="">Fornecedor (opcional)</option>
-                    {suppliers.map((supplier) => (
-                      <option key={supplier.id} value={supplier.id}>
-                        {supplier.nomeFantasia || supplier.razaoSocial}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Fornecedor (opcional)"
+                    options={suppliers.map((supplier) => ({
+                      value: supplier.id,
+                      label: supplier.nomeFantasia || supplier.razaoSocial,
+                    }))}
+                    selectClassName={fieldClass}
+                  />
                 </div>
                 <div>
                   <label className={labelClass}>Status</label>
-                  <select
+                  <AppSelect
                     value={createForm.status}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setCreateForm((prev) => ({
                         ...prev,
-                        status: event.target.value as CuradoriaCreateForm['status'],
+                        status: value as CuradoriaCreateForm['status'],
                       }))
                     }
-                    className={fieldClass}
-                  >
-                    {CURADORIA_STATUS_OPTIONS.map((option) => (
-                    <option
-                      key={option.value}
-                      value={option.value}
-                      className="bg-neutral text-white"
-                      style={{ color: '#111827', backgroundColor: '#f3f4f6' }}
-                    >
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={CURADORIA_STATUS_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    }))}
+                    selectClassName={fieldClass}
+                  />
                   {createForm.status === 'ENTREGUE' && (
                     <p className="mt-2 text-xs text-amber-200 bg-amber-500/10 border border-amber-400/40 rounded-md px-3 py-2">
                       Ao salvar com status <span className="font-semibold">Entregue</span>, todos os itens deste orçamento
@@ -2667,31 +2640,33 @@ export default function Curadoria() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <select
+                <AppSelect
                   value={createForm.descontoAplicadoEm}
-                  onChange={(event) =>
+                  onChange={(value) =>
                     setCreateForm((prev) => ({
                       ...prev,
-                      descontoAplicadoEm: event.target.value as 'ITEM' | 'TOTAL',
+                      descontoAplicadoEm: value as 'ITEM' | 'TOTAL',
                     }))
                   }
-                  className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="ITEM">Desconto por item</option>
-                  <option value="TOTAL">Desconto no total</option>
-                </select>
+                  options={[
+                    { value: 'ITEM', label: 'Desconto por item' },
+                    { value: 'TOTAL', label: 'Desconto no total' },
+                  ]}
+                  selectClassName="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                />
                 {createForm.descontoAplicadoEm === 'TOTAL' && (
                   <div className="bg-black/20 border border-primary/30 rounded-md p-3 space-y-2">
                     <p className="text-xs text-white/80 font-medium">Como deseja aplicar o desconto total?</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      <select
+                      <AppSelect
                         value={createDiscountTotalType}
-                        onChange={(event) => setCreateDiscountTotalType(event.target.value as TotalDiscountInputType)}
-                        className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                      >
-                        <option value="VALOR">Valor (R$)</option>
-                        <option value="PERCENTUAL">Porcentagem (%)</option>
-                      </select>
+                        onChange={(value) => setCreateDiscountTotalType(value as TotalDiscountInputType)}
+                        options={[
+                          { value: 'VALOR', label: 'Valor (R$)' },
+                          { value: 'PERCENTUAL', label: 'Porcentagem (%)' },
+                        ]}
+                        selectClassName="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
                       <input
                         type="number"
                         min="0"
@@ -2763,19 +2738,19 @@ export default function Curadoria() {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                       <div>
                         <label className="block text-xs text-white/60 mb-1">Gênero literário</label>
-                        <select
+                        <AppSelect
                           value={item.categoriaId ?? ''}
-                          onChange={(event) => updateItem(index, 'categoriaId', event.target.value ? Number(event.target.value) : undefined)}
-                          className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                          onChange={(value) =>
+                            updateItem(index, 'categoriaId', value ? Number(value) : undefined)
+                          }
+                          placeholder="Selecione"
+                          options={categories.map((category) => ({
+                            value: category.id,
+                            label: category.nome,
+                          }))}
+                          selectClassName="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
                           required
-                        >
-                          <option value="">Selecione</option>
-                          {categories.map((category) => (
-                            <option key={category.id} value={category.id}>
-                              {category.nome}
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </div>
                       <div>
                         <label className="block text-xs text-white/60 mb-1">Valor (R$)</label>
@@ -2859,13 +2834,19 @@ export default function Curadoria() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </AppModal>
       )}
 
       {showImportModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-start sm:items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-neutral border border-white/10 rounded-xl max-w-xl w-full max-h-[90vh] overflow-y-auto">
+        <AppModal
+          open={showImportModal}
+          onClose={() => setShowImportModal(false)}
+          title=""
+          showHeader={false}
+          size="md"
+          bodyClassName="p-0"
+          overlayClassName="items-start sm:items-center overflow-y-auto"
+        >
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
               <h3 className="text-lg font-semibold">Importar orçamento (.xlsx)</h3>
               <button type="button" onClick={() => setShowImportModal(false)} className="text-white/50 hover:text-white">
@@ -3014,8 +2995,7 @@ export default function Curadoria() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </AppModal>
       )}
     </div>
   );

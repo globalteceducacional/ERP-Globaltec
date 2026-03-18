@@ -7,6 +7,7 @@ import { btn } from '../utils/buttonStyles';
 import { DataTable, DataTableColumn } from '../components/DataTable';
 import { FileDropInput } from '../components/FileDropInput';
 import { toast, formatApiError } from '../utils/toast';
+import { AppSelect } from '../components/ui/AppSelect';
 import {
   getStatusColor,
   getStatusLabel,
@@ -53,6 +54,7 @@ interface Etapa {
   checklistJson?: ChecklistItem[] | null;
   executor: Usuario;
   responsavel?: Usuario | null;
+  setores?: { id: number; nome: string }[];
   sessao?: Sessao | null;
   integrantes?: Array<{ usuario: Usuario }>;
   subetapas: Subetapa[];
@@ -105,9 +107,13 @@ interface ProjectDetails {
   valorInsumos: number;
   dataCriacao: string;
   supervisor?: Usuario | null;
+  // Legado (1 setor)
   setorId?: number | null;
   setor?: { id: number; nome: string } | null;
+  // Novo (múltiplos setores responsáveis)
+  setores?: { id: number; nome: string }[];
   responsaveis: Responsavel[];
+  responsaveisExcluidos?: { usuarioId: number }[];
   sessoes?: Sessao[];
   etapas: Etapa[];
   compras: Compra[];
@@ -116,6 +122,9 @@ interface ProjectDetails {
 interface SimpleSetor {
   id: number;
   nome: string;
+  membros?: Array<{
+    usuario: { id: number };
+  }>;
 }
 
 interface EditProjectForm {
@@ -124,7 +133,8 @@ interface EditProjectForm {
   objetivo?: string;
   valorTotal?: number;
   supervisorId?: number;
-  setorId?: number;
+  setorIds: number[];
+  excludedAutoIds: number[];
   responsavelIds: number[];
   status?: 'EM_ANDAMENTO' | 'FINALIZADO';
 }
@@ -139,6 +149,14 @@ export default function ProjectDetails() {
   const [users, setUsers] = useState<Usuario[]>([]);
   const [setores, setSetores] = useState<SimpleSetor[]>([]);
   const [showEtapaModal, setShowEtapaModal] = useState(false);
+  const projectSetorIds = useMemo(
+    () => (Array.isArray(project?.setores) ? project?.setores?.map((s) => s.id) ?? [] : []),
+    [project?.setores],
+  );
+  const allowedEtapaSetores = useMemo(
+    () => setores.filter((s) => projectSetorIds.includes(s.id)),
+    [setores, projectSetorIds],
+  );
   const [submitting, setSubmitting] = useState(false);
   const [editingEtapa, setEditingEtapa] = useState<Etapa | null>(null);
   const integrantesSelectRef = useRef<HTMLSelectElement>(null);
@@ -153,12 +171,31 @@ export default function ProjectDetails() {
     objetivo: '',
     valorTotal: undefined,
     supervisorId: undefined,
-    setorId: undefined,
+    setorIds: [],
+    excludedAutoIds: [],
     responsavelIds: [],
     status: 'EM_ANDAMENTO',
   });
   const [editProjectSubmitting, setEditProjectSubmitting] = useState(false);
   const [editProjectError, setEditProjectError] = useState<string | null>(null);
+
+  const computeAutoMemberIds = (selectedSetorIds: number[]) => {
+    const ids = new Set<number>();
+    for (const setorId of selectedSetorIds) {
+      const setor = setores.find((s) => s.id === setorId);
+      if (!setor?.membros) continue;
+      for (const membro of setor.membros) {
+        const usuarioId = membro.usuario?.id;
+        if (typeof usuarioId === 'number') ids.add(usuarioId);
+      }
+    }
+    return Array.from(ids);
+  };
+
+  const autoMemberIds = useMemo(
+    () => computeAutoMemberIds(editProjectForm.setorIds),
+    [editProjectForm.setorIds, setores],
+  );
   // Nota: a edição de entregas de checklist é feita pela tela Meu Trabalho.
   // Este componente não possui o fluxo completo de envio/edição de objetivos,
   // portanto qualquer tentativa de editar a entrega a partir daqui é desabilitada.
@@ -220,17 +257,28 @@ export default function ProjectDetails() {
 
   function openEditProjectModal() {
     if (!project) return;
+    const supervisorId = project.supervisor?.id;
     setEditProjectForm({
       nome: project.nome,
       resumo: project.resumo ?? '',
       objetivo: project.objetivo ?? '',
       valorTotal: project.valorTotal ?? undefined,
-      supervisorId: project.supervisor?.id ?? undefined,
-      setorId: project.setor?.id ?? project.setorId ?? undefined,
+      supervisorId: supervisorId ?? undefined,
+      setorIds: Array.isArray((project as any).setores)
+        ? (project as any).setores.map((s: any) => s.id)
+        : project.setor?.id
+          ? [project.setor.id]
+          : project.setorId
+            ? [project.setorId]
+            : [],
       responsavelIds: project.responsaveis
         ? project.responsaveis
             .filter((r) => !!r.usuario)
             .map((r) => r.usuario.id)
+            .filter((id) => id !== supervisorId)
+        : [],
+      excludedAutoIds: Array.isArray((project as any).responsaveisExcluidos)
+        ? (project as any).responsaveisExcluidos.map((x: any) => x.usuarioId)
         : [],
       status: project.status,
     });
@@ -262,9 +310,7 @@ export default function ProjectDetails() {
       if (typeof editProjectForm.supervisorId !== 'undefined') {
         payload.supervisorId = editProjectForm.supervisorId;
       }
-      if (typeof editProjectForm.setorId !== 'undefined') {
-        payload.setorId = editProjectForm.setorId || null;
-      }
+      payload.setorIds = editProjectForm.setorIds;
       if (editProjectForm.status) {
         payload.status = editProjectForm.status;
       }
@@ -461,9 +507,11 @@ export default function ProjectDetails() {
     descricao: '',
     sessaoId: undefined as number | undefined,
     aba: '',
+    setorIds: [] as number[],
     executorId: 0,
     responsavelId: 0 as number | undefined,
     integrantesIds: [] as number[],
+    excludedAutoIntegranteIds: [] as number[],
     dataInicio: '',
     dataFim: '',
     valorInsumos: 0,
@@ -471,6 +519,8 @@ export default function ProjectDetails() {
     status: 'PENDENTE' as string,
     estoqueItems: [] as Array<{ itemId: number; quantidade: number }>,
   });
+
+  const etapaAutoMemberIdsSet = useMemo(() => new Set(computeAutoMemberIds(etapaForm.setorIds)), [etapaForm.setorIds, setores]);
   const [availableStockItems, setAvailableStockItems] = useState<any[]>([]);
   const [loadingStockItems, setLoadingStockItems] = useState(false);
   const [stockSearchTerm, setStockSearchTerm] = useState('');
@@ -657,6 +707,7 @@ export default function ProjectDetails() {
     cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0 }] as Array<{ valorUnitario: number; frete: number; impostos: number; link?: string }>,
     selectedCotacaoIndex: 0,
     imagemUrl: '',
+    setorId: undefined as number | undefined,
   });
 
   const statusOptions = [
@@ -803,7 +854,7 @@ export default function ProjectDetails() {
 
     async function loadSetores() {
       try {
-        const { data } = await api.get<SimpleSetor[]>('/setores/options');
+        const { data } = await api.get<SimpleSetor[]>('/setores?includeInactive=true');
         setSetores(Array.isArray(data) ? data : []);
       } catch (err) {
         console.error('Erro ao carregar setores:', err);
@@ -870,6 +921,9 @@ export default function ProjectDetails() {
         executorId: executorId,
       };
 
+      // Setores da etapa (pode ser vazio para remover todos)
+      payload.setorIds = Array.isArray(etapaForm.setorIds) ? etapaForm.setorIds : [];
+
       const abaTrim = etapaForm.aba?.trim();
       if (abaTrim) payload.aba = abaTrim;
       if (etapaForm.sessaoId != null && etapaForm.sessaoId > 0) payload.sessaoId = etapaForm.sessaoId;
@@ -912,9 +966,8 @@ export default function ProjectDetails() {
         }
       }
 
-      if (etapaForm.integrantesIds && etapaForm.integrantesIds.length > 0) {
-        payload.integrantesIds = etapaForm.integrantesIds;
-      }
+      // Enviar sempre para que o backend consiga limpar/atualizar auxiliares.
+      payload.integrantesIds = etapaForm.integrantesIds;
 
       // Executor e responsável devem ser a mesma pessoa
       if (executorId && executorId > 0) {
@@ -1010,9 +1063,11 @@ export default function ProjectDetails() {
         descricao: '',
         sessaoId: undefined,
         aba: '',
+        setorIds: [],
         executorId: 0,
         responsavelId: undefined,
         integrantesIds: [],
+        excludedAutoIntegranteIds: [],
         dataInicio: '',
         dataFim: '',
         valorInsumos: 0,
@@ -1119,15 +1174,31 @@ export default function ProjectDetails() {
     // Carregar itens disponíveis ajustando para esta etapa (adiciona de volta as alocações desta etapa)
     await loadAvailableStockItems(etapa.id);
 
+    const setorIds = etapa.setores?.map((s) => s.id) ?? [];
+    const integrantesIds =
+      etapa.integrantes
+        ? etapa.integrantes.filter((i) => i.usuario?.id).map((i) => i.usuario.id)
+        : [];
+
+    // Membros "automáticos" dos setores selecionados (exceto o executor).
+    const autoIntegrantesIds = computeAutoMemberIds(setorIds).filter(
+      (userId) => userId !== (etapa.executor?.id ?? 0),
+    );
+
+    // Se um integrante automático não estiver presente, ele foi removido manualmente.
+    const excludedAutoIntegranteIds = autoIntegrantesIds.filter((autoId) => !integrantesIds.includes(autoId));
+
     setEtapaForm({
       nome: etapa.nome || '',
       descricao: etapa.descricao || '',
       sessaoId: etapa.sessaoId ?? undefined,
       aba: etapa.aba || '',
+      setorIds,
       executorId: etapa.executor?.id || 0,
       // Executor e responsável passam a ser sempre o mesmo usuário
       responsavelId: etapa.executor?.id || undefined,
-      integrantesIds: etapa.integrantes ? etapa.integrantes.filter(i => i.usuario?.id).map((i) => i.usuario.id) : [],
+      integrantesIds,
+      excludedAutoIntegranteIds,
       dataInicio: formatDateForInput(etapa.dataInicio),
       dataFim: formatDateForInput(etapa.dataFim),
       valorInsumos: etapa.valorInsumos || 0,
@@ -1847,8 +1918,13 @@ export default function ProjectDetails() {
                         ? selectedAba
                         : (project?.sessoes?.length === 1 ? 'Geral' : ''),
                     executorId: 0,
+                    setorIds:
+                      Array.isArray(project?.setores) && project?.setores?.length === 1
+                        ? [project?.setores?.[0]?.id]
+                        : [],
                     responsavelId: undefined,
                     integrantesIds: [],
+                    excludedAutoIntegranteIds: [],
                     dataInicio: '',
                     dataFim: '',
                     valorInsumos: 0,
@@ -2796,6 +2872,10 @@ export default function ProjectDetails() {
                     const etapaId = Number(e.target.value);
                     const etapa = project.etapas.find((et) => et.id === etapaId);
                     setSelectedEtapaForCompra(etapa ?? null);
+                    setCompraForm((prev) => ({
+                      ...prev,
+                      setorId: etapa?.setores?.[0]?.id,
+                    }));
                   }}
                   className="w-full px-3 py-2 rounded-md bg-white/10 border border-white/30 text-white text-sm focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
                   style={{
@@ -2828,6 +2908,7 @@ export default function ProjectDetails() {
                       cotacoes: [],
                       selectedCotacaoIndex: 0,
                       imagemUrl: '',
+                      setorId: project.etapas[0]?.setores?.[0]?.id,
                     });
                     setShowCompraModal(true);
                   } else if (selectedEtapaForCompra) {
@@ -2839,6 +2920,7 @@ export default function ProjectDetails() {
                       cotacoes: [],
                       selectedCotacaoIndex: 0,
                       imagemUrl: '',
+                      setorId: selectedEtapaForCompra?.setores?.[0]?.id,
                     });
                     setShowCompraModal(true);
                   } else {
@@ -3730,9 +3812,11 @@ export default function ProjectDetails() {
                     descricao: '',
                     sessaoId: undefined,
                     aba: '',
+                    setorIds: [],
                     executorId: 0,
                     responsavelId: undefined,
                     integrantesIds: [],
+                    excludedAutoIntegranteIds: [],
                     dataInicio: '',
                     dataFim: '',
                     valorInsumos: 0,
@@ -3835,13 +3919,76 @@ export default function ProjectDetails() {
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-white/90 mb-2">Setores da Etapa</label>
+                {allowedEtapaSetores.length === 0 ? (
+                  <p className="text-xs text-white/50">Nenhum setor disponível para este projeto.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {allowedEtapaSetores.map((setor) => {
+                      const checked = etapaForm.setorIds.includes(setor.id);
+                      return (
+                        <label key={setor.id} className="flex items-center gap-3 text-sm text-white/85">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              setEtapaForm((prev) => {
+                                const prevSetorIds = prev.setorIds;
+                                const nextSetorIds = isChecked
+                                  ? Array.from(new Set([...prevSetorIds, setor.id]))
+                                  : prevSetorIds.filter((id) => id !== setor.id);
+                                const executorId = prev.executorId || 0;
+
+                                const prevAuto = computeAutoMemberIds(prevSetorIds).filter(
+                                  (id) => id !== executorId,
+                                );
+                                const nextAuto = computeAutoMemberIds(nextSetorIds).filter(
+                                  (id) => id !== executorId,
+                                );
+
+                                // Manuais: integrantes que não pertenciam aos auto-members do estado anterior
+                                const manualIds = prev.integrantesIds.filter((id) => !prevAuto.includes(id));
+
+                                // Auto-permitidos: auto-members do estado novo exceto os que foram removidos manualmente
+                                const autoAllowed = nextAuto.filter(
+                                  (id) => !prev.excludedAutoIntegranteIds.includes(id),
+                                );
+
+                                const nextIntegrantesIds = Array.from(new Set([...manualIds, ...autoAllowed]));
+
+                                return { ...prev, setorIds: nextSetorIds, integrantesIds: nextIntegrantesIds };
+                              });
+                            }}
+                            className="accent-primary"
+                          />
+                          <span className="whitespace-normal break-words">{setor.nome}</span>
+                        </label>
+                      );
+                    })}
+                    {etapaForm.setorIds.length === 0 && (
+                      <p className="text-xs text-white/50">Nenhum setor selecionado</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Executor *</label>
                 <select
                   required
                   value={etapaForm.executorId || ''}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setEtapaForm({ ...etapaForm, executorId: value ? Number(value) : 0 });
+                    const nextExecutorId = value ? Number(value) : 0;
+                    setEtapaForm((prev) => ({
+                      ...prev,
+                      executorId: nextExecutorId,
+                      // Garantir que o executor não apareça como integrante auxiliar.
+                      integrantesIds: prev.integrantesIds.filter((id) => id !== nextExecutorId),
+                      excludedAutoIntegranteIds: prev.excludedAutoIntegranteIds.filter((id) => id !== nextExecutorId),
+                      responsavelId: nextExecutorId ? nextExecutorId : undefined,
+                    }));
                   }}
                   className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
                   style={{
@@ -3906,10 +4053,12 @@ export default function ProjectDetails() {
                   onChange={(e) => {
                     const selectedUserId = Number(e.target.value);
                     if (selectedUserId && !etapaForm.integrantesIds.includes(selectedUserId)) {
-                      setEtapaForm({
-                        ...etapaForm,
-                        integrantesIds: [...etapaForm.integrantesIds, selectedUserId],
-                      });
+                      setEtapaForm((prev) => ({
+                        ...prev,
+                        integrantesIds: [...prev.integrantesIds, selectedUserId],
+                        // Se era um integrante automático removido manualmente, permitir re-adicionar.
+                        excludedAutoIntegranteIds: prev.excludedAutoIntegranteIds.filter((id) => id !== selectedUserId),
+                      }));
                     }
                     // Resetar o select após seleção
                     if (integrantesSelectRef.current) {
@@ -3928,11 +4077,10 @@ export default function ProjectDetails() {
                   {users
                     .filter((user) => {
                       if (!user) return false;
-                      // Filtrar responsáveis do projeto e o supervisor
-                      const isResponsavel = project?.responsaveis?.some((resp) => resp.usuario?.id === user.id) || false;
+                      const isAutoMember = etapaAutoMemberIdsSet.has(user.id);
                       const isSupervisor = project?.supervisor?.id === user.id;
                       // Não mostrar o executor nem os já selecionados
-                      return (isResponsavel || isSupervisor) && user.id !== etapaForm.executorId && !etapaForm.integrantesIds.includes(user.id);
+                      return (isAutoMember || isSupervisor) && user.id !== etapaForm.executorId && !etapaForm.integrantesIds.includes(user.id);
                     })
                     .map((user) => {
                       if (!user) return null;
@@ -3965,9 +4113,21 @@ export default function ProjectDetails() {
                           <button
                             type="button"
                             onClick={() => {
-                              setEtapaForm({
-                                ...etapaForm,
-                                integrantesIds: etapaForm.integrantesIds.filter((id) => id !== integranteId),
+                              setEtapaForm((prev) => {
+                                const autoIdsNow = computeAutoMemberIds(prev.setorIds).filter(
+                                  (id) => id !== prev.executorId,
+                                );
+                                const isAutoMember = autoIdsNow.includes(integranteId);
+                                const nextIntegrantesIds = prev.integrantesIds.filter((id) => id !== integranteId);
+                                const nextExcludedAuto = isAutoMember
+                                  ? Array.from(new Set([...prev.excludedAutoIntegranteIds, integranteId]))
+                                  : prev.excludedAutoIntegranteIds;
+
+                                return {
+                                  ...prev,
+                                  integrantesIds: nextIntegrantesIds,
+                                  excludedAutoIntegranteIds: nextExcludedAuto,
+                                };
                               });
                             }}
                             className="text-danger hover:text-danger/80 text-sm font-medium transition-colors"
@@ -4505,9 +4665,11 @@ export default function ProjectDetails() {
                       descricao: '',
                       sessaoId: undefined,
                       aba: '',
+                      setorIds: [],
                       executorId: 0,
                       responsavelId: undefined,
                       integrantesIds: [],
+                      excludedAutoIntegranteIds: [],
                       dataInicio: '',
                       dataFim: '',
                       valorInsumos: 0,
@@ -4569,6 +4731,10 @@ export default function ProjectDetails() {
                     quantidade: Number(compraForm.quantidade),
                   };
 
+                  if (compraForm.setorId && compraForm.setorId > 0) {
+                    payload.setorId = compraForm.setorId;
+                  }
+
                   // Se houver cotações, adicionar ao payload
                   if (compraForm.cotacoes && compraForm.cotacoes.length > 0) {
                     const selectedCotacao = compraForm.cotacoes[compraForm.selectedCotacaoIndex ?? 0];
@@ -4594,6 +4760,7 @@ export default function ProjectDetails() {
                     cotacoes: [{ valorUnitario: 0, frete: 0, impostos: 0 }],
                     selectedCotacaoIndex: 0,
                     imagemUrl: '',
+                    setorId: selectedEtapaForCompra.setores?.[0]?.id,
                   });
                   
                   await loadEtapaEstoqueCompras(selectedEtapaForCompra.id);
@@ -4645,6 +4812,23 @@ export default function ProjectDetails() {
                   className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary"
                 />
               </div>
+
+              {selectedEtapaForCompra.setores && selectedEtapaForCompra.setores.length > 0 && (
+                <div>
+                  <label className="block text-sm font-medium text-white/90 mb-2">Setor da Compra</label>
+                  <AppSelect
+                    value={compraForm.setorId ?? ''}
+                    onChange={(value) =>
+                      setCompraForm((prev) => ({
+                        ...prev,
+                        setorId: value ? Number(value) : undefined,
+                      }))
+                    }
+                    placeholder="Sem setor"
+                    options={selectedEtapaForCompra.setores.map((s) => ({ value: s.id, label: s.nome }))}
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">
@@ -5047,30 +5231,57 @@ export default function ProjectDetails() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Setor</label>
-                <select
-                  value={editProjectForm.setorId ?? ''}
-                  onChange={(e) => {
-                    const setorId = e.target.value ? Number(e.target.value) : undefined;
-                    setEditProjectForm((prev) => ({ ...prev, setorId }));
-                  }}
-                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 1rem center',
-                    paddingRight: '2.5rem',
-                  }}
-                >
-                  <option value="" className="bg-neutral text-white">
-                    Sem setor
-                  </option>
-                  {setores.map((setor) => (
-                    <option key={setor.id} value={setor.id} className="bg-neutral text-white">
-                      {setor.nome}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-white/90 mb-2">Setores</label>
+                {setores.length === 0 ? (
+                  <p className="text-xs text-white/50">Carregando setores...</p>
+                ) : (
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {setores.map((setor) => {
+                      const checked = editProjectForm.setorIds.includes(setor.id);
+                      return (
+                        <label key={setor.id} className="flex items-center gap-3 text-sm text-white/85">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              setEditProjectForm((prev) => {
+                                const prevSetorIds = prev.setorIds;
+                                const nextSetorIds = isChecked
+                                  ? Array.from(new Set([...prevSetorIds, setor.id]))
+                                  : prevSetorIds.filter((id) => id !== setor.id);
+
+                                const prevAuto = computeAutoMemberIds(prevSetorIds);
+                                const nextAuto = computeAutoMemberIds(nextSetorIds);
+
+                                const manualIds = prev.responsavelIds.filter((uid) => !prevAuto.includes(uid));
+                                const autoAllowed = nextAuto.filter((uid) => !prev.excludedAutoIds.includes(uid));
+
+                                const nextResponsavelIds = Array.from(
+                                  new Set([
+                                    ...manualIds,
+                                    ...autoAllowed.filter((uid) => uid !== prev.supervisorId),
+                                  ]),
+                                );
+
+                                return {
+                                  ...prev,
+                                  setorIds: nextSetorIds,
+                                  responsavelIds: nextResponsavelIds,
+                                };
+                              });
+                            }}
+                            className="h-4 w-4 rounded border-white/40 bg-neutral/60 text-primary focus:ring-primary"
+                          />
+                          <span className="whitespace-normal break-words">{setor.nome}</span>
+                        </label>
+                      );
+                    })}
+                    {editProjectForm.setorIds.length === 0 && (
+                      <p className="text-xs text-white/50">Nenhum setor selecionado</p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -5080,11 +5291,22 @@ export default function ProjectDetails() {
                   value={editProjectForm.supervisorId ?? ''}
                   onChange={(e) => {
                     const newSupervisorId = e.target.value ? Number(e.target.value) : undefined;
-                    setEditProjectForm((prev) => ({
-                      ...prev,
-                      supervisorId: newSupervisorId,
-                      responsavelIds: prev.responsavelIds.filter((id) => id !== newSupervisorId),
-                    }));
+                    setEditProjectForm((prev) => {
+                      const manualIds = prev.responsavelIds.filter((id) => !autoMemberIds.includes(id));
+                      const autoAllowed = autoMemberIds.filter(
+                        (id) => !prev.excludedAutoIds.includes(id) && id !== newSupervisorId,
+                      );
+
+                      const nextResponsavelIds = Array.from(new Set([...manualIds, ...autoAllowed])).filter(
+                        (id) => id !== newSupervisorId,
+                      );
+
+                      return {
+                        ...prev,
+                        supervisorId: newSupervisorId,
+                        responsavelIds: nextResponsavelIds,
+                      };
+                    });
                   }}
                   className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
                   style={{
@@ -5118,6 +5340,8 @@ export default function ProjectDetails() {
                       setEditProjectForm((prev) => ({
                         ...prev,
                         responsavelIds: [...prev.responsavelIds, selectedUserId],
+                        // Se ele era auto-excluído, o usuário adicionou manualmente de novo.
+                        excludedAutoIds: prev.excludedAutoIds.filter((id) => id !== selectedUserId),
                       }));
                     }
                   }}
@@ -5160,9 +5384,11 @@ export default function ProjectDetails() {
                             onClick={() =>
                               setEditProjectForm((prev) => ({
                                 ...prev,
-                                responsavelIds: prev.responsavelIds.filter(
-                                  (id) => id !== responsavelId,
-                                ),
+                                responsavelIds: prev.responsavelIds.filter((id) => id !== responsavelId),
+                                // Regra B: se era membro automático, remover vira exclusão.
+                                excludedAutoIds: autoMemberIds.includes(responsavelId)
+                                  ? Array.from(new Set([...prev.excludedAutoIds, responsavelId]))
+                                  : prev.excludedAutoIds,
                               }))
                             }
                             className="text-danger hover:text-danger/80 text-sm font-medium transition-colors"

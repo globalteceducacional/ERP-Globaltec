@@ -8,6 +8,7 @@ import type { Cotacao, Supplier, Projeto } from '../types/stock';
 import { DataTable, DataTableColumn } from '../components/DataTable';
 import { btn } from '../utils/buttonStyles';
 import { FileDropInput } from '../components/FileDropInput';
+import { AppModal } from '../components/ui/AppModal';
 
 type RequerimentoTipo = 'SOLICITACAO' | 'APROVACAO' | 'INFORMACAO' | 'RECLAMACAO' | 'SUGESTAO' | 'COMPRA' | 'OUTRO';
 
@@ -1155,35 +1156,40 @@ export default function Communications() {
 
       {/* Modal de Confirmação de Exclusão */}
       {showDeleteConfirm && requestToDelete && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
-            <div className="p-6">
-              <h3 className="text-xl font-bold mb-4">Confirmar Exclusão</h3>
-              <p className="text-white/80 mb-6">
-                Tem certeza que deseja excluir este requerimento? Esta ação não pode ser desfeita.
-              </p>
-              <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => {
-                    setShowDeleteConfirm(false);
-                    setRequestToDelete(null);
-                  }}
-                  className={btn.secondary}
-                  disabled={deletingRequestId !== null}
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={confirmDelete}
-                  disabled={deletingRequestId !== null}
-                  className={btn.danger}
-                >
-                  {deletingRequestId !== null ? 'Excluindo...' : 'Excluir'}
-                </button>
-              </div>
-            </div>
+        <AppModal
+          open={showDeleteConfirm}
+          onClose={() => {
+            setShowDeleteConfirm(false);
+            setRequestToDelete(null);
+          }}
+          title="Confirmar Exclusão"
+          size="sm"
+          stickyHeader={false}
+          bodyClassName="p-6"
+        >
+          <p className="text-white/80 mb-6">
+            Tem certeza que deseja excluir este requerimento? Esta ação não pode ser desfeita.
+          </p>
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => {
+                setShowDeleteConfirm(false);
+                setRequestToDelete(null);
+              }}
+              className={btn.secondary}
+              disabled={deletingRequestId !== null}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={confirmDelete}
+              disabled={deletingRequestId !== null}
+              className={btn.danger}
+            >
+              {deletingRequestId !== null ? 'Excluindo...' : 'Excluir'}
+            </button>
           </div>
-        </div>
+        </AppModal>
       )}
     </div>
   );

@@ -7,6 +7,8 @@ import { DataTable, DataTableColumn } from '../components/DataTable';
 import { toast, formatApiError } from '../utils/toast';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
 import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
+import { AppModal } from '../components/ui/AppModal';
+import { ConfirmDeleteByNameModal } from '../components/ui/ConfirmDeleteByNameModal';
 
 interface CreateUserForm {
   nome: string;
@@ -526,27 +528,18 @@ export default function Users() {
       />
 
       {/* Modal de Novo Usuário */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/10 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-neutral border-b border-white/10 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-xl font-semibold">
-                {editingUser ? 'Editar Usuário' : 'Novo Usuário'}
-              </h3>
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  setEditingUser(null);
-                  setError(null);
-                  setModalError(null);
-                }}
-                className="text-white/50 hover:text-white transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+      <AppModal
+        open={showModal}
+        onClose={() => {
+          setShowModal(false);
+          setEditingUser(null);
+          setError(null);
+          setModalError(null);
+        }}
+        title={editingUser ? 'Editar Usuário' : 'Novo Usuário'}
+        size="lg"
+      >
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-white/70 mb-1">
@@ -780,65 +773,28 @@ export default function Users() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </AppModal>
 
       {/* Modal de Confirmação de Exclusão */}
       {showDeleteModal && userToDelete && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
-            <div className="px-8 py-6 border-b border-white/20">
-              <h2 className="text-2xl font-bold text-white">Confirmar Exclusão</h2>
-            </div>
-            <div className="p-8">
-              <p className="text-white/90 mb-2">
-                Tem certeza que deseja excluir o usuário:
-              </p>
-              <p className="text-xl font-semibold text-white mb-6">
-                "{userToDelete.nome}"
-              </p>
-              <p className="text-sm text-white/70 mb-4">
-                Esta ação não pode ser desfeita. Para confirmar, digite o nome do usuário:
-              </p>
-              <input
-                type="text"
-                value={deleteConfirmName}
-                onChange={(e) => setDeleteConfirmName(e.target.value)}
-                placeholder={userToDelete.nome}
-                className="w-full bg-neutral/60 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary mb-4"
-              />
-              {error && (
-                <div className="bg-danger/20 border border-danger/50 text-danger px-4 py-3 rounded-md mb-4 text-sm">
-                  {error}
-                </div>
-              )}
-              <div className="flex justify-end space-x-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setUserToDelete(null);
-                    setDeleteConfirmName('');
-                    setError(null);
-                  }}
-                  className={btn.secondaryLg}
-                  disabled={deleting}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDeleteUser}
-                  className={btn.dangerLg}
-                  disabled={deleting || deleteConfirmName.trim() !== userToDelete.nome.trim()}
-                >
-                  {deleting ? 'Excluindo...' : 'Excluir Usuário'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ConfirmDeleteByNameModal
+          open={showDeleteModal}
+          title="Confirmar Exclusão"
+          entityLabel="o usuário"
+          entityName={userToDelete.nome}
+          confirmValue={deleteConfirmName}
+          onConfirmValueChange={setDeleteConfirmName}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setUserToDelete(null);
+            setDeleteConfirmName('');
+            setError(null);
+          }}
+          onConfirm={handleDeleteUser}
+          loading={deleting}
+          errorMessage={error}
+          confirmButtonLabel="Excluir Usuário"
+        />
       )}
     </div>
   );

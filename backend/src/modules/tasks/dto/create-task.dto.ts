@@ -97,4 +97,21 @@ export class CreateTaskDto {
   @IsInt()
   @Transform(({ value }) => (value !== undefined && value !== null && value !== '' ? Number(value) : undefined))
   responsavelId?: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @IsPositive({ each: true })
+  @Transform(({ value }) =>
+    Array.isArray(value) ? value.map((v) => Number(v)).filter((n) => !Number.isNaN(n)) : value,
+  )
+  setorIds?: number[];
+
+  // Legado: mantém compatibilidade com chamadas antigas.
+  @IsOptional()
+  @IsInt()
+  @Transform(({ value }) =>
+    value !== undefined && value !== null && value !== '' ? Number(value) : undefined,
+  )
+  setorId?: number;
 }

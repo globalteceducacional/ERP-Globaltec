@@ -148,7 +148,7 @@ export class SetoresService {
     const setor = await this.findOne(id);
 
     const linked = await this.prisma.$transaction([
-      this.prisma.projeto.count({ where: { setorId: id } }),
+      this.prisma.projeto.count({ where: { setores: { some: { id } } } }),
       this.prisma.compra.count({ where: { setorId: id } }),
       this.prisma.curadoriaOrcamento.count({ where: { setorId: id } }),
     ]);

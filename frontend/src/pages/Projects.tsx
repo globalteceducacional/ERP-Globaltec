@@ -13,6 +13,8 @@ import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
 import { useTextFilter } from '../hooks/useTextFilter';
 import { AppInput } from '../components/ui/AppInput';
 import { AppSelect } from '../components/ui/AppSelect';
+import { AppModal } from '../components/ui/AppModal';
+import { ConfirmDeleteByNameModal } from '../components/ui/ConfirmDeleteByNameModal';
 
 interface SimpleUser {
   id: number;
@@ -22,6 +24,9 @@ interface SimpleUser {
 interface SimpleSetor {
   id: number;
   nome: string;
+  membros?: Array<{
+    usuario: { id: number };
+  }>;
 }
 
 interface CreateProjectForm {
@@ -30,8 +35,9 @@ interface CreateProjectForm {
   objetivo?: string;
   valorTotal?: number;
   supervisorId?: number;
-  setorId?: number;
+  setorIds: number[];
   responsavelIds: number[];
+  excludedAutoIds: number[];
   status?: 'EM_ANDAMENTO' | 'FINALIZADO';
   descricaoLonga?: string;
 }
@@ -58,8 +64,9 @@ export default function Projects() {
     objetivo: '',
     valorTotal: undefined,
     supervisorId: undefined,
-    setorId: undefined,
+    setorIds: [],
     responsavelIds: [],
+    excludedAutoIds: [],
     status: 'EM_ANDAMENTO',
     descricaoLonga: '',
   });
@@ -87,7 +94,7 @@ export default function Projects() {
     p.nome,
     p.resumo,
     p.objetivo,
-    (p as any).setor?.nome,
+    ...(Array.isArray((p as any).setores) ? (p as any).setores.map((s: any) => s?.nome) : []),
     p.supervisor?.nome,
     ...(Array.isArray((p as any).responsaveis) ? (p as any).responsaveis.map((r: any) => r?.nome) : []),
   ]);
@@ -95,7 +102,11 @@ export default function Projects() {
   const filteredProjects = useMemo(() => {
     return textFilteredProjects.filter((p) => {
       if (statusFilter !== 'all' && (p as any).status !== statusFilter) return false;
-      if (setorFilter !== 'all' && (p as any).setorId !== setorFilter) return false;
+      if (
+        setorFilter !== 'all' &&
+        !(Array.isArray((p as any).setores) ? (p as any).setores.some((s: any) => s?.id === setorFilter) : false)
+      )
+        return false;
       if (supervisorFilter !== 'all' && (p as any).supervisorId !== supervisorFilter) return false;
 
       const valor = Number((p as any).valorTotal ?? 0);
@@ -234,13 +245,28 @@ export default function Projects() {
 
   async function loadSetores() {
     try {
-      const { data } = await api.get<SimpleSetor[]>('/setores/options');
+      const { data } = await api.get<SimpleSetor[]>('/setores?includeInactive=true');
       setSetores(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Erro ao carregar setores:', err);
       setSetores([]);
     }
   }
+
+  const computeAutoMemberIds = (selectedSetorIds: number[]) => {
+    const ids = new Set<number>();
+    for (const setorId of selectedSetorIds) {
+      const setor = setores.find((s) => s.id === setorId);
+      if (!setor?.membros) continue;
+      for (const membro of setor.membros) {
+        const usuarioId = membro.usuario?.id;
+        if (typeof usuarioId === 'number') ids.add(usuarioId);
+      }
+    }
+    return Array.from(ids);
+  };
+
+  const autoMemberIds = useMemo(() => computeAutoMemberIds(form.setorIds), [form.setorIds, setores]);
 
   const setCell = (
     sheet: XLSX.WorkSheet,
@@ -519,7 +545,7 @@ export default function Projects() {
         // descricaoArquivos agora é gerenciado pelos endpoints específicos
         if (typeof form.valorTotal === 'number') payload.valorTotal = form.valorTotal;
         if (typeof form.supervisorId !== 'undefined') payload.supervisorId = form.supervisorId;
-        if (typeof form.setorId !== 'undefined') payload.setorId = form.setorId || null;
+        payload.setorIds = form.setorIds;
         if (form.status) payload.status = form.status;
 
         await api.patch(`/projects/${editingProject.id}`, payload);
@@ -541,10 +567,8 @@ export default function Projects() {
         // descricaoArquivos será anexado depois, na edição
         if (typeof form.valorTotal === 'number') payload.valorTotal = form.valorTotal;
         if (form.supervisorId) payload.supervisorId = form.supervisorId;
-        if (form.setorId) payload.setorId = form.setorId;
-        if (form.responsavelIds.length > 0) {
-          payload.responsavelIds = form.responsavelIds;
-        }
+        payload.setorIds = form.setorIds;
+        payload.responsavelIds = form.responsavelIds;
 
         const { data: createdProject } = await api.post<Projeto>('/projects', payload);
         if (pendingDescricaoFiles.length > 0) {
@@ -565,6 +589,8 @@ export default function Projects() {
         valorTotal: undefined,
         supervisorId: undefined,
         responsavelIds: [],
+        excludedAutoIds: [],
+        setorIds: [],
         status: 'EM_ANDAMENTO',
         descricaoLonga: '',
       });
@@ -588,8 +614,9 @@ export default function Projects() {
       objetivo: '',
       valorTotal: undefined,
       supervisorId: undefined,
-      setorId: undefined,
       responsavelIds: [],
+      excludedAutoIds: [],
+      setorIds: [],
       status: 'EM_ANDAMENTO',
       descricaoLonga: '',
     });
@@ -602,15 +629,29 @@ export default function Projects() {
   }
 
   function openEditModal(project: Projeto) {
+    const supervisorId = project.supervisor?.id;
     setEditingProject(project);
     setForm({
       nome: project.nome,
       resumo: project.resumo ?? '',
       objetivo: project.objetivo ?? '',
       valorTotal: project.valorTotal ?? undefined,
-      supervisorId: project.supervisor?.id ?? undefined,
-      setorId: (project as any).setor?.id ?? (project as any).setorId ?? undefined,
-      responsavelIds: project.responsaveis ? project.responsaveis.map((r) => r.usuario.id) : [],
+      supervisorId: supervisorId ?? undefined,
+      setorIds: Array.isArray((project as any).setores)
+        ? (project as any).setores.map((s: any) => s.id)
+        : (typeof (project as any).setorId !== 'undefined' && (project as any).setorId
+            ? [(project as any).setorId]
+            : (project as any).setor?.id
+              ? [(project as any).setor.id]
+              : []),
+      responsavelIds: project.responsaveis
+        ? project.responsaveis
+            .map((r) => r.usuario.id)
+            .filter((id) => id !== supervisorId)
+        : [],
+      excludedAutoIds: Array.isArray((project as any).responsaveisExcluidos)
+        ? (project as any).responsaveisExcluidos.map((x: any) => x.usuarioId)
+        : [],
       status: project.status,
       descricaoLonga: project.descricaoLonga ?? '',
     });
@@ -993,30 +1034,21 @@ export default function Projects() {
       />
 
       {/* Modal de Novo Projeto */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/10 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-neutral border-b border-white/10 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-xl font-semibold">
-                {editingProject ? 'Editar Projeto' : 'Novo Projeto'}
-              </h3>
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  setError(null);
-                  setModalError(null);
-                  setEditingProject(null);
-                  setPendingDescricaoFiles([]);
-                  setProjectDescricaoArquivos([]);
-                  setProjectDescricaoError(null);
-                }}
-                className="text-white/50 hover:text-white transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+      <AppModal
+        open={showModal}
+        onClose={() => {
+          setShowModal(false);
+          setError(null);
+          setModalError(null);
+          setEditingProject(null);
+          setPendingDescricaoFiles([]);
+          setProjectDescricaoArquivos([]);
+          setProjectDescricaoError(null);
+        }}
+        title={editingProject ? 'Editar Projeto' : 'Novo Projeto'}
+        size="lg"
+      >
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm text-white/70 mb-1">
                   Nome do Projeto <span className="text-danger">*</span>
@@ -1266,30 +1298,54 @@ export default function Projects() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-white/90 mb-2">Setor</label>
-                <select
-                  value={form.setorId ?? ''}
-                  onChange={(e) => {
-                    const setorId = e.target.value ? Number(e.target.value) : undefined;
-                    setForm((prev) => ({ ...prev, setorId }));
-                  }}
-                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
-                  style={{
-                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
-                    backgroundRepeat: 'no-repeat',
-                    backgroundPosition: 'right 1rem center',
-                    paddingRight: '2.5rem',
-                  }}
-                >
-                  <option value="" className="bg-neutral text-white">
-                    Sem setor
-                  </option>
-                  {setores.map((setor) => (
-                    <option key={setor.id} value={setor.id} className="bg-neutral text-white">
-                      {setor.nome}
-                    </option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-white/90 mb-2">Setores</label>
+                {setores.length === 0 ? (
+                  <p className="text-xs text-white/50">Carregando setores...</p>
+                ) : (
+                  <div className="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    {setores.map((setor) => {
+                      const checked = form.setorIds.includes(setor.id);
+                      return (
+                        <label key={setor.id} className="flex items-center gap-3 text-sm text-white/85">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              const isChecked = e.target.checked;
+                              setForm((prev) => {
+                                const prevSetorIds = prev.setorIds;
+                                const nextSetorIds = isChecked
+                                  ? Array.from(new Set([...prevSetorIds, setor.id]))
+                                  : prevSetorIds.filter((id) => id !== setor.id);
+
+                                const prevAuto = computeAutoMemberIds(prevSetorIds);
+                                const nextAuto = computeAutoMemberIds(nextSetorIds);
+
+                                const manualIds = prev.responsavelIds.filter((uid) => !prevAuto.includes(uid));
+                                const autoAllowed = nextAuto.filter((uid) => !prev.excludedAutoIds.includes(uid));
+
+                                const nextResponsavelIds = Array.from(
+                                  new Set([...manualIds, ...autoAllowed].filter((uid) => uid !== prev.supervisorId)),
+                                );
+
+                                return {
+                                  ...prev,
+                                  setorIds: nextSetorIds,
+                                  responsavelIds: nextResponsavelIds,
+                                };
+                              });
+                            }}
+                            className="h-4 w-4 rounded border-white/40 bg-neutral/60 text-primary focus:ring-primary"
+                          />
+                          <span className="whitespace-normal break-words">{setor.nome}</span>
+                        </label>
+                      );
+                    })}
+                    {form.setorIds.length === 0 && (
+                      <p className="text-xs text-white/50">Nenhum setor selecionado</p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -1300,14 +1356,18 @@ export default function Projects() {
                   onChange={(e) => {
                     const newSupervisorId = e.target.value ? Number(e.target.value) : undefined;
                     setForm((prev) => {
-                      // Remover o supervisor da lista de responsáveis se ele estiver lá
-                      const newResponsavelIds = prev.responsavelIds.filter(
-                        (id) => id !== newSupervisorId
+                      const manualIds = prev.responsavelIds.filter((id) => !autoMemberIds.includes(id));
+                      const autoAllowed = autoMemberIds.filter(
+                        (id) => !prev.excludedAutoIds.includes(id) && id !== newSupervisorId,
+                      );
+
+                      const nextResponsavelIds = Array.from(
+                        new Set([...manualIds, ...autoAllowed].filter((id) => id !== newSupervisorId)),
                       );
                       return {
                         ...prev,
                         supervisorId: newSupervisorId,
-                        responsavelIds: newResponsavelIds,
+                        responsavelIds: nextResponsavelIds,
                       };
                     });
                   }}
@@ -1335,12 +1395,16 @@ export default function Projects() {
                   value=""
                   onChange={(e) => {
                     const selectedUserId = Number(e.target.value);
-                    if (selectedUserId && !form.responsavelIds.includes(selectedUserId)) {
-                      setForm({
-                        ...form,
-                        responsavelIds: [...form.responsavelIds, selectedUserId],
-                      });
-                    }
+                    if (!selectedUserId) return;
+                    setForm((prev) => {
+                      if (prev.responsavelIds.includes(selectedUserId)) return prev;
+                      return {
+                        ...prev,
+                        responsavelIds: [...prev.responsavelIds, selectedUserId],
+                        // Se ele era auto-excluído, o usuário adicionou manualmente de novo.
+                        excludedAutoIds: prev.excludedAutoIds.filter((id) => id !== selectedUserId),
+                      };
+                    });
                     // Resetar o select após seleção
                     if (responsaveisSelectRef.current) {
                       responsaveisSelectRef.current.value = '';
@@ -1382,9 +1446,16 @@ export default function Projects() {
                           <button
                             type="button"
                             onClick={() => {
-                              setForm({
-                                ...form,
-                                responsavelIds: form.responsavelIds.filter((id) => id !== responsavelId),
+                              setForm((prev) => {
+                                const isAuto = autoMemberIds.includes(responsavelId);
+                                return {
+                                  ...prev,
+                                  responsavelIds: prev.responsavelIds.filter((id) => id !== responsavelId),
+                                  // Regra B: se era membro automático, remover vira exclusão.
+                                  excludedAutoIds: isAuto
+                                    ? Array.from(new Set([...prev.excludedAutoIds, responsavelId]))
+                                    : prev.excludedAutoIds,
+                                };
                               });
                             }}
                             className="text-danger hover:text-danger/80 text-sm font-medium transition-colors"
@@ -1433,68 +1504,28 @@ export default function Projects() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </AppModal>
 
       {/* Modal Confirmar Exclusão de Projeto */}
       {showDeleteModal && projectToDelete && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
-            <div className="px-8 py-6 border-b border-white/20">
-              <h2 className="text-2xl font-bold text-white">Confirmar Exclusão</h2>
-            </div>
-            <div className="p-8">
-              <p className="text-white/90 mb-2">
-                Tem certeza que deseja remover o projeto:
-              </p>
-              <p className="text-xl font-semibold text-white mb-6">
-                "{projectToDelete.nome}"
-              </p>
-              <p className="text-sm text-white/70 mb-4">
-                Esta ação não pode ser desfeita. Para confirmar, digite o nome do projeto:
-              </p>
-              <div className="mb-6">
-                <input
-                  type="text"
-                  value={deleteConfirmName}
-                  onChange={(e) => setDeleteConfirmName(e.target.value)}
-                  placeholder="Digite o nome do projeto"
-                  className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                  autoFocus
-                />
-              </div>
-              {error && (
-                <div className="bg-red-500/20 border border-red-500/50 text-red-200 px-4 py-3 rounded-md mb-4 text-sm">
-                  {error}
-                </div>
-              )}
-              <div className="flex justify-end space-x-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setProjectToDelete(null);
-                    setDeleteConfirmName('');
-                    setError(null);
-                  }}
-                  className={btn.secondaryLg}
-                  disabled={deletingId === projectToDelete.id}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmDelete}
-                  className={btn.dangerLg}
-                  disabled={deletingId === projectToDelete.id || deleteConfirmName.trim() !== projectToDelete.nome.trim()}
-                >
-                  {deletingId === projectToDelete.id ? 'Removendo...' : 'Confirmar Remoção'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+        <ConfirmDeleteByNameModal
+          open={showDeleteModal}
+          title="Confirmar Exclusão"
+          entityLabel="o projeto"
+          entityName={projectToDelete.nome}
+          confirmValue={deleteConfirmName}
+          onConfirmValueChange={setDeleteConfirmName}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setProjectToDelete(null);
+            setDeleteConfirmName('');
+            setError(null);
+          }}
+          onConfirm={handleConfirmDelete}
+          loading={deletingId === projectToDelete.id}
+          errorMessage={error}
+          confirmButtonLabel="Confirmar Remoção"
+        />
       )}
     </div>
   );

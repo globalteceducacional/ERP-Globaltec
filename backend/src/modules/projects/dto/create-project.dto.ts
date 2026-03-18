@@ -1,5 +1,4 @@
 import {
-  ArrayNotEmpty,
   IsArray,
   IsNumber,
   IsOptional,
@@ -43,6 +42,18 @@ export class CreateProjectDto {
   @IsPositive()
   supervisorId: number;
 
+  /**
+   * Suporta múltiplos setores responsáveis.
+   * Se `setorId` (legado) for enviado, o backend pode converter para `setorIds=[setorId]`.
+   */
+  @IsOptional()
+  @IsArray()
+  @IsInt({ each: true })
+  @IsPositive({ each: true })
+  @Type(() => Number)
+  setorIds?: number[];
+
+  // Campo legado (mantido para compatibilidade com payloads antigos)
   @IsOptional()
   @ValidateIf((obj) => obj.setorId !== null && obj.setorId !== undefined)
   @Type(() => Number)

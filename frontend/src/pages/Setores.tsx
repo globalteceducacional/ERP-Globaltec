@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../services/api';
 import { DataTable, DataTableColumn } from '../components/DataTable';
 import { btn } from '../utils/buttonStyles';
@@ -7,6 +7,8 @@ import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
 import { useTextFilter } from '../hooks/useTextFilter';
 import { AppInput } from '../components/ui/AppInput';
 import { AppSelect } from '../components/ui/AppSelect';
+import { AppModal } from '../components/ui/AppModal';
+import { ConfirmDeleteByNameModal } from '../components/ui/ConfirmDeleteByNameModal';
 
 interface SimpleUser {
   id: number;
@@ -55,6 +57,7 @@ export default function Setores() {
     ativo: true,
     userIds: [],
   });
+  const membersSelectRef = useRef<HTMLSelectElement | null>(null);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
@@ -341,22 +344,13 @@ export default function Setores() {
         ] satisfies DataTableColumn<SetorRow>[]}
       />
 
-      {showModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-neutral border-b border-white/20 px-6 py-4 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-white">
-                {editing ? 'Editar Setor' : 'Novo Setor'}
-              </h2>
-              <button
-                onClick={() => setShowModal(false)}
-                className="text-white/50 hover:text-white transition-colors text-2xl"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+      <AppModal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        title={editing ? 'Editar Setor' : 'Novo Setor'}
+        size="lg"
+      >
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">
                   Nome <span className="text-danger">*</span>
@@ -397,37 +391,69 @@ export default function Setores() {
 
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">Membros</label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto bg-white/5 border border-white/10 rounded-lg p-3">
-                  {userOptions.map((u) => {
-                    const checked = form.userIds.includes(u.id);
-                    return (
-                      <label
-                        key={u.id}
-                        className="flex items-center gap-2 text-sm text-white/80 hover:text-white cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            setForm((prev) => {
-                              const next = new Set(prev.userIds);
-                              if (e.target.checked) next.add(u.id);
-                              else next.delete(u.id);
-                              return { ...prev, userIds: Array.from(next) };
-                            });
-                          }}
-                          className="h-4 w-4 rounded border-white/40 bg-neutral/60 text-primary focus:ring-primary"
-                        />
-                        <span className="truncate" title={u.nome}>
-                          {u.nome}
-                        </span>
-                      </label>
-                    );
-                  })}
-                  {userOptions.length === 0 && (
-                    <p className="text-sm text-white/60">Nenhum usuário disponível.</p>
-                  )}
-                </div>
+                <select
+                  ref={membersSelectRef}
+                  value=""
+                  onChange={(e) => {
+                    const selectedUserId = Number(e.target.value);
+                    if (!selectedUserId) return;
+                    setForm((prev) => {
+                      if (prev.userIds.includes(selectedUserId)) return prev;
+                      return { ...prev, userIds: [...prev.userIds, selectedUserId] };
+                    });
+                    if (membersSelectRef.current) {
+                      membersSelectRef.current.value = '';
+                    }
+                  }}
+                  className="w-full bg-neutral border border-white/30 rounded-md px-4 py-2.5 text-white focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary appearance-none cursor-pointer"
+                  style={{
+                    backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23ffffff' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundPosition: 'right 1rem center',
+                    paddingRight: '2.5rem',
+                  }}
+                >
+                  <option value="" className="bg-neutral text-white">
+                    Selecione um membro...
+                  </option>
+                  {userOptions
+                    .filter((u) => !form.userIds.includes(u.id))
+                    .map((u) => (
+                      <option key={u.id} value={u.id} className="bg-neutral text-white">
+                        {u.nome}
+                      </option>
+                    ))}
+                </select>
+
+                {form.userIds.length > 0 ? (
+                  <div className="mt-3 space-y-2 max-h-56 overflow-y-auto bg-white/5 border border-white/10 rounded-lg p-3">
+                    {form.userIds.map((id) => {
+                      const member = userOptions.find((u) => u.id === id);
+                      if (!member) return null;
+                      return (
+                        <div key={id} className="flex items-center justify-between gap-3 text-sm text-white/80">
+                          <span className="min-w-0 whitespace-normal break-words" title={member.nome}>
+                            {member.nome}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setForm((prev) => ({
+                                ...prev,
+                                userIds: prev.userIds.filter((uid) => uid !== id),
+                              }))
+                            }
+                            className="inline-flex items-center px-2 py-0.5 rounded border border-danger/60 text-[11px] text-danger hover:bg-danger/10 transition-colors shrink-0"
+                          >
+                            Remover
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-white/50 mt-2">Nenhum membro adicionado ainda.</p>
+                )}
               </div>
 
               <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
@@ -444,56 +470,26 @@ export default function Setores() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </AppModal>
 
       {showDeleteModal && setorToDelete && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full">
-            <div className="px-6 py-4 border-b border-white/20">
-              <h2 className="text-xl font-bold text-white">Confirmar exclusão</h2>
-            </div>
-            <div className="p-6 space-y-4">
-              <p className="text-white/80">
-                Para confirmar, digite o nome do setor <span className="font-semibold">{setorToDelete.nome}</span>.
-              </p>
-              <input
-                type="text"
-                value={deleteConfirmName}
-                onChange={(e) => setDeleteConfirmName(e.target.value)}
-                className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
-                placeholder="Digite o nome do setor"
-                autoFocus
-              />
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDeleteModal(false);
-                    setSetorToDelete(null);
-                    setDeleteConfirmName('');
-                  }}
-                  className={btn.secondaryLg}
-                  disabled={deleting}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmDelete}
-                  className={btn.dangerLg}
-                  disabled={deleting || deleteConfirmName.trim() !== setorToDelete.nome.trim()}
-                >
-                  {deleting ? 'Excluindo...' : 'Excluir'}
-                </button>
-              </div>
-              <p className="text-xs text-white/50">
-                Se o setor estiver vinculado a projetos/compras/curadoria, a API bloqueará a exclusão.
-              </p>
-            </div>
-          </div>
-        </div>
+        <ConfirmDeleteByNameModal
+          open={showDeleteModal}
+          title="Confirmar exclusão"
+          entityLabel="o setor"
+          entityName={setorToDelete.nome}
+          confirmValue={deleteConfirmName}
+          onConfirmValueChange={setDeleteConfirmName}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setSetorToDelete(null);
+            setDeleteConfirmName('');
+          }}
+          onConfirm={handleConfirmDelete}
+          loading={deleting}
+          confirmButtonLabel="Excluir"
+          dangerNote="Esta ação não pode ser desfeita. Se o setor estiver vinculado a projetos/compras/curadoria, a API pode bloquear a exclusão."
+        />
       )}
     </div>
   );

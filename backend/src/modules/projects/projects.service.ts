@@ -44,8 +44,9 @@ export class ProjectsService {
       orderBy: { dataCriacao: 'desc' },
       include: {
         supervisor: { include: { cargo: true } },
-        setor: { select: { id: true, nome: true } },
+        setores: { select: { id: true, nome: true } },
         responsaveis: { include: { usuario: { include: { cargo: true } } } },
+        responsaveisExcluidos: { select: { usuarioId: true } },
         _count: { select: { etapas: true } },
         etapas: {
           orderBy: { ordem: 'asc' } as any,
@@ -55,7 +56,7 @@ export class ProjectsService {
             valorInsumos: true,
           },
         },
-      },
+      } as any,
     });
 
     // Atualizar status do projeto no banco se necessário e calcular progresso
@@ -162,8 +163,9 @@ export class ProjectsService {
       where: { id },
       include: {
         supervisor: { include: { cargo: true } },
-        setor: { select: { id: true, nome: true } },
+        setores: { select: { id: true, nome: true } },
         responsaveis: { include: { usuario: { include: { cargo: true } } } },
+        responsaveisExcluidos: { select: { usuarioId: true } },
         sessoes: { orderBy: { ordem: 'asc' } },
         etapas: {
           orderBy: [{ ordem: 'asc' }, { id: 'asc' }],
@@ -184,6 +186,7 @@ export class ProjectsService {
                 avaliadoPor: true,
               },
             },
+            setores: { select: { id: true, nome: true } },
           },
         },
         compras: {
@@ -193,7 +196,7 @@ export class ProjectsService {
             solicitadoPor: { include: { cargo: true } },
           },
         },
-      } as Prisma.ProjetoInclude,
+      } as any,
     });
 
     if (!project) {
@@ -201,7 +204,7 @@ export class ProjectsService {
     }
 
     // Calcular valorInsumos como soma das etapas
-    const valorInsumosCalculado = project.etapas.reduce((sum, etapa) => {
+    const valorInsumosCalculado = (project as any).etapas.reduce((sum: number, etapa: any) => {
       return sum + (etapa.valorInsumos || 0);
     }, 0);
 
@@ -243,12 +246,21 @@ export class ProjectsService {
       planilhaJson: data.planilhaJson ?? null,
     };
 
-    if (data.setorId) {
-      const setor = await this.prisma.setor.findUnique({ where: { id: data.setorId }, select: { id: true } });
-      if (!setor) {
-        throw new BadRequestException('Setor informado não existe');
+    const setorIdsToConnect =
+      (Array.isArray(data.setorIds) ? data.setorIds : undefined) ??
+      (typeof data.setorId !== 'undefined' && data.setorId ? [data.setorId] : []);
+
+    const setorIdsUnique: number[] = Array.from(new Set(setorIdsToConnect)) as number[];
+    if (setorIdsUnique.length > 0) {
+      const setoresExistentes = await this.prisma.setor.findMany({
+        where: { id: { in: setorIdsUnique } },
+        select: { id: true },
+      });
+      if (setoresExistentes.length !== setorIdsUnique.length) {
+        throw new BadRequestException('Um ou mais setores informados não existem');
       }
-      payload.setor = { connect: { id: data.setorId } };
+
+      payload.setores = { connect: setorIdsUnique.map((id) => ({ id })) };
     }
 
     if (data.supervisorId) {
@@ -259,21 +271,65 @@ export class ProjectsService {
       payload.supervisor = { connect: { id: data.supervisorId } };
     }
 
-    // Tratar responsáveis: criar apenas se houver IDs no array
-    let responsaveisData: { create: { usuarioId: number }[] } | undefined = undefined;
-    if (data.responsavelIds && Array.isArray(data.responsavelIds) && data.responsavelIds.length > 0) {
-      responsaveisData = { create: data.responsavelIds.map((usuarioId) => ({ usuarioId })) };
+    const responsavelIdsDesired = Array.isArray(data.responsavelIds) ? Array.from(new Set(data.responsavelIds)) : [];
+
+    if (responsavelIdsDesired.length > 0) {
+      for (const usuarioId of responsavelIdsDesired) {
+        if (!Number.isInteger(usuarioId) || usuarioId < 1) {
+          throw new BadRequestException(`ID de usuário inválido: ${usuarioId}`);
+        }
+      }
+
+      const usersExistentes = await this.prisma.usuario.findMany({
+        where: { id: { in: responsavelIdsDesired } },
+        select: { id: true },
+      });
+
+      if (usersExistentes.length !== responsavelIdsDesired.length) {
+        throw new BadRequestException('Um ou mais usuários informados não existem');
+      }
     }
 
+    const autoMemberIds: number[] =
+      setorIdsUnique.length > 0
+        ? await this.prisma.setorUsuario
+            .findMany({
+              where: { setorId: { in: setorIdsUnique } },
+              select: { usuarioId: true },
+            })
+            .then((rows: Array<{ usuarioId: number } | any>) =>
+              Array.from(new Set(rows.map((r) => Number(r.usuarioId)))) as number[],
+            )
+        : [];
+
+    const responsaveisAutoExcluidos = autoMemberIds.filter((id) => !responsavelIdsDesired.includes(id));
+
     const projeto = await this.prisma.projeto.create({
-      data: {
-        ...payload,
-        responsaveis: responsaveisData,
-      },
+      data: payload,
       include: {
         supervisor: { include: { cargo: true } },
-        responsaveis: { include: { usuario: { include: { cargo: true } } } },
-      },
+        setores: { select: { id: true, nome: true } },
+      } as any,
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      if (responsavelIdsDesired.length > 0) {
+        await tx.projetoResponsavel.createMany({
+          data: responsavelIdsDesired.map((usuarioId) => ({
+            projetoId: projeto.id,
+            usuarioId,
+          })),
+        });
+      }
+
+      if (responsaveisAutoExcluidos.length > 0) {
+        await (tx as any).projetoResponsavelExcluido.createMany({
+          data: responsaveisAutoExcluidos.map((usuarioId) => ({
+            projetoId: projeto.id,
+            usuarioId,
+          })),
+        });
+      }
     });
 
     // Criar sessão e "aba" padrão (Geral) para novos projetos — não aplicar na importação
@@ -314,16 +370,25 @@ export class ProjectsService {
       planilhaJson: data.planilhaJson,
     };
 
-    if (data.setorId !== undefined) {
-      if (data.setorId === null || data.setorId === 0) {
-        payload.setor = { disconnect: true };
-      } else {
-        const setor = await this.prisma.setor.findUnique({ where: { id: data.setorId as number }, select: { id: true } });
-        if (!setor) {
-          throw new BadRequestException('Setor informado não existe');
+    const setorIdsToSet =
+      (Array.isArray((data as any).setorIds) ? (data as any).setorIds : undefined) ??
+      (typeof data.setorId !== 'undefined' ? (data.setorId ? [data.setorId] : []) : undefined);
+
+    if (typeof setorIdsToSet !== 'undefined') {
+      const setorIdsUnique: number[] = Array.from(new Set(setorIdsToSet)) as number[];
+
+      if (setorIdsUnique.length > 0) {
+        const setoresExistentes = await this.prisma.setor.findMany({
+          where: { id: { in: setorIdsUnique } },
+          select: { id: true },
+        });
+
+        if (setoresExistentes.length !== setorIdsUnique.length) {
+          throw new BadRequestException('Um ou mais setores informados não existem');
         }
-        payload.setor = { connect: { id: data.setorId as number } };
       }
+
+      payload.setores = { set: setorIdsUnique.map((id) => ({ id })) };
     }
 
     // Tratar supervisor (relação) - não pode ser removido, apenas alterado
@@ -363,7 +428,9 @@ export class ProjectsService {
       include: {
         supervisor: { include: { cargo: true } },
         responsaveis: { include: { usuario: { include: { cargo: true } } } },
-      },
+        responsaveisExcluidos: { select: { usuarioId: true } },
+        setores: { select: { id: true, nome: true } },
+      } as any,
     });
 
     // Se o status mudou para FINALIZADO (aprovado), criar notificações e requerimentos
@@ -472,40 +539,84 @@ export class ProjectsService {
   async updateResponsibles(id: number, data: UpdateResponsiblesDto) {
     await this.findOne(id);
 
-    // Normalizar: se não foi fornecido, usar array vazio
-    const responsavelIds = data.responsavelIds || [];
+    const responsavelIdsDesired = Array.isArray(data.responsavelIds)
+      ? Array.from(new Set(data.responsavelIds))
+      : [];
 
-    // Validar que todos os IDs são válidos se o array não estiver vazio
-    if (responsavelIds.length > 0) {
-      for (const usuarioId of responsavelIds) {
+    if (responsavelIdsDesired.length > 0) {
+      for (const usuarioId of responsavelIdsDesired) {
         if (!Number.isInteger(usuarioId) || usuarioId < 1) {
           throw new BadRequestException(`ID de usuário inválido: ${usuarioId}`);
         }
-        // Verificar se o usuário existe
-        const user = await this.prisma.usuario.findUnique({ where: { id: usuarioId } });
-        if (!user) {
-          throw new NotFoundException(`Usuário com ID ${usuarioId} não encontrado`);
-        }
+      }
+
+      const usersExistentes = await this.prisma.usuario.findMany({
+        where: { id: { in: responsavelIdsDesired } },
+        select: { id: true },
+      });
+
+      if (usersExistentes.length !== responsavelIdsDesired.length) {
+        throw new NotFoundException('Um ou mais usuários informados não existem');
       }
     }
 
+    const projetoAtual = await (this.prisma.projeto as any).findUnique({
+      where: { id },
+      select: { setores: { select: { id: true } } },
+    });
+
+    const setorIds = projetoAtual?.setores.map((s) => s.id) ?? [];
+
+    const autoMemberIds: number[] =
+      setorIds.length > 0
+        ? await this.prisma.setorUsuario
+            .findMany({
+              where: { setorId: { in: setorIds } },
+              select: { usuarioId: true },
+            })
+            .then((rows: Array<{ usuarioId: number } | any>) =>
+              Array.from(new Set(rows.map((r) => Number(r.usuarioId)))) as number[],
+            )
+        : [];
+
+    // Se o usuário é membro automático (do setor selecionado) mas NÃO está no array desejado,
+    // ele deve entrar na lista de "excluídos" para não ser reaplicado automaticamente.
+    const excluidosAutoIds = autoMemberIds.filter((usuarioId) => !responsavelIdsDesired.includes(usuarioId));
+
     return this.prisma.$transaction(async (tx) => {
-      // Sempre deletar todos os responsáveis existentes
+      // Sempre deletar e recriar os responsáveis (lista final).
       await tx.projetoResponsavel.deleteMany({ where: { projetoId: id } });
 
-      // Se houver responsáveis para adicionar, criar os novos registros
-      if (responsavelIds.length > 0) {
-        const records = responsavelIds.map((usuarioId) => ({ projetoId: id, usuarioId }));
-      await tx.projetoResponsavel.createMany({ data: records });
+      if (responsavelIdsDesired.length > 0) {
+        await tx.projetoResponsavel.createMany({
+          data: responsavelIdsDesired.map((usuarioId) => ({
+            projetoId: id,
+            usuarioId,
+          })),
+        });
+      }
+
+      // Resetar exclusões e recriar somente as excluídas vindas automaticamente.
+      await (tx as any).projetoResponsavelExcluido.deleteMany({ where: { projetoId: id } });
+
+      if (excluidosAutoIds.length > 0) {
+        await (tx as any).projetoResponsavelExcluido.createMany({
+          data: excluidosAutoIds.map((usuarioId) => ({
+            projetoId: id,
+            usuarioId,
+          })),
+        });
       }
 
       return tx.projeto.findUnique({
         where: { id },
-        include: { 
+        include: {
           supervisor: { include: { cargo: true } },
-          responsaveis: { include: { usuario: { include: { cargo: true } } } } 
-        },
-      });
+          setores: { select: { id: true, nome: true } },
+          responsaveis: { include: { usuario: { include: { cargo: true } } } },
+          responsaveisExcluidos: { select: { usuarioId: true } },
+        } as any,
+      } as any);
     });
   }
 

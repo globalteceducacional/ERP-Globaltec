@@ -6,6 +6,7 @@ import { DataTable, DataTableColumn } from '../components/DataTable';
 import { btn } from '../utils/buttonStyles';
 import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
 import { useTextFilter } from '../hooks/useTextFilter';
+import { AppModal } from '../components/ui/AppModal';
 
 interface Category {
   id: number;
@@ -379,25 +380,18 @@ export default function Categories() {
       />
 
       {/* Modal Criar/Editar Categoria */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-neutral border-b border-white/20 px-8 py-6 flex items-center justify-between">
-              <h2 className="text-2xl font-bold">
-                {editingCategory ? 'Editar Categoria' : 'Nova Categoria'}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  setModalError(null);
-                  validation.reset();
-                }}
-                className="text-white/50 hover:text-white transition-colors text-2xl"
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} className="p-8 space-y-4">
+      <AppModal
+        open={showModal}
+        onClose={() => {
+          setShowModal(false);
+          setModalError(null);
+          validation.reset();
+        }}
+        title={editingCategory ? 'Editar Categoria' : 'Nova Categoria'}
+        size="md"
+        bodyClassName="p-8"
+      >
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">
                   Nome da Categoria *
@@ -482,9 +476,7 @@ export default function Categories() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </AppModal>
     </div>
   );
 }

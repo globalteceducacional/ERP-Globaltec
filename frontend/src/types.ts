@@ -49,8 +49,11 @@ export interface Projeto {
   id: number;
   nome: string;
   status: 'EM_ANDAMENTO' | 'FINALIZADO';
+  // Legado (projeto com 1 setor)
   setorId?: number | null;
   setor?: { id: number; nome: string } | null;
+  // Novo (projeto com múltiplos setores responsáveis)
+  setores?: { id: number; nome: string }[];
   resumo?: string | null;
   objetivo?: string | null;
   descricaoLonga?: string | null;
@@ -59,6 +62,8 @@ export interface Projeto {
   valorInsumos: number;
   supervisor?: Usuario | null;
   responsaveis?: { usuario: Usuario }[];
+  // Usuários que eram membros automáticos de setores selecionados mas foram removidos manualmente.
+  responsaveisExcluidos?: { usuarioId: number }[];
   _count?: { etapas: number };
   progress?: number;
 }

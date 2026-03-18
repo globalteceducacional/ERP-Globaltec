@@ -7,6 +7,8 @@ import { formatApiError, toast } from '../utils/toast';
 import { Category, Projeto, Supplier } from '../types/stock';
 import { FileDropInput } from '../components/FileDropInput';
 import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
+import { AppModal } from '../components/ui/AppModal';
+import { AppSelect } from '../components/ui/AppSelect';
 
 interface CuradoriaItem {
   id: number;
@@ -683,19 +685,13 @@ export default function CuradoriaBudgetDetails() {
       />
 
       {showEditBudgetModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral border border-white/10 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">Editar orçamento</h3>
-              <button
-                type="button"
-                onClick={() => setShowEditBudgetModal(false)}
-                className="text-white/50 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleEditBudget} className="p-6 space-y-4">
+        <AppModal
+          open={showEditBudgetModal}
+          onClose={() => setShowEditBudgetModal(false)}
+          title="Editar orçamento"
+          size="lg"
+        >
+            <form onSubmit={handleEditBudget} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className={labelClass}>Nome do orçamento</label>
@@ -711,89 +707,76 @@ export default function CuradoriaBudgetDetails() {
                 </div>
                 <div>
                   <label className={labelClass}>Projeto</label>
-                  <select
+                  <AppSelect
                     value={editBudgetForm.projetoId ?? ''}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setEditBudgetForm((prev) => ({
                         ...prev,
-                        projetoId: event.target.value ? Number(event.target.value) : undefined,
+                        projetoId: value ? Number(value) : undefined,
                       }))
                     }
-                    className={fieldClass}
-                  >
-                    <option value="">Sem projeto</option>
-                    {projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.nome}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Sem projeto"
+                    options={projects.map((project) => ({
+                      value: project.id,
+                      label: project.nome,
+                    }))}
+                    selectClassName={fieldClass}
+                  />
                 </div>
                 <div>
                   <label className={labelClass}>Setor</label>
-                  <select
+                  <AppSelect
                     value={editBudgetForm.setorId ?? ''}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setEditBudgetForm((prev) => ({
                         ...prev,
-                        setorId: event.target.value ? Number(event.target.value) : undefined,
+                        setorId: value ? Number(value) : undefined,
                       }))
                     }
-                    className={fieldClass}
-                  >
-                    <option value="">Sem setor</option>
-                    {setores.map((setor) => (
-                      <option key={setor.id} value={setor.id}>
-                        {setor.nome}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Sem setor"
+                    options={setores.map((setor) => ({
+                      value: setor.id,
+                      label: setor.nome,
+                    }))}
+                    selectClassName={fieldClass}
+                  />
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
                   <label className={labelClass}>Fornecedor</label>
-                  <select
+                  <AppSelect
                     value={editBudgetForm.fornecedorId ?? ''}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setEditBudgetForm((prev) => ({
                         ...prev,
-                        fornecedorId: event.target.value ? Number(event.target.value) : undefined,
+                        fornecedorId: value ? Number(value) : undefined,
                       }))
                     }
-                    className={fieldClass}
-                  >
-                    <option value="">Fornecedor (opcional)</option>
-                    {suppliers.map((supplier) => (
-                      <option key={supplier.id} value={supplier.id}>
-                        {supplier.nomeFantasia || supplier.razaoSocial}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Fornecedor (opcional)"
+                    options={suppliers.map((supplier) => ({
+                      value: supplier.id,
+                      label: supplier.nomeFantasia || supplier.razaoSocial,
+                    }))}
+                    selectClassName={fieldClass}
+                  />
                 </div>
                 <div>
                   <label className={labelClass}>Status</label>
-                  <select
+                  <AppSelect
                     value={editBudgetForm.status}
-                    onChange={(event) =>
+                    onChange={(value) =>
                       setEditBudgetForm((prev) => ({
                         ...prev,
-                        status: event.target.value as CuradoriaEditBudgetForm['status'],
+                        status: value as CuradoriaEditBudgetForm['status'],
                       }))
                     }
-                    className={fieldClass}
-                  >
-                    {CURADORIA_STATUS_OPTIONS.map((option) => (
-                    <option
-                      key={option.value}
-                      value={option.value}
-                      className="bg-neutral text-white"
-                      style={{ color: '#111827', backgroundColor: '#f3f4f6' }}
-                    >
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                    options={CURADORIA_STATUS_OPTIONS.map((option) => ({
+                      value: option.value,
+                      label: option.label,
+                    }))}
+                    selectClassName={fieldClass}
+                  />
                 </div>
               </div>
               <div>
@@ -892,14 +875,15 @@ export default function CuradoriaBudgetDetails() {
                   <div className="bg-black/20 border border-primary/30 rounded-md p-3 space-y-2">
                     <p className="text-xs text-white/80 font-medium">Tipo de desconto no total</p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      <select
+                      <AppSelect
                         value={editBudgetDiscountType}
-                        onChange={(event) => setEditBudgetDiscountType(event.target.value as TotalDiscountInputType)}
-                        className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
-                      >
-                        <option value="VALOR">Valor (R$)</option>
-                        <option value="PERCENTUAL">Porcentagem (%)</option>
-                      </select>
+                        onChange={(value) => setEditBudgetDiscountType(value as TotalDiscountInputType)}
+                        options={[
+                          { value: 'VALOR', label: 'Valor (R$)' },
+                          { value: 'PERCENTUAL', label: 'Porcentagem (%)' },
+                        ]}
+                        selectClassName="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                      />
                       <input
                         type="number"
                         min="0"
@@ -945,29 +929,20 @@ export default function CuradoriaBudgetDetails() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </AppModal>
       )}
 
       {showEditItemModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-neutral border border-white/10 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-              <h3 className="text-lg font-semibold">
-                {isCreatingItem ? 'Adicionar item ao orçamento' : 'Editar item do orçamento'}
-              </h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowEditItemModal(false);
-                  setEditingItemId(null);
-                }}
-                className="text-white/50 hover:text-white"
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleEditItem} className="p-6 space-y-4">
+        <AppModal
+          open={showEditItemModal}
+          onClose={() => {
+            setShowEditItemModal(false);
+            setEditingItemId(null);
+          }}
+          title={isCreatingItem ? 'Adicionar item ao orçamento' : 'Editar item do orçamento'}
+          size="lg"
+        >
+            <form onSubmit={handleEditItem} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-xs text-white/70">Título (opcional)</label>
@@ -1173,27 +1148,20 @@ export default function CuradoriaBudgetDetails() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </AppModal>
       )}
 
       {showDeleteItemModal && orcamento && itemToDelete && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-md w-full max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-white/15 flex items-center justify-between">
-              <h3 className="text-lg font-semibold text-white">Remover item do orçamento</h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowDeleteItemModal(false);
-                  setItemToDelete(null);
-                }}
-                className="text-white/50 hover:text-white transition-colors text-2xl"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
+        <AppModal
+          open={showDeleteItemModal && !!orcamento && !!itemToDelete}
+          onClose={() => {
+            setShowDeleteItemModal(false);
+            setItemToDelete(null);
+          }}
+          title="Remover item do orçamento"
+          size="sm"
+          bodyClassName="p-6 space-y-4"
+        >
               <p className="text-sm text-white/80">
                 Tem certeza que deseja remover o item{' '}
                 <span className="font-semibold">"{itemToDelete.nome}"</span> deste orçamento?
@@ -1236,9 +1204,7 @@ export default function CuradoriaBudgetDetails() {
                   Remover item
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
+        </AppModal>
       )}
     </div>
   );

@@ -6,6 +6,7 @@ import { useAuthStore } from '../store/auth';
 import { ChecklistItemEntrega, ChecklistItem } from '../types';
 import { toast, formatApiError } from '../utils/toast';
 import { FileDropInput } from '../components/FileDropInput';
+import { AppModal } from '../components/ui/AppModal';
 import {
   getStatusColor,
   getStatusLabel,
@@ -1663,8 +1664,14 @@ export default function MyTasks() {
       )}
 
       {showEntregaModal && selectedEtapa && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <AppModal
+          open={showEntregaModal && !!selectedEtapa}
+          onClose={handleCloseEntregaModal}
+          title=""
+          showHeader={false}
+          size="md"
+          bodyClassName="p-0"
+        >
             <div className="px-6 py-4 border-b border-white/20 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-white">
@@ -1746,13 +1753,18 @@ export default function MyTasks() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </AppModal>
       )}
 
       {showChecklistModal && selectedChecklistEtapa !== null && selectedChecklistIndex !== null && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <AppModal
+          open={showChecklistModal && selectedChecklistEtapa !== null && selectedChecklistIndex !== null}
+          onClose={handleCloseChecklistModal}
+          title=""
+          showHeader={false}
+          size="md"
+          bodyClassName="p-0"
+        >
             <div className="px-6 py-4 border-b border-white/20 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-white">
@@ -1856,14 +1868,22 @@ export default function MyTasks() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
+        </AppModal>
       )}
 
       {/* Modal Visualizar Entrega */}
       {showViewEntregaModal && selectedViewEntrega && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
+        <AppModal
+          open={showViewEntregaModal && !!selectedViewEntrega}
+          onClose={() => {
+            setShowViewEntregaModal(false);
+            setSelectedViewEntrega(null);
+          }}
+          title=""
+          showHeader={false}
+          size="md"
+          bodyClassName="p-0"
+        >
             <div className="px-6 py-4 border-b border-white/20 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-white">Detalhes da Entrega</h2>
@@ -2179,8 +2199,7 @@ export default function MyTasks() {
                 </button>
               </div>
             </div>
-          </div>
-        </div>
+        </AppModal>
       )}
     </div>
   );

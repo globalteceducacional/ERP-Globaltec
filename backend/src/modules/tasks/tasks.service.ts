@@ -231,6 +231,22 @@ export class TasksService {
       createData.responsavel = { connect: { id: data.responsavelId } };
     }
 
+    const setorIdsToConnect: number[] | undefined =
+      (Array.isArray((data as any).setorIds) ? (data as any).setorIds : undefined) ??
+      (typeof data.setorId !== 'undefined'
+        ? data.setorId > 0
+          ? [data.setorId]
+          : []
+        : undefined);
+
+    if (setorIdsToConnect && setorIdsToConnect.length > 0) {
+      const idsUnique: number[] = Array.from(new Set(setorIdsToConnect)) as number[];
+      for (const setorId of idsUnique) {
+        await this.ensureSetorExists(setorId);
+      }
+      createData.setores = { connect: idsUnique.map((id) => ({ id })) };
+    }
+
     // Tratar integrantes
     if (data.integrantesIds && Array.isArray(data.integrantesIds) && data.integrantesIds.length > 0) {
       // Validar que todos os IDs existem
@@ -244,15 +260,24 @@ export class TasksService {
 
     const created = await this.prisma.etapa.create({
       data: createData,
-      include: { executor: true, responsavel: true, projeto: true, sessao: true, integrantes: { include: { usuario: true } } },
+      include: {
+        executor: true,
+        responsavel: true,
+        projeto: true,
+        sessao: true,
+        setores: true,
+        integrantes: { include: { usuario: true } },
+      } as any,
     });
 
-    await this.updateProjetoStatus(created.projetoId);
+    const createdAny = created as any;
+
+    await this.updateProjetoStatus(createdAny.projetoId);
 
     // Notificar cada integrante (não falhar a criação da etapa se a notificação falhar)
-    if (data.integrantesIds && data.integrantesIds.length > 0 && created.projeto) {
-      const projetoNome = created.projeto.nome ?? 'Projeto';
-      const etapaNome = created.nome ?? 'Etapa';
+    if (data.integrantesIds && data.integrantesIds.length > 0 && createdAny.projeto) {
+      const projetoNome = createdAny.projeto.nome ?? 'Projeto';
+      const etapaNome = createdAny.nome ?? 'Etapa';
       const mensagem = `Você foi adicionado como integrante da etapa "${etapaNome}" do projeto "${projetoNome}".`;
       const ids = data.integrantesIds.map((id) => Number(id)).filter((id) => !Number.isNaN(id) && id > 0);
       for (const usuarioId of ids) {
@@ -338,6 +363,23 @@ export class TasksService {
         await this.ensureProjectExists(data.projetoId);
         payload.projeto = { connect: { id: data.projetoId } };
       }
+    }
+
+    // Tratar setores da etapa
+    const hasSetorIds = (data as any).setorIds !== undefined;
+    const hasSetorIdLegacy = (data as any).setorId !== undefined;
+
+    if (hasSetorIds || hasSetorIdLegacy) {
+      const setorIdsToSet: number[] =
+        (hasSetorIds ? (Array.isArray((data as any).setorIds) ? (data as any).setorIds : []) : undefined) ??
+        (typeof (data as any).setorId !== 'undefined' ? ((data as any).setorId > 0 ? [(data as any).setorId] : []) : []);
+
+      const setorIdsUnique: number[] = Array.from(new Set(setorIdsToSet)) as number[];
+      for (const setorId of setorIdsUnique) {
+        await this.ensureSetorExists(setorId);
+      }
+
+      payload.setores = { set: setorIdsUnique.map((id) => ({ id })) };
     }
 
     const etapaAntes = await this.prisma.etapa.findUnique({
@@ -1560,6 +1602,13 @@ export class TasksService {
     const user = await this.prisma.usuario.findUnique({ where: { id } });
     if (!user) {
       throw new BadRequestException('Usuário informado não existe');
+    }
+  }
+
+  private async ensureSetorExists(id: number) {
+    const setor = await this.prisma.setor.findUnique({ where: { id } });
+    if (!setor) {
+      throw new BadRequestException('Setor informado não existe');
     }
   }
 

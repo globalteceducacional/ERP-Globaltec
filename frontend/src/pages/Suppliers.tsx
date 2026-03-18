@@ -5,6 +5,7 @@ import { useFormValidation, validators, errorMessages } from '../utils/validatio
 import { btn } from '../utils/buttonStyles';
 import { DataTable, DataTableColumn } from '../components/DataTable';
 import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
+import { AppModal } from '../components/ui/AppModal';
 
 interface Supplier {
   id: number;
@@ -474,25 +475,18 @@ export default function Suppliers() {
       />
 
       {/* Modal Criar/Editar Fornecedor */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/20 rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-neutral border-b border-white/20 px-8 py-6 flex items-center justify-between">
-              <h2 className="text-2xl font-bold">
-                {editingSupplier ? 'Editar Fornecedor' : 'Novo Fornecedor'}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  setModalError(null);
-                  validation.reset();
-                }}
-                className="text-white/50 hover:text-white transition-colors text-2xl"
-              >
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleSubmit} className="p-8 space-y-4">
+      <AppModal
+        open={showModal}
+        onClose={() => {
+          setShowModal(false);
+          setModalError(null);
+          validation.reset();
+        }}
+        title={editingSupplier ? 'Editar Fornecedor' : 'Novo Fornecedor'}
+        size="lg"
+        bodyClassName="p-8"
+      >
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-white/90 mb-2">
                   CNPJ *
@@ -647,9 +641,7 @@ export default function Suppliers() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </AppModal>
     </div>
   );
 }

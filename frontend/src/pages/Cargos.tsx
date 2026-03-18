@@ -7,6 +7,7 @@ import { DataTable, DataTableColumn } from '../components/DataTable';
 import { toast, formatApiError } from '../utils/toast';
 import { useFormValidation, validators, errorMessages } from '../utils/validation';
 import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
+import { AppModal } from '../components/ui/AppModal';
 
 interface CreateCargoForm {
   nome: string;
@@ -469,27 +470,18 @@ export default function Cargos() {
       />
 
       {/* Modal de Criar/Editar Cargo */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-neutral border border-white/10 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-neutral border-b border-white/10 px-6 py-4 flex items-center justify-between">
-              <h3 className="text-xl font-semibold">
-                {editingCargo ? 'Editar Cargo' : 'Novo Cargo'}
-              </h3>
-              <button
-                onClick={() => {
-                  setShowModal(false);
-                  setEditingCargo(null);
-                  setError(null);
-                  setModalError(null);
-                }}
-                className="text-white/50 hover:text-white transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+      <AppModal
+        open={showModal}
+        onClose={() => {
+          setShowModal(false);
+          setEditingCargo(null);
+          setError(null);
+          setModalError(null);
+        }}
+        title={editingCargo ? 'Editar Cargo' : 'Novo Cargo'}
+        size="lg"
+      >
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-sm text-white/70 mb-1">
                   Nome <span className="text-danger">*</span>
@@ -639,9 +631,7 @@ export default function Cargos() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
+      </AppModal>
     </div>
   );
 }

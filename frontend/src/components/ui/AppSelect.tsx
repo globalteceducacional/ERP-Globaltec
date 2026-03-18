@@ -14,6 +14,7 @@ interface AppSelectProps {
   className?: string;
   selectClassName?: string;
   disabled?: boolean;
+  required?: boolean;
 }
 
 const baseSelectClass =
@@ -36,6 +37,7 @@ export function AppSelect({
   className = '',
   selectClassName = '',
   disabled = false,
+  required = false,
 }: AppSelectProps) {
   return (
     <div className={className}>
@@ -46,8 +48,10 @@ export function AppSelect({
         value={value}
         onChange={(e: ChangeEvent<HTMLSelectElement>) => onChange(e.target.value)}
         className={`${baseSelectClass} ${selectClassName}`}
-        style={arrowStyle}
+        style={{ ...arrowStyle, colorScheme: 'dark' }}
         disabled={disabled}
+        required={required}
+        data-app-select
       >
         {placeholder && (
           <option value="" className="bg-neutral text-white">

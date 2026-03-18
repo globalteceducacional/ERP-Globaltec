@@ -113,6 +113,7 @@ model Usuario {
   ativo                       Boolean                @default(false)
   dataCadastro                DateTime               @default(now())
   projetosResponsavel         ProjetoResponsavel[]
+  projetosResponsavelExcluidos ProjetoResponsavelExcluido[]
   projetos                    Projeto[]              @relation("Supervisor")
   etapasExecutadas            Etapa[]                @relation("Executor")
   etapasComoResponsavel       Etapa[]                @relation("ResponsavelEtapa")
@@ -140,7 +141,8 @@ model Setor {
   dataCriacao       DateTime       @default(now())
   dataAtualizacao   DateTime       @updatedAt
   membros           SetorUsuario[]
-  projetos          Projeto[]
+  projetos          Projeto[]     @relation("ProjetoSetores")
+  etapas            Etapa[]       @relation("EtapaSetores")
   compras           Compra[]
   curadoriaOrcamentos CuradoriaOrcamento[]
 }
@@ -170,17 +172,15 @@ model Projeto {
   planilhaJson        Json?
   supervisorId        Int?
   supervisor          Usuario?             @relation("Supervisor", fields: [supervisorId], references: [id])
-  setorId             Int?
-  setor               Setor?               @relation(fields: [setorId], references: [id], onDelete: SetNull)
+  setores             Setor[]             @relation("ProjetoSetores")
   sessoes             Sessao[]
   etapas              Etapa[]
   responsaveis        ProjetoResponsavel[]
+  responsaveisExcluidos ProjetoResponsavelExcluido[]
   compras             Compra[]
   curadoriaOrcamentos CuradoriaOrcamento[]
   estoqueItems        Estoque[]
   estoqueAlocacoes    EstoqueAlocacao[]
-
-  @@index([setorId])
 }
 
 enum CuradoriaDescontoAplicadoEm {
@@ -259,6 +259,18 @@ model ProjetoResponsavel {
   @@id([projetoId, usuarioId])
 }
 
+// Guarda quais membros vindos automaticamente dos setores NÃO devem ser reaplicados como
+// "responsáveis" do projeto quando os setores continuam selecionados.
+model ProjetoResponsavelExcluido {
+  projetoId Int
+  usuarioId Int
+
+  projeto Projeto @relation(fields: [projetoId], references: [id], onDelete: Cascade)
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@id([projetoId, usuarioId])
+}
+
 model EtapaIntegrante {
   etapaId   Int
   usuarioId Int
@@ -288,6 +300,7 @@ model Etapa {
   executor          Usuario                @relation("Executor", fields: [executorId], references: [id])
   responsavelId     Int?
   responsavel       Usuario?               @relation("ResponsavelEtapa", fields: [responsavelId], references: [id], onDelete: SetNull)
+  setores           Setor[]               @relation("EtapaSetores")
   integrantes       EtapaIntegrante[]
   subetapas         Subetapa[]
   requerimentos     Requerimento[]
