@@ -861,6 +861,8 @@ export default function Projects() {
         data={filteredProjects}
         keyExtractor={(p) => p.id}
         emptyMessage="Nenhum projeto cadastrado"
+        paginate
+        initialPageSize={20}
         onRowClick={(p) => navigate(`/projects/${p.id}`)}
         renderMobileCard={(p) => {
           const progressValue = p.progress ?? 0;

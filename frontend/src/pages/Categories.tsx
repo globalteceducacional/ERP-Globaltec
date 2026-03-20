@@ -267,6 +267,8 @@ export default function Categories() {
         data={filteredCategories}
         keyExtractor={(c) => c.id}
         emptyMessage="Nenhuma categoria encontrada"
+        paginate
+        initialPageSize={20}
         renderMobileCard={(c) => (
           <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-3">
             {/* Cabeçalho: nome + status */}

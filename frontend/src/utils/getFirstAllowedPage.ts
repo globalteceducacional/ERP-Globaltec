@@ -14,12 +14,12 @@ export function getFirstAllowedPage(user: Usuario | null): string {
   if (typeof user.cargo === 'string') {
     // Formato antigo: cargo é uma string
     const allowedMap: Record<string, string[]> = {
-      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
-      GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
+      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
+      GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
       SUPERVISOR: ['/tasks/my', '/curadoria', '/communications'],
       EXECUTOR: ['/tasks/my', '/curadoria', '/communications'],
-      COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
-      PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
+      COTADOR: ['/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications'],
+      PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications'],
     };
     paginasPermitidas = allowedMap[user.cargo] || [];
   } else if (user.cargo && typeof user.cargo === 'object' && 'nome' in user.cargo) {
@@ -28,6 +28,17 @@ export function getFirstAllowedPage(user: Usuario | null): string {
       paginasPermitidas = user.cargo.paginasPermitidas;
     } else {
       paginasPermitidas = [];
+    }
+  }
+
+  // Se o usuário tiver permissões para o Galpão, garantimos uma rota inicial para `/galpao`.
+  if (user && typeof user.cargo !== 'string') {
+    const permissionKeys = Array.isArray(user.cargo.permissions)
+      ? user.cargo.permissions.map((p) => p.chave ?? `${p.modulo}:${p.acao}`)
+      : [];
+    const hasGalpao = permissionKeys.includes('estoque:visualizar') || permissionKeys.includes('estoque:movimentar');
+    if (hasGalpao && !paginasPermitidas.includes('/galpao')) {
+      paginasPermitidas = ['/galpao', ...paginasPermitidas];
     }
   }
 

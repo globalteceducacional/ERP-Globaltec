@@ -1773,6 +1773,8 @@ export default function Stock() {
           data={filteredItems}
           keyExtractor={(i) => i.id}
           emptyMessage={items.length === 0 ? 'Nenhum item no estoque' : 'Nenhum item encontrado com os filtros aplicados'}
+          paginate
+          initialPageSize={20}
           tableClassName="table-fixed sm:table-auto"
           onRowClick={(item) => { setItemToView(item); setShowItemDetailsModal(true); }}
           renderMobileCard={(item) => {
@@ -2468,6 +2470,8 @@ export default function Stock() {
           data={filteredSolicitacoes}
           keyExtractor={(p) => p.id}
           emptyMessage="Nenhuma solicitação pendente"
+          paginate
+          initialPageSize={20}
           rowClassName={() => 'bg-yellow-500/10'}
           renderMobileCard={(p) => {
             const sol = (p as any).solicitadoPor;

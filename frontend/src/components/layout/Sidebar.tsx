@@ -5,6 +5,7 @@ const links = [
   { to: '/categories', label: 'Categorias', icon: IconTag },
   { to: '/stock', label: 'Compras & Estoque', icon: IconCart },
   { to: '/curadoria', label: 'Curadoria', icon: IconBook },
+  { to: '/galpao', label: 'Galpão', icon: IconWarehouse },
   { to: '/dashboard', label: 'Dashboard', icon: IconDashboard },
   { to: '/suppliers', label: 'Fornecedores', icon: IconTruck },
   { to: '/tasks/my', label: 'Meu Trabalho', icon: IconClipboard },
@@ -109,6 +110,15 @@ function IconBuilding({ className }: { className?: string }) {
   );
 }
 
+function IconWarehouse({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10l9-7 9 7v10a2 2 0 01-2 2H5a2 2 0 01-2-2V10z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 22V12h6v10" />
+    </svg>
+  );
+}
+
 const SIDEBAR_STORAGE_KEY = 'erp-sidebar-collapsed';
 
 export function getSidebarCollapsedDefault(): boolean {
@@ -153,12 +163,12 @@ export function Sidebar({ collapsed, onToggle, isMobile, mobileOpen, onCloseMobi
   if (typeof user.cargo === 'string') {
     userCargoNome = user.cargo;
     const allowedMap: Record<string, string[]> = {
-      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
-      GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
+      DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
+      GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
       SUPERVISOR: ['/tasks/my', '/communications'],
       EXECUTOR: ['/tasks/my', '/communications'],
-      COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
-      PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
+      COTADOR: ['/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications'],
+      PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications'],
     };
     paginasPermitidas = allowedMap[userCargoNome] || [];
   } else if (user.cargo && typeof user.cargo === 'object' && 'nome' in user.cargo) {
@@ -169,14 +179,25 @@ export function Sidebar({ collapsed, onToggle, isMobile, mobileOpen, onCloseMobi
   }
 
   const filteredLinks = links.filter((link) => {
+    if (link.to === '/galpao') {
+      if (paginasPermitidas.includes('/galpao')) return true;
+
+      // Mesmo que `/galpao` não esteja em `paginasPermitidas`, liberamos via permissões.
+      if (typeof user.cargo !== 'string' && Array.isArray(user.cargo.permissions)) {
+        const permissionKeys = user.cargo.permissions.map((p) => p.chave ?? `${p.modulo}:${p.acao}`);
+        return permissionKeys.includes('estoque:visualizar') || permissionKeys.includes('estoque:movimentar');
+      }
+      return false;
+    }
+
     if (paginasPermitidas.length === 0) {
       const allowedMap: Record<string, string[]> = {
-        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
-        GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
+        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
+        GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores'],
         SUPERVISOR: ['/tasks/my', '/communications'],
         EXECUTOR: ['/tasks/my', '/communications'],
-        COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
-        PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications'],
+        COTADOR: ['/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications'],
+        PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications'],
       };
       return allowedMap[userCargoNome]?.includes(link.to) || false;
     }
@@ -233,7 +254,11 @@ export function Sidebar({ collapsed, onToggle, isMobile, mobileOpen, onCloseMobi
         )}
       </div>
 
-      <nav className={`flex flex-col gap-1 overflow-hidden flex-1 ${showAsDrawer || collapsed ? 'p-2' : 'p-4'}`}>
+      <nav
+        className={`flex flex-col gap-1 overflow-y-auto overflow-x-hidden flex-1 ${
+          showAsDrawer || collapsed ? 'p-2' : 'p-4'
+        }`}
+      >
         {filteredLinks.length === 0 ? (
           <p className={`text-white/50 text-sm ${showAsDrawer || collapsed ? 'px-2 py-2 text-center' : 'px-4 py-2'}`}>
             {showAsDrawer || collapsed ? '—' : 'Nenhum menu disponível'}

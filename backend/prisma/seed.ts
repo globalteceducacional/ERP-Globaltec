@@ -206,15 +206,72 @@ async function main() {
 
   console.log('✅ Usuários de exemplo criados');
 
+  // Criar setores de exemplo e membros
+  const setorCuradoria = await prisma.setor.upsert({
+    where: { nome: 'Curadoria' },
+    update: { ativo: true, descricao: 'Equipe responsável pela curadoria de livros' },
+    create: {
+      nome: 'Curadoria',
+      descricao: 'Equipe responsável pela curadoria de livros',
+      ativo: true,
+    },
+  });
+
+  const setorEstudio = await prisma.setor.upsert({
+    where: { nome: 'Estúdio' },
+    update: { ativo: true, descricao: 'Equipe de execução e produção' },
+    create: {
+      nome: 'Estúdio',
+      descricao: 'Equipe de execução e produção',
+      ativo: true,
+    },
+  });
+
+  await prisma.setorUsuario.upsert({
+    where: { setorId_usuarioId: { setorId: setorCuradoria.id, usuarioId: supervisor.id } },
+    update: {},
+    create: { setorId: setorCuradoria.id, usuarioId: supervisor.id },
+  });
+  await prisma.setorUsuario.upsert({
+    where: { setorId_usuarioId: { setorId: setorCuradoria.id, usuarioId: executor.id } },
+    update: {},
+    create: { setorId: setorCuradoria.id, usuarioId: executor.id },
+  });
+  await prisma.setorUsuario.upsert({
+    where: { setorId_usuarioId: { setorId: setorEstudio.id, usuarioId: executor.id } },
+    update: {},
+    create: { setorId: setorEstudio.id, usuarioId: executor.id },
+  });
+
+  console.log('✅ Setores de exemplo criados e membros vinculados');
+
   // Criar projeto de exemplo
-  const projeto = await prisma.projeto.create({
-    data: {
+  const projeto = await prisma.projeto.upsert({
+    where: { nome: 'Projeto Exemplo' },
+    update: {
+      resumo: 'Este é um projeto de exemplo para testes',
+      objetivo: 'Demonstrar funcionalidades do sistema',
+      valorTotal: 50000,
+      valorInsumos: 15000,
+      supervisorId: supervisor.id,
+      setores: {
+        set: [{ id: setorCuradoria.id }, { id: setorEstudio.id }],
+      },
+      responsaveis: {
+        deleteMany: {},
+        create: [{ usuarioId: supervisor.id }, { usuarioId: executor.id }],
+      },
+    },
+    create: {
       nome: 'Projeto Exemplo',
       resumo: 'Este é um projeto de exemplo para testes',
       objetivo: 'Demonstrar funcionalidades do sistema',
       valorTotal: 50000,
       valorInsumos: 15000,
       supervisorId: supervisor.id,
+      setores: {
+        connect: [{ id: setorCuradoria.id }, { id: setorEstudio.id }],
+      },
       responsaveis: {
         create: [{ usuarioId: supervisor.id }, { usuarioId: executor.id }],
       },
@@ -224,18 +281,128 @@ async function main() {
   console.log('✅ Projeto de exemplo criado:', projeto.nome);
 
   // Criar etapa de exemplo
-  const etapa = await prisma.etapa.create({
-    data: {
-      nome: 'Desenvolvimento Inicial',
-      descricao: 'Primeira etapa do projeto exemplo',
-      projetoId: projeto.id,
-      executorId: executor.id,
-      status: 'PENDENTE',
-      valorInsumos: 5000,
-    },
+  const etapaExistente = await prisma.etapa.findFirst({
+    where: { projetoId: projeto.id, nome: 'Desenvolvimento Inicial' },
+    select: { id: true },
+  });
+
+  const etapa = etapaExistente
+    ? await prisma.etapa.update({
+        where: { id: etapaExistente.id },
+        data: {
+          descricao: 'Primeira etapa do projeto exemplo',
+          executorId: executor.id,
+          status: 'PENDENTE',
+          valorInsumos: 5000,
+          setores: {
+            set: [{ id: setorCuradoria.id }, { id: setorEstudio.id }],
+          },
+        },
+      })
+    : await prisma.etapa.create({
+        data: {
+          nome: 'Desenvolvimento Inicial',
+          descricao: 'Primeira etapa do projeto exemplo',
+          projetoId: projeto.id,
+          executorId: executor.id,
+          status: 'PENDENTE',
+          valorInsumos: 5000,
+          setores: {
+            connect: [{ id: setorCuradoria.id }, { id: setorEstudio.id }],
+          },
+        },
+      });
+
+  await prisma.etapaIntegrante.upsert({
+    where: { etapaId_usuarioId: { etapaId: etapa.id, usuarioId: supervisor.id } },
+    update: {},
+    create: { etapaId: etapa.id, usuarioId: supervisor.id },
+  });
+  await prisma.etapaIntegrante.upsert({
+    where: { etapaId_usuarioId: { etapaId: etapa.id, usuarioId: executor.id } },
+    update: {},
+    create: { etapaId: etapa.id, usuarioId: executor.id },
   });
 
   console.log('✅ Etapa de exemplo criada:', etapa.nome);
+
+  // Criar orçamento de curadoria ENTREGUE de exemplo (gera estoque na aba Curadoria)
+  const curadoriaExistente = await prisma.curadoriaOrcamento.findFirst({
+    where: { nome: 'Curadoria Seed - Estoque Inicial' },
+    select: { id: true },
+  });
+
+  const curadoria = curadoriaExistente
+    ? await prisma.curadoriaOrcamento.update({
+        where: { id: curadoriaExistente.id },
+        data: {
+          status: 'ENTREGUE',
+          projetoId: projeto.id,
+          setorId: setorCuradoria.id,
+          descontoAplicadoEm: 'ITEM',
+          descontoTotal: 0,
+        },
+      })
+    : await prisma.curadoriaOrcamento.create({
+        data: {
+          nome: 'Curadoria Seed - Estoque Inicial',
+          observacao: 'Orçamento de seed para validar fluxo de estoque da curadoria.',
+          status: 'ENTREGUE',
+          projetoId: projeto.id,
+          setorId: setorCuradoria.id,
+          criadoPorId: admin.id,
+          descontoAplicadoEm: 'ITEM',
+          descontoTotal: 0,
+        },
+      });
+
+  const categoriaLivro = await prisma.categoriaCompra.findFirst({
+    where: { tipo: 'LIVRO', ativo: true },
+    select: { id: true, nome: true },
+  });
+
+  if (categoriaLivro) {
+    const isbn = '9788579802201';
+    const itemExistente = await prisma.curadoriaItem.findFirst({
+      where: {
+        orcamentoId: curadoria.id,
+        isbn,
+        categoriaId: categoriaLivro.id,
+      },
+      select: { id: true },
+    });
+
+    const itemPayload = {
+      nome: '360 dias de sucesso',
+      isbn,
+      quantidade: 50,
+      categoriaId: categoriaLivro.id,
+      valor: 14.76,
+      desconto: 0,
+      valorLiquido: 14.76,
+      autor: 'Autor Seed',
+      editora: 'Editora Seed',
+      anoPublicacao: '2024',
+    };
+
+    if (itemExistente) {
+      await prisma.curadoriaItem.update({
+        where: { id: itemExistente.id },
+        data: itemPayload,
+      });
+    } else {
+      await prisma.curadoriaItem.create({
+        data: {
+          orcamentoId: curadoria.id,
+          ...itemPayload,
+        },
+      });
+    }
+
+    console.log(`✅ Curadoria/estoque de exemplo criado com gênero ${categoriaLivro.nome}`);
+  } else {
+    console.log('⚠️ Nenhuma categoria LIVRO ativa encontrada para criar item de curadoria no seed.');
+  }
 
   // Criar notificação de exemplo
   await prisma.notificacao.create({

@@ -1026,6 +1026,8 @@ export default function Communications() {
             keyExtractor={(r) => r.id}
             loading={loading}
             emptyMessage="Nenhum requerimento encontrado"
+            paginate
+            initialPageSize={20}
             onRowClick={(r) => handleRequestClick(r)}
             renderMobileCard={(r) => (
               <div

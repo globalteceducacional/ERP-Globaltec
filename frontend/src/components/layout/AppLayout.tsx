@@ -11,6 +11,7 @@ const titles: Record<string, { title: string; subtitle?: string }> = {
   '/projects': { title: 'Projetos', subtitle: 'Gestão de projetos ativos e finalizados' },
   '/tasks/my': { title: 'Meu Trabalho', subtitle: 'Acompanhe suas tarefas e subetapas' },
   '/curadoria': { title: 'Curadoria', subtitle: 'Orçamentos de livros' },
+  '/galpao': { title: 'Galpão', subtitle: 'Controle de entradas, alocações e baixas' },
   '/stock': { title: 'Compras & Estoque', subtitle: 'Controle de ativos e requisições' },
   '/suppliers': { title: 'Fornecedores', subtitle: 'Gerenciamento de fornecedores' },
   '/categories': { title: 'Categorias', subtitle: 'Gerenciamento de categorias de compras' },
@@ -59,12 +60,12 @@ export function AppLayout() {
     
     if (typeof user.cargo === 'string') {
       const allowedMap: Record<string, string[]> = {
-        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores', '/notifications'],
-        GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores', '/notifications'],
+        DIRETOR: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores', '/notifications'],
+        GM: ['/dashboard', '/projects', '/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications', '/users', '/cargos', '/setores', '/notifications'],
         SUPERVISOR: ['/tasks/my', '/communications', '/notifications'],
         EXECUTOR: ['/tasks/my', '/communications', '/notifications'],
-        COTADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/notifications'],
-        PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/suppliers', '/categories', '/communications', '/notifications'],
+        COTADOR: ['/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications', '/notifications'],
+        PAGADOR: ['/tasks/my', '/curadoria', '/stock', '/galpao', '/suppliers', '/categories', '/communications', '/notifications'],
       };
       paginasPermitidas = allowedMap[user.cargo] || [];
     } else if (user.cargo && typeof user.cargo === 'object' && 'nome' in user.cargo) {
@@ -79,6 +80,14 @@ export function AppLayout() {
     // Verificar se a rota atual está nas páginas permitidas
     // Para rotas dinâmicas como /projects/:id, verificar se começa com /projects
     const currentPath = location.pathname;
+    if (currentPath.startsWith('/galpao')) {
+      if (paginasPermitidas.includes('/galpao')) return true;
+      if (user.cargo && typeof user.cargo === 'object' && Array.isArray(user.cargo.permissions)) {
+        const permissionKeys = user.cargo.permissions.map((p) => p.chave ?? `${p.modulo}:${p.acao}`);
+        return permissionKeys.includes('estoque:visualizar') || permissionKeys.includes('estoque:movimentar');
+      }
+      return false;
+    }
     if (currentPath.startsWith('/projects/')) {
       return paginasPermitidas.includes('/projects');
     }

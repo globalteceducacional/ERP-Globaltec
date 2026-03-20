@@ -15,6 +15,8 @@ import NotificationsPage from './pages/NotificationsPage';
 import Curadoria from './pages/Curadoria';
 import CuradoriaBudgetDetails from './pages/CuradoriaBudgetDetails';
 import Setores from './pages/Setores';
+import Galpao from './pages/Galpao';
+import GalpaoProdutoDetails from './pages/GalpaoProdutoDetails';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { AppLayout } from './components/layout/AppLayout';
 import { ToastContainer } from './components/ToastContainer';
@@ -45,6 +47,8 @@ export default function App() {
             <Route path="/stock" element={<Stock />} />
             <Route path="/curadoria" element={<Curadoria />} />
             <Route path="/curadoria/:id" element={<CuradoriaBudgetDetails />} />
+            <Route path="/galpao" element={<Galpao />} />
+            <Route path="/galpao/:id" element={<GalpaoProdutoDetails />} />
             <Route path="/communications" element={<Communications />} />
             {/* Redirecionamento para compatibilidade com rota antiga */}
             <Route path="/requests" element={<Navigate to="/communications" replace />} />

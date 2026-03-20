@@ -98,6 +98,11 @@ enum CategoriaCompraTipo {
   LIVRO
 }
 
+enum GalpaoLivroMovimentoTipo {
+  ENTRADA
+  BAIXA
+}
+
 model Usuario {
   id                          Int                    @id @default(autoincrement())
   nome                        String
@@ -131,6 +136,8 @@ model Usuario {
   estoqueAlocacoes            EstoqueAlocacao[]
   curadoriaOrcamentos         CuradoriaOrcamento[]
   setores                     SetorUsuario[]
+  avariasOutrosItensCriadas  GalpaoOutroItemAvaria[]
+  avariasLivrosCriadas       GalpaoLivroAvaria[]
 }
 
 model Setor {
@@ -181,6 +188,7 @@ model Projeto {
   curadoriaOrcamentos CuradoriaOrcamento[]
   estoqueItems        Estoque[]
   estoqueAlocacoes    EstoqueAlocacao[]
+  avariasLivros       GalpaoLivroAvaria[]
 }
 
 enum CuradoriaDescontoAplicadoEm {
@@ -443,6 +451,7 @@ model Estoque {
   categoriaId   Int?
   categoria     CategoriaCompra?  @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
   alocacoes     EstoqueAlocacao[] // Alocações deste item para projetos/etapas
+  galpaoOutroItemAvarias GalpaoOutroItemAvaria[]
 }
 
 model EstoqueAlocacao {
@@ -455,6 +464,8 @@ model EstoqueAlocacao {
   etapa        Etapa?   @relation(fields: [etapaId], references: [id], onDelete: Cascade)
   usuarioId    Int?
   usuario      Usuario? @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  galpaoProdutoId Int?
+  galpaoProduto  GalpaoProduto? @relation(fields: [galpaoProdutoId], references: [id], onDelete: SetNull)
   quantidade   Int // Quantidade alocada para este projeto/etapa/usuário
   dataAlocacao DateTime @default(now())
 
@@ -462,6 +473,108 @@ model EstoqueAlocacao {
   @@index([projetoId])
   @@index([etapaId])
   @@index([usuarioId])
+  @@index([galpaoProdutoId])
+}
+
+model GalpaoProduto {
+  id              Int                              @id @default(autoincrement())
+  nome            String                           @unique
+  descricao       String?
+  ativo           Boolean                          @default(true)
+  dataCriacao     DateTime                        @default(now())
+  dataAtualizacao DateTime                        @updatedAt
+
+  reservasLivros   GalpaoProdutoLivroReserva[]
+  movimentosLivros GalpaoProdutoLivroMovimento[]
+  estoqueAlocacoes EstoqueAlocacao[]
+  avariasOutrosItens GalpaoOutroItemAvaria[]
+  avariasLivros GalpaoLivroAvaria[]
+}
+
+model GalpaoOutroItemAvaria {
+  id              Int              @id @default(autoincrement())
+  estoqueId       Int
+  estoque         Estoque         @relation(fields: [estoqueId], references: [id], onDelete: Cascade)
+  galpaoProdutoId Int?
+  galpaoProduto   GalpaoProduto? @relation(fields: [galpaoProdutoId], references: [id], onDelete: SetNull)
+
+  quantidade    Int
+  justificativa String
+
+  criadoPorId   Int?
+  criadoPor     Usuario?         @relation(fields: [criadoPorId], references: [id], onDelete: SetNull)
+  dataCriacao   DateTime         @default(now())
+
+  @@index([estoqueId])
+  @@index([galpaoProdutoId])
+}
+
+model GalpaoLivroAvaria {
+  id              Int              @id @default(autoincrement())
+  galpaoProdutoId Int?
+  galpaoProduto   GalpaoProduto?   @relation(fields: [galpaoProdutoId], references: [id], onDelete: SetNull)
+
+  isbn        String
+  categoriaId Int?
+  categoria   CategoriaCompra? @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+
+  fornecedorId Int?
+  fornecedor   Fornecedor?        @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+
+  projetoId Int?
+  projeto   Projeto?            @relation(fields: [projetoId], references: [id], onDelete: SetNull)
+
+  quantidade    Int
+  justificativa String
+
+  criadoPorId Int?
+  criadoPor   Usuario? @relation(fields: [criadoPorId], references: [id], onDelete: SetNull)
+  dataCriacao DateTime @default(now())
+
+  @@index([galpaoProdutoId])
+  @@index([isbn])
+  @@index([categoriaId])
+  @@index([fornecedorId])
+  @@index([projetoId])
+}
+
+model GalpaoProdutoLivroReserva {
+  id              Int               @id @default(autoincrement())
+  galpaoProdutoId Int
+  galpaoProduto   GalpaoProduto    @relation(fields: [galpaoProdutoId], references: [id], onDelete: Cascade)
+
+  isbn        String
+  categoriaId Int?
+  categoria   CategoriaCompra?     @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+
+  fornecedorId Int?
+  fornecedor   Fornecedor?         @relation(fields: [fornecedorId], references: [id], onDelete: SetNull)
+
+  quantidade     Int
+  dataReserva    DateTime         @default(now())
+  dataAtualizacao DateTime        @updatedAt
+
+  @@unique([galpaoProdutoId, isbn, categoriaId, fornecedorId])
+  @@index([galpaoProdutoId])
+  @@index([categoriaId])
+  @@index([fornecedorId])
+}
+
+model GalpaoProdutoLivroMovimento {
+  id              Int                 @id @default(autoincrement())
+  galpaoProdutoId Int
+  galpaoProduto   GalpaoProduto      @relation(fields: [galpaoProdutoId], references: [id], onDelete: Cascade)
+
+  tipo        GalpaoLivroMovimentoTipo
+  isbn        String
+  categoriaId Int?
+  categoria   CategoriaCompra?       @relation(fields: [categoriaId], references: [id], onDelete: SetNull)
+
+  quantidade  Int
+  dataCriacao DateTime              @default(now())
+
+  @@index([galpaoProdutoId])
+  @@index([categoriaId])
 }
 
 model Ocorrencia {
@@ -523,6 +636,8 @@ model Fornecedor {
   dataCriacao         DateTime             @default(now())
   dataAtualizacao     DateTime             @updatedAt
   curadoriaOrcamentos CuradoriaOrcamento[]
+  avariasLivros       GalpaoLivroAvaria[]
+  galpaoReservasLivros GalpaoProdutoLivroReserva[]
 
   @@map("Fornecedor")
 }
@@ -538,6 +653,9 @@ model CategoriaCompra {
   compras         Compra[]
   curadoriaItens  CuradoriaItem[]
   estoqueItems    Estoque[]
+  galpaoReservasLivros   GalpaoProdutoLivroReserva[]
+  galpaoMovimentosLivros GalpaoProdutoLivroMovimento[]
+  galpaoAvariasLivros GalpaoLivroAvaria[]
 
   @@unique([nome, tipo])
   @@map("CategoriaCompra")

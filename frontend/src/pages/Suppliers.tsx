@@ -346,6 +346,8 @@ export default function Suppliers() {
         data={filteredSuppliers}
         keyExtractor={(s) => s.id}
         emptyMessage="Nenhum fornecedor encontrado"
+        paginate
+        initialPageSize={20}
         renderMobileCard={(s) => (
           <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-3">
             {/* Cabeçalho: nome fantasia + status */}

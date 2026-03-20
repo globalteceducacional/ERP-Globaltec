@@ -2941,6 +2941,8 @@ export default function ProjectDetails() {
             data={filteredCompras}
             keyExtractor={(c) => c.id}
             emptyMessage="Nenhuma compra relacionada a este projeto"
+            paginate
+            initialPageSize={20}
             rowClassName={(c) => c.status === 'REPROVADO' ? 'bg-red-500/10' : ''}
             renderMobileCard={(c) => (
               <div className={`border rounded-xl p-4 space-y-3 ${c.status === 'REPROVADO' ? 'bg-red-500/10 border-red-500/30' : 'bg-neutral/60 border-white/10'}`}>

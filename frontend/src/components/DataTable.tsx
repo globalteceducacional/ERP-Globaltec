@@ -1,4 +1,4 @@
-import { ReactNode, MouseEvent } from 'react';
+import { ReactNode, MouseEvent, useEffect, useRef, useState } from 'react';
 
 export interface DataTableColumn<T = any> {
   key: string;
@@ -39,6 +39,12 @@ interface DataTableProps<T = any> {
    * são exibidos no lugar (sm:hidden / hidden sm:block automático).
    */
   renderMobileCard?: (item: T) => ReactNode;
+  /** Habilita paginação por tabela. */
+  paginate?: boolean;
+  /** Quantidade inicial de linhas por página. */
+  initialPageSize?: number;
+  /** Opções de linhas por página. */
+  pageSizeOptions?: number[];
 }
 
 const alignClass = {
@@ -58,9 +64,74 @@ export function DataTable<T>({
   wrapperClassName = '',
   tableClassName = '',
   renderMobileCard,
+  paginate = false,
+  initialPageSize = 20,
+  pageSizeOptions = [10, 20, 50, 100],
 }: DataTableProps<T>) {
   const colCount = columns.length;
   const hasMobileCards = !!renderMobileCard;
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const topScrollRef = useRef<HTMLDivElement | null>(null);
+  const topScrollInnerRef = useRef<HTMLDivElement | null>(null);
+  const [showTopScrollbar, setShowTopScrollbar] = useState(false);
+
+  useEffect(() => {
+    const syncState = () => {
+      const tableEl = tableScrollRef.current;
+      const topInnerEl = topScrollInnerRef.current;
+      if (!tableEl || !topInnerEl) {
+        setShowTopScrollbar(false);
+        return;
+      }
+
+      const hasOverflow = tableEl.scrollWidth > tableEl.clientWidth + 1;
+      setShowTopScrollbar(hasOverflow);
+      topInnerEl.style.width = `${tableEl.scrollWidth}px`;
+    };
+
+    syncState();
+    window.addEventListener('resize', syncState);
+    const tableEl = tableScrollRef.current;
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => syncState())
+        : null;
+    if (resizeObserver && tableEl) {
+      resizeObserver.observe(tableEl);
+    }
+    return () => {
+      window.removeEventListener('resize', syncState);
+      if (resizeObserver) resizeObserver.disconnect();
+    };
+  }, [data, columns, hasMobileCards]);
+
+  const handleTopScroll = () => {
+    const topEl = topScrollRef.current;
+    const tableEl = tableScrollRef.current;
+    if (!topEl || !tableEl) return;
+    tableEl.scrollLeft = topEl.scrollLeft;
+  };
+
+  const handleTableScroll = () => {
+    const topEl = topScrollRef.current;
+    const tableEl = tableScrollRef.current;
+    if (!topEl || !tableEl) return;
+    topEl.scrollLeft = tableEl.scrollLeft;
+  };
+
+  const safePageSize = Math.max(1, pageSize);
+  const totalItems = data.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / safePageSize));
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * safePageSize;
+  const endIndex = startIndex + safePageSize;
+  const visibleData = paginate ? data.slice(startIndex, endIndex) : data;
+
+  useEffect(() => {
+    setPage(1);
+  }, [data, paginate, pageSize]);
 
   return (
     <>
@@ -69,11 +140,11 @@ export function DataTable<T>({
         <div className="sm:hidden">
           {loading ? (
             <div className="py-8 text-center text-white/50">Carregando...</div>
-          ) : data.length === 0 ? (
+          ) : visibleData.length === 0 ? (
             <div className="py-8 text-center text-white/50">{emptyMessage}</div>
           ) : (
             <div className="space-y-3">
-              {data.map((item) => {
+              {visibleData.map((item) => {
                 const rowKey = keyExtractor(item);
                 const extraClass = rowClassName ? rowClassName(item) : '';
                 return (
@@ -101,7 +172,19 @@ export function DataTable<T>({
 
       {/* ── Tabela Desktop ───────────────────────────────────── */}
       <div
+        className={`${hasMobileCards ? 'hidden sm:block' : ''} ${
+          showTopScrollbar ? 'mb-2' : 'mb-0'
+        } sticky top-0 z-20 overflow-x-auto rounded-md border border-white/10 bg-neutral/95`}
+        ref={topScrollRef}
+        onScroll={handleTopScroll}
+        style={{ visibility: showTopScrollbar ? 'visible' : 'hidden' }}
+      >
+        <div ref={topScrollInnerRef} className="h-2" />
+      </div>
+      <div
         className={`${hasMobileCards ? 'hidden sm:block' : ''} overflow-x-auto rounded-xl border border-white/10 ${wrapperClassName}`}
+        ref={tableScrollRef}
+        onScroll={handleTableScroll}
       >
         <table className={`w-full min-w-full text-sm table-auto ${tableClassName}`}>
           <thead className="bg-white/5 text-white/70">
@@ -142,7 +225,7 @@ export function DataTable<T>({
                 </td>
               </tr>
             ) : (
-              data.map((item) => {
+              visibleData.map((item) => {
                 const rowKey = keyExtractor(item);
                 const extraRowClass = rowClassName ? rowClassName(item) : '';
                 const clickable = !!onRowClick;
@@ -180,6 +263,49 @@ export function DataTable<T>({
           </tbody>
         </table>
       </div>
+
+      {paginate && totalItems > 0 && (
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between text-xs text-white/70">
+          <div className="flex items-center gap-2">
+            <span>Linhas por página</span>
+            <select
+              value={safePageSize}
+              onChange={(e) => setPageSize(Number(e.target.value) || initialPageSize)}
+              className="bg-neutral border border-white/20 rounded px-2 py-1 text-xs text-white"
+            >
+              {pageSizeOptions.map((opt) => (
+                <option key={opt} value={opt} className="bg-neutral text-white">
+                  {opt}
+                </option>
+              ))}
+            </select>
+            <span>
+              {totalItems === 0 ? 0 : startIndex + 1}-{Math.min(endIndex, totalItems)} de {totalItems}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="px-2 py-1 rounded border border-white/20 disabled:opacity-50"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={currentPage <= 1}
+            >
+              Anterior
+            </button>
+            <span>
+              Página {currentPage} de {totalPages}
+            </span>
+            <button
+              type="button"
+              className="px-2 py-1 rounded border border-white/20 disabled:opacity-50"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={currentPage >= totalPages}
+            >
+              Próxima
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 }

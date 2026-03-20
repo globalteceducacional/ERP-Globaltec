@@ -20,6 +20,12 @@ export class ImportCuradoriaXlsxDto {
   categoriaId?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @IsPositive()
+  fornecedorId?: number;
+
+  @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')
   @IsBoolean()
   overwriteCurrent?: boolean;

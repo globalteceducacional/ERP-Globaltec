@@ -9,7 +9,9 @@ import { UpdateCuradoriaItemDto } from './dto/update-curadoria-item.dto';
 
 @Injectable()
 export class CuradoriaService {
+  private static readonly STOCK_INTERNAL_MARKER_PREFIX = '[AUTO_ESTOQUE_';
   private readonly logger = new Logger(CuradoriaService.name);
+  private static readonly STOCK_PRESERVE_MARKER = '[AUTO_ESTOQUE_PRESERVADO]';
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -128,6 +130,8 @@ export class CuradoriaService {
           select: {
             id: true,
             nome: true,
+            fornecedorId: true,
+            fornecedor: { select: { nomeFantasia: true, razaoSocial: true } },
             dataCriacao: true,
             projeto: { select: { id: true, nome: true } },
           },
@@ -137,8 +141,11 @@ export class CuradoriaService {
     });
 
     return items.map((item) => ({
+      itemId: item.id,
       orcamentoId: item.orcamento.id,
       orcamentoNome: item.orcamento.nome,
+      fornecedorId: item.orcamento.fornecedorId ?? null,
+      fornecedorNome: item.orcamento.fornecedor?.nomeFantasia ?? item.orcamento.fornecedor?.razaoSocial ?? null,
       dataCriacao: item.orcamento.dataCriacao,
       projetoId: item.orcamento.projeto?.id ?? null,
       projetoNome: item.orcamento.projeto?.nome ?? null,
@@ -269,7 +276,7 @@ export class CuradoriaService {
         status: CompraStatus.ENTREGUE,
       },
     };
-    if (categoriaId) {
+    if (categoriaId !== undefined && categoriaId !== null) {
       where.categoriaId = categoriaId;
     }
 
@@ -308,7 +315,12 @@ export class CuradoriaService {
       orderBy: { dataCriacao: 'desc' },
     });
 
-    return budgets.map((budget) => {
+    const visibleBudgets = budgets.filter(
+      (budget) =>
+        !String(budget.observacao ?? '').includes(CuradoriaService.STOCK_INTERNAL_MARKER_PREFIX),
+    );
+
+    return visibleBudgets.map((budget) => {
       const totalQuantidade = budget.itens.reduce((sum, item) => sum + item.quantidade, 0);
       const totalBruto = Number(
         budget.itens.reduce((sum, item) => sum + item.valor * item.quantidade, 0).toFixed(2),
@@ -511,15 +523,41 @@ export class CuradoriaService {
     });
   }
 
-  async deleteOrcamento(id: number) {
+  async deleteOrcamento(id: number, deleteStock = false) {
     const existing = await this.prisma.curadoriaOrcamento.findUnique({
       where: { id },
-      select: { id: true, nome: true },
+      include: { itens: true },
     });
     if (!existing) {
       throw new NotFoundException('Orçamento de curadoria não encontrado.');
     }
-    await this.prisma.curadoriaOrcamento.delete({ where: { id } });
+
+    const isDelivered = existing.status === CompraStatus.ENTREGUE;
+    const hasStockItems = Array.isArray(existing.itens) && existing.itens.length > 0;
+    const shouldPreserveStock = !deleteStock && isDelivered && hasStockItems;
+
+    if (shouldPreserveStock) {
+      await this.prisma.curadoriaOrcamento.update({
+        where: { id },
+        data: {
+          nome: `Estoque preservado - ${existing.nome}`,
+          observacao: `${CuradoriaService.STOCK_PRESERVE_MARKER} Origem orçamento #${existing.id}`,
+          projetoId: existing.projetoId ?? null,
+          setorId: existing.setorId ?? null,
+          fornecedorId: existing.fornecedorId ?? null,
+          status: CompraStatus.ENTREGUE,
+        },
+      });
+    } else {
+      await this.prisma.curadoriaOrcamento.delete({ where: { id } });
+    }
+
+    if (shouldPreserveStock) {
+      return {
+        message: `Orçamento "${existing.nome}" excluído com sucesso. Itens de estoque foram preservados.`,
+      };
+    }
+
     return { message: `Orçamento "${existing.nome}" excluído com sucesso.` };
   }
 
@@ -1060,6 +1098,7 @@ export class CuradoriaService {
     const created = await this.createOrcamentoInternal({
       nome: nomeArquivo,
       projetoId: dto.projetoId,
+      fornecedorId: dto.fornecedorId ?? undefined,
       observacao: 'Importado via XLSX.',
       status: 'PENDENTE',
       descontoAplicadoEm: dto.descontoAplicadoEm ?? CuradoriaDescontoAplicadoEm.ITEM,

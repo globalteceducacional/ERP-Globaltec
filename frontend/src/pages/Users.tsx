@@ -413,6 +413,8 @@ export default function Users() {
         data={users}
         keyExtractor={(u) => u.id}
         emptyMessage="Nenhum usuário encontrado"
+        paginate
+        initialPageSize={20}
         renderMobileCard={(u) => (
           <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-3">
             {/* Cabeçalho: nome + status */}

@@ -1,3 +1,4 @@
+import { ReactNode } from 'react';
 import { btn } from '../../utils/buttonStyles';
 import { AppModal } from './AppModal';
 
@@ -14,6 +15,7 @@ interface ConfirmDeleteByNameModalProps {
   errorMessage?: string | null;
   confirmButtonLabel?: string;
   dangerNote?: string;
+  extraContent?: ReactNode;
 }
 
 export function ConfirmDeleteByNameModal({
@@ -29,6 +31,7 @@ export function ConfirmDeleteByNameModal({
   errorMessage,
   confirmButtonLabel = 'Excluir',
   dangerNote = 'Esta ação não pode ser desfeita.',
+  extraContent,
 }: ConfirmDeleteByNameModalProps) {
   const canConfirm = confirmValue.trim() === entityName.trim();
 
@@ -57,6 +60,8 @@ export function ConfirmDeleteByNameModal({
         className="w-full bg-white/10 border border-white/30 rounded-md px-4 py-2.5 text-white placeholder:text-white/50 focus:outline-none focus:ring-2 focus:ring-primary focus:border-primary"
         autoFocus
       />
+
+      {extraContent}
 
       {errorMessage && (
         <div className="bg-danger/20 border border-danger/50 text-danger px-4 py-3 rounded-md text-sm">

@@ -77,8 +77,12 @@ export class CuradoriaController {
 
   @Delete('orcamentos/:id')
   @Permissions('curadoria:gerenciar')
-  deleteOrcamento(@Param('id', ParseIntPipe) id: number) {
-    return this.curadoriaService.deleteOrcamento(id);
+  deleteOrcamento(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('deleteStock') deleteStock?: string,
+  ) {
+    const shouldDeleteStock = String(deleteStock ?? '').toLowerCase() === 'true';
+    return this.curadoriaService.deleteOrcamento(id, shouldDeleteStock);
   }
 
   @Patch('orcamentos/:id')

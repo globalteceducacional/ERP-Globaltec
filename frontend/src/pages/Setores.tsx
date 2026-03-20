@@ -267,6 +267,8 @@ export default function Setores() {
         loading={loading}
         keyExtractor={(s) => s.id}
         emptyMessage="Nenhum setor cadastrado"
+        paginate
+        initialPageSize={20}
         columns={[
           {
             key: 'nome',

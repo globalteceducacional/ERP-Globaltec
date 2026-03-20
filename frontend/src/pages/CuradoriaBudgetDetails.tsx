@@ -657,6 +657,8 @@ export default function CuradoriaBudgetDetails() {
         loading={loading}
         keyExtractor={(item) => item.id}
         emptyMessage="Nenhum item neste orçamento."
+        paginate
+        initialPageSize={20}
         renderMobileCard={(item) => (
           <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-2">
             <p className="font-semibold">{item.nome}</p>

@@ -10,6 +10,7 @@ import { ExcelDownloadButton } from '../components/ExcelDownloadButton';
 import { FileDropInput } from '../components/FileDropInput';
 import { buildCuradoriaTemplateWorkbook } from '../utils/curadoriaExcelTemplate';
 import * as XLSX from 'xlsx-js-style';
+import { jsPDF } from 'jspdf';
 import { CollapsibleFilters } from '../components/filters/CollapsibleFilters';
 import { AppModal } from '../components/ui/AppModal';
 import { AppSelect } from '../components/ui/AppSelect';
@@ -55,8 +56,11 @@ interface CuradoriaStockItem {
 }
 
 interface CuradoriaStockQuote {
+  itemId: number;
   orcamentoId: number;
   orcamentoNome: string;
+  fornecedorId: number | null;
+  fornecedorNome: string | null;
   dataCriacao: string;
   projetoId: number | null;
   projetoNome: string | null;
@@ -82,12 +86,26 @@ interface CuradoriaItemForm {
 }
 
 interface CuradoriaStockQuoteForm {
+  itemId?: number;
+  orcamentoId?: number;
   categoriaId?: number;
   quantidade?: number;
   valor?: number;
   desconto?: number;
   descontoTipo: 'VALOR' | 'PERCENTUAL';
   fornecedorId?: number;
+}
+
+interface CuradoriaStockItemPayload {
+  nome: string;
+  isbn: string;
+  categoriaId: number;
+  quantidade: number;
+  valor: number;
+  desconto: number;
+  autor?: string;
+  editora?: string;
+  anoPublicacao?: string;
 }
 
 interface CuradoriaCreateForm {
@@ -197,11 +215,14 @@ export default function Curadoria() {
   const [activeTab, setActiveTab] = useState<'orcamentos' | 'estoque'>('orcamentos');
   const [stockItems, setStockItems] = useState<CuradoriaStockItem[]>([]);
   const [stockLoading, setStockLoading] = useState(false);
+  const [stockLoaded, setStockLoaded] = useState(false);
   const [stockSearch, setStockSearch] = useState('');
   const [stockCategoryId, setStockCategoryId] = useState<number | 'all'>('all');
   const [stockSortKey, setStockSortKey] = useState<'nome' | 'quantidade' | 'valorTotal'>('nome');
   const [stockSortDir, setStockSortDir] = useState<'asc' | 'desc'>('asc');
   const [showEstoqueFilters, setShowEstoqueFilters] = useState(false);
+  const [selectedStockItemKeys, setSelectedStockItemKeys] = useState<string[]>([]);
+  const [showStockReportModal, setShowStockReportModal] = useState(false);
 
   const [budgetStatusFilter, setBudgetStatusFilter] = useState<
     '' | 'PENDENTE' | 'COMPRADO_ACAMINHO' | 'ENTREGUE' | 'SOLICITADO' | 'REPROVADO'
@@ -217,6 +238,7 @@ export default function Curadoria() {
   const [stockIsbnLoading, setStockIsbnLoading] = useState(false);
   const [stockItemMode, setStockItemMode] = useState<'add' | 'edit'>('add');
   const [stockQuotesForm, setStockQuotesForm] = useState<CuradoriaStockQuoteForm[]>([createEmptyStockQuote()]);
+  const [originalStockQuoteRefs, setOriginalStockQuoteRefs] = useState<Array<{ itemId: number; orcamentoId: number }>>([]);
   const [showStockQuotesModal, setShowStockQuotesModal] = useState(false);
   const [stockQuotesLoading, setStockQuotesLoading] = useState(false);
   const [stockQuotes, setStockQuotes] = useState<CuradoriaStockQuote[]>([]);
@@ -228,6 +250,7 @@ export default function Curadoria() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [budgetToDelete, setBudgetToDelete] = useState<CuradoriaBudget | null>(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState('');
+  const [deleteBudgetAlsoStock, setDeleteBudgetAlsoStock] = useState(false);
   const [deletingBudgetId, setDeletingBudgetId] = useState<number | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [editingBudgetId, setEditingBudgetId] = useState<number | null>(null);
@@ -259,6 +282,7 @@ export default function Curadoria() {
   const [importName, setImportName] = useState('');
   const [importProjectId, setImportProjectId] = useState<number | undefined>(undefined);
   const [importCategoryId, setImportCategoryId] = useState<number | undefined>(undefined);
+  const [importSupplierId, setImportSupplierId] = useState<number | undefined>(undefined);
   const [overwriteCurrent, setOverwriteCurrent] = useState(true);
   const [importDiscountMode, setImportDiscountMode] = useState<'ITEM' | 'TOTAL'>('ITEM');
   const [importDiscountTotal, setImportDiscountTotal] = useState(0);
@@ -351,8 +375,14 @@ export default function Curadoria() {
     }
     try {
       setStockLoading(true);
-      const { data } = await api.get<CuradoriaStockItem[]>('/curadoria/estoque');
-      setStockItems(Array.isArray(data) ? data : []);
+      const { data } = await api.get<CuradoriaStockItem[]>('/curadoria/estoque', {
+        params: { _ts: Date.now() },
+      });
+      const items = Array.isArray(data) ? data : [];
+      setStockItems(items);
+      const currentKeys = new Set(items.map((item) => getStockItemKey(item)));
+      setSelectedStockItemKeys((prev) => prev.filter((key) => currentKeys.has(key)));
+      setStockLoaded(true);
     } catch (err: any) {
       const message = formatApiError(err);
       toast.error(message);
@@ -362,10 +392,10 @@ export default function Curadoria() {
   }
 
   useEffect(() => {
-    if (activeTab === 'estoque' && canView && stockItems.length === 0 && !stockLoading) {
+    if (activeTab === 'estoque' && canView && !stockLoaded && !stockLoading) {
       void loadStock();
     }
-  }, [activeTab, canView, stockItems.length, stockLoading]);
+  }, [activeTab, canView, stockLoaded, stockLoading]);
 
   useEffect(() => {
     if (!importing) {
@@ -448,6 +478,340 @@ export default function Curadoria() {
     return sorted;
   }, [stockItems, stockSearch, stockCategoryId, stockSortKey, stockSortDir]);
 
+  function getStockItemKey(item: CuradoriaStockItem): string {
+    return `${item.isbn}-${item.categoriaId ?? 'sem-categoria'}`;
+  }
+
+  const selectedStockItemKeySet = useMemo(() => new Set(selectedStockItemKeys), [selectedStockItemKeys]);
+
+  const selectedStockItems = useMemo(() => {
+    return stockItems.filter((item) => selectedStockItemKeySet.has(getStockItemKey(item)));
+  }, [stockItems, selectedStockItemKeySet]);
+
+  const filteredStockItemKeys = useMemo(
+    () => filteredStockItems.map((item) => getStockItemKey(item)),
+    [filteredStockItems],
+  );
+
+  const allFilteredStockSelected =
+    filteredStockItemKeys.length > 0 && filteredStockItemKeys.every((key) => selectedStockItemKeySet.has(key));
+
+  function toggleStockItemSelection(itemKey: string) {
+    setSelectedStockItemKeys((prev) => (prev.includes(itemKey) ? prev.filter((k) => k !== itemKey) : [...prev, itemKey]));
+  }
+
+  function toggleAllFilteredStockItems() {
+    if (filteredStockItemKeys.length === 0) return;
+    setSelectedStockItemKeys((prev) => {
+      const prevSet = new Set(prev);
+
+      if (filteredStockItemKeys.every((key) => selectedStockItemKeySet.has(key))) {
+        filteredStockItemKeys.forEach((k) => prevSet.delete(k));
+        return Array.from(prevSet);
+      }
+
+      filteredStockItemKeys.forEach((k) => prevSet.add(k));
+      return Array.from(prevSet);
+    });
+  }
+
+  function calculateCuradoriaStockReportTotals() {
+    const selected = selectedStockItems;
+
+    const totalItens = selected.length;
+    const totalQuantidade = selected.reduce((sum, item) => sum + (item.quantidadeTotal ?? 0), 0);
+    const totalValor = selected.reduce((sum, item) => sum + (item.valorTotal ?? 0), 0);
+
+    const byCategoriaMap: Record<
+      string,
+      {
+        categoriaId: number | null;
+        categoriaNome: string;
+        count: number;
+        totalQuantidade: number;
+        totalValor: number;
+      }
+    > = {};
+
+    selected.forEach((item) => {
+      const categoriaId = item.categoriaId ?? null;
+      const mapKey = String(categoriaId ?? 'sem-categoria');
+
+      if (!byCategoriaMap[mapKey]) {
+        byCategoriaMap[mapKey] = {
+          categoriaId,
+          categoriaNome: item.categoriaNome ?? 'Sem gênero literário',
+          count: 0,
+          totalQuantidade: 0,
+          totalValor: 0,
+        };
+      }
+
+      byCategoriaMap[mapKey].count += 1;
+      byCategoriaMap[mapKey].totalQuantidade += item.quantidadeTotal ?? 0;
+      byCategoriaMap[mapKey].totalValor += item.valorTotal ?? 0;
+    });
+
+    const byCategoria = Object.values(byCategoriaMap).sort((a, b) => b.totalValor - a.totalValor);
+
+    return {
+      totalItens,
+      totalQuantidade,
+      totalValor,
+      items: selected,
+      byCategoria,
+    };
+  }
+
+  function buildCuradoriaStockReportWorkbook() {
+    const reportData = calculateCuradoriaStockReportTotals();
+
+    const wb = XLSX.utils.book_new();
+    const headers = [
+      'ISBN',
+      'Título',
+      'Gênero literário',
+      'Autor',
+      'Editora',
+      'Qtd em estoque',
+      'Valor médio',
+      'Desconto médio',
+      'Valor total',
+    ];
+
+    const tableData: any[][] = [headers];
+    reportData.items.forEach((item) => {
+      tableData.push([
+        item.isbn ?? '',
+        item.nome ?? '-',
+        item.categoriaNome ?? 'Sem gênero literário',
+        item.autor ?? '-',
+        item.editora ?? '-',
+        item.quantidadeTotal ?? 0,
+        item.valorMedio ?? 0,
+        item.descontoMedio ?? 0,
+        item.valorTotal ?? 0,
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(tableData);
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+
+    const headerStyle: any = {
+      fill: { fgColor: { rgb: '1F2937' } },
+      font: { color: { rgb: 'FFFFFF' }, bold: true, sz: 11 },
+      alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+      border: {
+        top: { style: 'thin', color: { rgb: '374151' } },
+        bottom: { style: 'thin', color: { rgb: '374151' } },
+        left: { style: 'thin', color: { rgb: '374151' } },
+        right: { style: 'thin', color: { rgb: '374151' } },
+      },
+    };
+
+    const rowStyle: any = {
+      font: { color: { rgb: '000000' }, sz: 10 },
+      alignment: { vertical: 'center', wrapText: true },
+      border: {
+        top: { style: 'thin', color: { rgb: 'D1D5DB' } },
+        bottom: { style: 'thin', color: { rgb: 'D1D5DB' } },
+        left: { style: 'thin', color: { rgb: 'D1D5DB' } },
+        right: { style: 'thin', color: { rgb: 'D1D5DB' } },
+      },
+    };
+
+    // Estilo do cabeçalho
+    for (let col = range.s.c; col <= range.e.c; col++) {
+      const cellAddress = XLSX.utils.encode_cell({ r: 0, c: col });
+      if (!ws[cellAddress]) ws[cellAddress] = { t: 's', v: '' };
+      ws[cellAddress].s = headerStyle;
+    }
+
+    // Estilo das linhas
+    for (let row = 1; row <= range.e.r; row++) {
+      const isEven = row % 2 === 0;
+      const fill = isEven ? { fgColor: { rgb: 'F3F4F6' } } : { fgColor: { rgb: 'FFFFFF' } };
+
+      for (let col = range.s.c; col <= range.e.c; col++) {
+        const cellAddress = XLSX.utils.encode_cell({ r: row, c: col });
+        if (!ws[cellAddress]) continue;
+
+        const cellStyle = { ...rowStyle, fill };
+
+        // 5 = Qtd, 6/7/8 = valores
+        if (col === 5) {
+          ws[cellAddress].s = { ...cellStyle, numFmt: '#,##0' };
+        } else if (col === 6 || col === 7 || col === 8) {
+          ws[cellAddress].s = { ...cellStyle, numFmt: '"R$" #,##0.00' };
+        } else {
+          ws[cellAddress].s = cellStyle;
+        }
+      }
+    }
+
+    // Largura aproximada
+    ws['!cols'] = [
+      { wch: 20 },
+      { wch: 35 },
+      { wch: 22 },
+      { wch: 26 },
+      { wch: 26 },
+      { wch: 14 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 16 },
+    ];
+
+    const filterRange = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: range.e.r, c: range.e.c } });
+    ws['!autofilter'] = { ref: filterRange };
+    ws['!freeze'] = { xSplit: 0, ySplit: 1, topLeftCell: 'A2', activePane: 'bottomLeft' };
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Estoque Curadoria');
+    return wb;
+  }
+
+  function exportCuradoriaStockReportPdf() {
+    const reportData = calculateCuradoriaStockReportTotals();
+
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 20;
+    let yPosition = margin;
+
+    const formatBRL = (value: number) =>
+      (Number(value) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+    const checkPageBreak = (requiredHeight: number) => {
+      if (yPosition + requiredHeight > pageHeight - margin - 25) {
+        doc.addPage();
+        yPosition = margin;
+      }
+    };
+
+    doc.setFontSize(18);
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text('RELATÓRIO DE ESTOQUE - CURADORIA', pageWidth / 2, yPosition, { align: 'center' });
+    yPosition += 10;
+
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(80, 80, 80);
+    doc.text(`Data de Geração: ${new Date().toLocaleString('pt-BR')}`, pageWidth / 2, yPosition, {
+      align: 'center',
+    });
+    yPosition += 6;
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    checkPageBreak(7);
+    doc.text(`Itens selecionados: ${reportData.totalItens}`, margin, yPosition);
+    yPosition += 6;
+    doc.text(`Quantidade total: ${reportData.totalQuantidade}`, margin, yPosition);
+    yPosition += 6;
+    doc.setTextColor(0, 100, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Valor total: ${formatBRL(reportData.totalValor)}`, margin, yPosition);
+    yPosition += 12;
+
+    // Distribuição por gênero
+    if (reportData.byCategoria.length > 0) {
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(12);
+      checkPageBreak(8);
+      doc.text('Distribuição por gênero literário', margin, yPosition);
+      yPosition += 8;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+
+      reportData.byCategoria.slice(0, 12).forEach((c) => {
+        const line = `- ${c.categoriaNome}: ${c.count} item(ns) | Qtd: ${c.totalQuantidade} | Total: ${formatBRL(
+          c.totalValor,
+        )}`;
+        const lines = doc.splitTextToSize(line, pageWidth - margin * 2);
+        lines.forEach((l: string) => {
+          checkPageBreak(5);
+          doc.text(l, margin, yPosition);
+          yPosition += 5;
+        });
+      });
+
+      if (reportData.byCategoria.length > 12) {
+        checkPageBreak(5);
+        doc.text(`(mostrando top 12 de ${reportData.byCategoria.length})`, margin, yPosition);
+        yPosition += 7;
+      } else {
+        yPosition += 5;
+      }
+    }
+
+    // Detalhamento por item
+    if (reportData.items.length > 0) {
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(0, 0, 0);
+      doc.setFontSize(12);
+      checkPageBreak(8);
+      doc.text('Detalhamento dos itens selecionados', margin, yPosition);
+      yPosition += 8;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(60, 60, 60);
+
+      reportData.items.forEach((item, idx) => {
+        const title = `${idx + 1}. ${item.nome ?? '-'}`;
+        const titleLines = doc.splitTextToSize(title, pageWidth - margin * 2);
+        titleLines.forEach((l: string) => {
+          checkPageBreak(6);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(0, 0, 0);
+          doc.text(l, margin, yPosition);
+          yPosition += 6;
+        });
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(60, 60, 60);
+
+        const detailLines = [
+          `ISBN: ${item.isbn ?? '-'}`,
+          `Gênero: ${item.categoriaNome ?? 'Sem gênero literário'}`,
+          `Autor: ${item.autor ?? '-'}`,
+          `Qtd em estoque: ${item.quantidadeTotal ?? 0}`,
+          `Valor total: ${formatBRL(item.valorTotal ?? 0)}`,
+          `Valor médio: ${formatBRL(item.valorMedio ?? 0)} | Desconto médio: ${formatBRL(
+            item.descontoMedio ?? 0,
+          )}`,
+        ];
+
+        detailLines.forEach((dl) => {
+          const lns = doc.splitTextToSize(dl, pageWidth - margin * 2);
+          lns.forEach((l: string) => {
+            checkPageBreak(5);
+            doc.text(l, margin, yPosition);
+            yPosition += 5;
+          });
+        });
+
+        yPosition += 6;
+      });
+    }
+
+    // Rodapé com número de páginas
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setTextColor(140, 140, 140);
+      doc.text(`Página ${i} de ${totalPages}`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+    }
+
+    doc.save(`relatorio-estoque-curadoria-${new Date().toISOString().split('T')[0]}.pdf`);
+  }
+
   async function openStockQuotes(item: CuradoriaStockItem) {
     try {
       setStockQuotesItem(item);
@@ -459,6 +823,58 @@ export default function Curadoria() {
       toast.error(formatApiError(err));
     } finally {
       setStockQuotesLoading(false);
+    }
+  }
+
+  async function openStockItemEditor(item: CuradoriaStockItem) {
+    setStockItemMode('edit');
+    setStockItemForm({
+      nome: item.nome,
+      isbn: item.isbn,
+      autor: item.autor ?? '',
+      editora: item.editora ?? '',
+      anoPublicacao: item.anoPublicacao ?? '',
+    });
+    try {
+      const { data } = await api.get<CuradoriaStockQuote[]>(
+        `/curadoria/estoque/${encodeURIComponent(item.isbn)}/cotacoes`,
+      );
+      const quotes = (Array.isArray(data) ? data : []).filter(
+        (quote) => quote.categoriaId === item.categoriaId,
+      );
+
+      if (quotes.length > 0) {
+        setStockQuotesForm(
+          quotes.map((quote) => ({
+            itemId: quote.itemId,
+            orcamentoId: quote.orcamentoId,
+            categoriaId: quote.categoriaId ?? undefined,
+            quantidade: quote.quantidade,
+            valor: quote.valor,
+            desconto: quote.desconto,
+            descontoTipo: 'VALOR',
+            fornecedorId: quote.fornecedorId ?? undefined,
+          })),
+        );
+        setOriginalStockQuoteRefs(
+          quotes.map((quote) => ({ itemId: quote.itemId, orcamentoId: quote.orcamentoId })),
+        );
+      } else {
+        setStockQuotesForm([
+          {
+            categoriaId: item.categoriaId ?? undefined,
+            quantidade: item.quantidadeTotal,
+            valor: item.valorMedio,
+            desconto: item.descontoMedio,
+            descontoTipo: 'VALOR',
+            fornecedorId: undefined,
+          },
+        ]);
+        setOriginalStockQuoteRefs([]);
+      }
+      setShowStockItemModal(true);
+    } catch (err: any) {
+      toast.error(formatApiError(err));
     }
   }
 
@@ -713,21 +1129,15 @@ export default function Curadoria() {
 
     try {
       setStockItemSaving(true);
-      const gruposPorFornecedor = new Map<
-        string,
-        { fornecedorId?: number; itens: { nome: string; isbn: string; categoriaId: number; quantidade: number; valor: number; desconto: number; autor?: string; editora?: string; anoPublicacao?: string }[] }
-      >();
-
-      stockQuotesForm.forEach((quote) => {
+      const payloadFromQuote = (quote: CuradoriaStockQuoteForm): CuradoriaStockItemPayload => {
         const valorUnitario = Number(quote.valor || 0);
         const rawDesconto = Number(quote.desconto || 0);
         const descontoCalculado =
           quote.descontoTipo === 'PERCENTUAL'
             ? Number(((valorUnitario * rawDesconto) / 100).toFixed(2))
             : rawDesconto;
-        const fornecedorId = quote.fornecedorId || undefined;
-        const key = String(fornecedorId ?? 'null');
-        const itemPayload = {
+
+        return {
           nome: stockItemForm.nome.trim(),
           isbn: stockItemForm.isbn.trim(),
           categoriaId: Number(quote.categoriaId),
@@ -738,23 +1148,101 @@ export default function Curadoria() {
           editora: stockItemForm.editora?.trim() || undefined,
           anoPublicacao: stockItemForm.anoPublicacao?.trim() || undefined,
         };
-        const existing = gruposPorFornecedor.get(key);
-        if (existing) {
-          existing.itens.push(itemPayload);
-        } else {
-          gruposPorFornecedor.set(key, { fornecedorId, itens: [itemPayload] });
-        }
-      });
+      };
 
-      for (const grupo of gruposPorFornecedor.values()) {
-        await api.post('/curadoria/orcamentos', {
-          nome: 'Ajuste de estoque - Curadoria',
+      const createInternalDeliveredBudget = async (
+        firstItem: CuradoriaStockItemPayload,
+        fornecedorId?: number,
+      ) => {
+        const autoName = `Estoque avulso - ${stockItemForm.isbn.trim()}`;
+        const { data } = await api.post<CuradoriaBudget>('/curadoria/orcamentos', {
+          nome: autoName,
           status: 'ENTREGUE',
-          fornecedorId: grupo.fornecedorId || undefined,
+          observacao: '[AUTO_ESTOQUE_AVULSO] orçamento técnico criado automaticamente pelo estoque de curadoria.',
+          fornecedorId: fornecedorId || undefined,
           descontoAplicadoEm: 'ITEM',
           descontoTotal: 0,
-          itens: grupo.itens,
+          itens: [firstItem],
         });
+        return data;
+      };
+
+      const deliveredBudgets = budgets.filter((budget) => (budget.status ?? 'PENDENTE') === 'ENTREGUE');
+
+      if (stockItemMode === 'edit') {
+        const currentRefSet = new Set(
+          stockQuotesForm
+            .map((quote) => (quote.itemId && quote.orcamentoId ? `${quote.orcamentoId}:${quote.itemId}` : null))
+            .filter((value): value is string => Boolean(value)),
+        );
+
+        const removedRefs = originalStockQuoteRefs.filter(
+          (ref) => !currentRefSet.has(`${ref.orcamentoId}:${ref.itemId}`),
+        );
+
+        for (const removed of removedRefs) {
+          await api.delete(`/curadoria/orcamentos/${removed.orcamentoId}/itens/${removed.itemId}`);
+        }
+
+        for (const quote of stockQuotesForm) {
+          if (quote.itemId && quote.orcamentoId) {
+            await api.patch(
+              `/curadoria/orcamentos/${quote.orcamentoId}/itens/${quote.itemId}`,
+              payloadFromQuote(quote),
+            );
+            continue;
+          }
+
+          const targetBudget =
+            deliveredBudgets.find(
+              (budget) =>
+                quote.fornecedorId != null &&
+                budget.fornecedorId != null &&
+                budget.fornecedorId === quote.fornecedorId,
+            ) ?? deliveredBudgets[0];
+
+          if (!targetBudget) {
+            await createInternalDeliveredBudget(
+              payloadFromQuote(quote),
+              quote.fornecedorId,
+            );
+            continue;
+          }
+          await api.post(`/curadoria/orcamentos/${targetBudget.id}/itens`, payloadFromQuote(quote));
+        }
+      } else {
+        let createdByFallback = false;
+        let fallbackBudgetId: number | undefined;
+
+        for (const quote of stockQuotesForm) {
+          let targetBudget =
+            deliveredBudgets.find(
+              (budget) =>
+                quote.fornecedorId != null &&
+                budget.fornecedorId != null &&
+                budget.fornecedorId === quote.fornecedorId,
+            ) ?? deliveredBudgets[0];
+
+          if (!targetBudget && fallbackBudgetId) {
+            targetBudget = { id: fallbackBudgetId } as CuradoriaBudget;
+          }
+
+          if (!targetBudget) {
+            const firstItemPayload = payloadFromQuote(quote);
+            const createdBudget = await createInternalDeliveredBudget(
+              firstItemPayload,
+              quote.fornecedorId,
+            );
+            createdByFallback = true;
+            fallbackBudgetId = createdBudget.id;
+            continue;
+          }
+          await api.post(`/curadoria/orcamentos/${targetBudget.id}/itens`, payloadFromQuote(quote));
+        }
+
+        if (createdByFallback) {
+          toast.success('Item adicionado ao estoque usando orçamento técnico automático.');
+        }
       }
 
       const totalItens = stockQuotesForm.length;
@@ -766,6 +1254,7 @@ export default function Curadoria() {
       setShowStockItemModal(false);
       setStockItemForm(createEmptyItem());
       setStockQuotesForm([createEmptyStockQuote()]);
+      setOriginalStockQuoteRefs([]);
       await Promise.all([loadData(), loadStock()]);
     } catch (err: any) {
       toast.error(formatApiError(err));
@@ -891,6 +1380,7 @@ export default function Curadoria() {
       if (importCategoryId) formData.append('categoriaId', String(importCategoryId));
       formData.append('overwriteCurrent', String(overwriteCurrent));
       formData.append('descontoAplicadoEm', importDiscountMode);
+      if (importSupplierId) formData.append('fornecedorId', String(importSupplierId));
       if (importDiscountMode === 'TOTAL') {
         formData.append('descontoTotal', String(Number(descontoTotalCalculado.toFixed(2)) || 0));
       }
@@ -925,6 +1415,7 @@ export default function Curadoria() {
       setImportName('');
       setImportProjectId(undefined);
       setImportCategoryId(undefined);
+      setImportSupplierId(undefined);
       setOverwriteCurrent(true);
       setImportDiscountMode('ITEM');
       setImportDiscountTotal(0);
@@ -1015,6 +1506,7 @@ export default function Curadoria() {
     }
     setBudgetToDelete(budget);
     setDeleteConfirmName('');
+    setDeleteBudgetAlsoStock(false);
     setDeleteError(null);
     setShowDeleteModal(true);
   }
@@ -1029,12 +1521,15 @@ export default function Curadoria() {
     try {
       setDeletingBudgetId(budgetToDelete.id);
       setDeleteError(null);
-      await api.delete(`/curadoria/orcamentos/${budgetToDelete.id}`);
+      await api.delete(`/curadoria/orcamentos/${budgetToDelete.id}`, {
+        params: { deleteStock: deleteBudgetAlsoStock },
+      });
       toast.success('Orçamento excluído com sucesso.');
       setShowDeleteModal(false);
       setBudgetToDelete(null);
       setDeleteConfirmName('');
-      await loadData();
+      setDeleteBudgetAlsoStock(false);
+      await Promise.all([loadData(), loadStock()]);
     } catch (err: any) {
       const message = formatApiError(err);
       setDeleteError(message);
@@ -1137,6 +1632,38 @@ export default function Curadoria() {
 
   const stockColumns: DataTableColumn<CuradoriaStockItem>[] = [
     {
+      key: 'selecionar',
+      label: (
+        <input
+          type="checkbox"
+          checked={allFilteredStockSelected}
+          onChange={() => toggleAllFilteredStockItems()}
+          className="accent-primary"
+          aria-label="Selecionar todos os itens visíveis"
+        />
+      ),
+      thClassName: 'w-10 text-center',
+      tdClassName: 'w-10 text-center',
+      render: (item) => {
+        const itemKey = getStockItemKey(item);
+        const checked = selectedStockItemKeySet.has(itemKey);
+
+        return (
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(e) => {
+              e.stopPropagation();
+              toggleStockItemSelection(itemKey);
+            }}
+            className="accent-primary"
+            aria-label={`Selecionar item ${item.isbn}`}
+          />
+        );
+      },
+      stopRowClick: true,
+    },
+    {
       key: 'isbn',
       label: 'ISBN',
       render: (item) => <span className="font-mono text-xs sm:text-sm">{item.isbn}</span>,
@@ -1203,25 +1730,7 @@ export default function Curadoria() {
             type="button"
             className={btn.editSm}
             onClick={() => {
-              setStockItemMode('edit');
-              setStockItemForm({
-                nome: item.nome,
-                isbn: item.isbn,
-                autor: item.autor ?? '',
-                editora: item.editora ?? '',
-                anoPublicacao: item.anoPublicacao ?? '',
-              });
-              setStockQuotesForm([
-                {
-                  categoriaId: item.categoriaId ?? undefined,
-                  quantidade: item.quantidadeTotal,
-                  valor: item.valorMedio,
-                  desconto: item.descontoMedio,
-                  descontoTipo: 'VALOR',
-                  fornecedorId: undefined,
-                },
-              ]);
-              setShowStockItemModal(true);
+              void openStockItemEditor(item);
             }}
           >
             Editar
@@ -1277,6 +1786,7 @@ export default function Curadoria() {
                     setStockItemMode('add');
                     setStockItemForm(createEmptyItem());
                     setStockQuotesForm([createEmptyStockQuote()]);
+                    setOriginalStockQuoteRefs([]);
                     setShowStockItemModal(true);
                   }}
                 >
@@ -1288,29 +1798,31 @@ export default function Curadoria() {
         )}
       </div>
 
-      <div className="inline-flex rounded-lg bg-black/40 border border-white/10 p-0.5">
-        <button
-          type="button"
-          onClick={() => setActiveTab('orcamentos')}
-          className={`px-4 py-2 text-sm rounded-md transition ${
-            activeTab === 'orcamentos'
-              ? 'bg-primary text-white shadow-md'
-              : 'text-white/70 hover:text-white hover:bg-white/5'
-          }`}
-        >
-          Orçamentos
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('estoque')}
-          className={`px-4 py-2 text-sm rounded-md transition ${
-            activeTab === 'estoque'
-              ? 'bg-primary text-white shadow-md'
-              : 'text-white/70 hover:text-white hover:bg-white/5'
-          }`}
-        >
-          Estoque da curadoria
-        </button>
+      <div className="bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+        <div className="flex border-b border-white/10">
+          <button
+            type="button"
+            onClick={() => setActiveTab('orcamentos')}
+            className={`flex-1 px-6 py-4 text-sm font-semibold transition-colors ${
+              activeTab === 'orcamentos'
+                ? 'bg-primary text-white border-b-2 border-primary'
+                : 'text-white/70 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Orçamentos
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('estoque')}
+            className={`flex-1 px-6 py-4 text-sm font-semibold transition-colors ${
+              activeTab === 'estoque'
+                ? 'bg-primary text-white border-b-2 border-primary'
+                : 'text-white/70 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Estoque da curadoria
+          </button>
+        </div>
       </div>
 
       {activeTab === 'orcamentos' && (
@@ -1463,6 +1975,8 @@ export default function Curadoria() {
             keyExtractor={(budget) => budget.id}
             loading={loading}
             emptyMessage="Nenhum orçamento de curadoria encontrado."
+            paginate
+            initialPageSize={20}
             onRowClick={(budget) => navigate(`/curadoria/${budget.id}`)}
             renderMobileCard={(budget) => (
           <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-2">
@@ -1625,16 +2139,56 @@ export default function Curadoria() {
             </div>
           </CollapsibleFilters>
 
+          {selectedStockItemKeys.length > 0 && (
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm text-white/70">
+                {selectedStockItemKeys.length} item(ns) selecionado(s)
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className={btn.success}
+                  onClick={() => setShowStockReportModal(true)}
+                >
+                  Gerar Relatório ({selectedStockItemKeys.length})
+                </button>
+                <button
+                  type="button"
+                  className={btn.secondary}
+                  onClick={() => setSelectedStockItemKeys([])}
+                >
+                  Limpar seleção
+                </button>
+              </div>
+            </div>
+          )}
+
           <DataTable<CuradoriaStockItem>
             data={filteredStockItems}
             columns={stockColumns}
             keyExtractor={(item) => `${item.isbn}-${item.categoriaId ?? 'sem-categoria'}`}
             loading={stockLoading}
             emptyMessage="Nenhum item em estoque para orçamentos entregues."
+            paginate
+            initialPageSize={20}
             renderMobileCard={(item) => (
               <div className="bg-neutral/60 border border-white/10 rounded-xl p-4 space-y-2">
-                <p className="font-mono text-xs text-white/70">{item.isbn}</p>
-                <p className="font-semibold">{item.nome}</p>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs text-white/70">{item.isbn}</p>
+                    <p className="font-semibold">{item.nome}</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={selectedStockItemKeySet.has(getStockItemKey(item))}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      toggleStockItemSelection(getStockItemKey(item));
+                    }}
+                    className="accent-primary mt-1 shrink-0"
+                    aria-label={`Selecionar item ${item.isbn}`}
+                  />
+                </div>
                 <p className="text-xs text-white/60">
                   Gênero literário: {item.categoriaNome ?? 'Sem gênero literário'}
                 </p>
@@ -1666,24 +2220,7 @@ export default function Curadoria() {
                     type="button"
                     className={btn.editSm}
                     onClick={() => {
-                      setStockItemMode('edit');
-                      setStockItemForm({
-                        nome: item.nome,
-                        isbn: item.isbn,
-                        autor: item.autor ?? '',
-                        editora: item.editora ?? '',
-                        anoPublicacao: item.anoPublicacao ?? '',
-                      });
-                      setStockQuotesForm([
-                        {
-                          categoriaId: item.categoriaId ?? undefined,
-                          quantidade: item.quantidadeTotal,
-                          valor: item.valorMedio,
-                          desconto: item.descontoMedio,
-                          descontoTipo: 'VALOR',
-                        },
-                      ]);
-                      setShowStockItemModal(true);
+                      void openStockItemEditor(item);
                     }}
                   >
                     Editar
@@ -1846,25 +2383,23 @@ export default function Curadoria() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         <div>
                           <label className="block text-xs text-white/70 mb-1">Gênero literário</label>
-                          <select
+                          <AppSelect
                             value={quote.categoriaId ?? ''}
-                            onChange={(event) =>
+                            onChange={(value) =>
                               updateStockQuote(
                                 quoteIndex,
                                 'categoriaId',
-                                event.target.value ? Number(event.target.value) : undefined,
+                                value ? Number(value) : undefined,
                               )
                             }
-                            className={fieldClass}
+                            options={categories.map((category) => ({
+                              value: category.id,
+                              label: category.nome,
+                            }))}
+                            placeholder="Selecione"
+                            selectClassName={fieldClass}
                             required
-                          >
-                            <option value="">Selecione</option>
-                            {categories.map((category) => (
-                              <option key={category.id} value={category.id}>
-                                {category.nome}
-                              </option>
-                            ))}
-                          </select>
+                          />
                         </div>
                         <div>
                           <label className="block text-xs text-white/70 mb-1">Quantidade</label>
@@ -1945,35 +2480,35 @@ export default function Curadoria() {
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
                         <div>
                           <label className="block text-xs text-white/70 mb-1">Fornecedor (opcional)</label>
-                          <select
+                          <AppSelect
                             value={quote.fornecedorId ?? ''}
-                            onChange={(event) =>
+                            onChange={(value) =>
                               updateStockQuote(
                                 quoteIndex,
                                 'fornecedorId',
-                                event.target.value ? Number(event.target.value) : undefined,
+                                value ? Number(value) : undefined,
                               )
                             }
-                            className={fieldClass}
-                          >
-                            <option value="">Selecione um fornecedor</option>
-                            {suppliers.map((supplier) => (
-                              <option key={supplier.id} value={supplier.id}>
-                                {supplier.nomeFantasia || supplier.razaoSocial}
-                              </option>
-                            ))}
-                          </select>
+                            options={suppliers.map((supplier) => ({
+                              value: supplier.id,
+                              label: supplier.nomeFantasia || supplier.razaoSocial,
+                            }))}
+                            placeholder="Selecione um fornecedor"
+                            selectClassName={fieldClass}
+                          />
                         </div>
                         <div className="flex justify-end items-end">
                           <div className="text-right w-full">
-                            <p className="text-xs text-white/60">Valor líquido estimado</p>
+                            <p className="text-xs text-white/60">Valor líquido total estimado</p>
                             <p className="text-sm font-semibold text-emerald-300">
                               {(() => {
                                 const valor = Number(quote.valor || 0);
+                                const quantidade = Number(quote.quantidade || 1);
                                 const rawDesc = Number(quote.desconto || 0);
                                 const desconto =
                                   quote.descontoTipo === 'PERCENTUAL' ? (valor * rawDesc) / 100 : rawDesc;
-                                return Math.max(0, valor - desconto).toLocaleString('pt-BR', {
+                                const liquidoUnitario = Math.max(0, valor - desconto);
+                                return Math.max(0, liquidoUnitario * quantidade).toLocaleString('pt-BR', {
                                   style: 'currency',
                                   currency: 'BRL',
                                 });
@@ -1991,7 +2526,10 @@ export default function Curadoria() {
                 <button
                   type="button"
                   className={btn.secondaryLg}
-                  onClick={() => setShowStockItemModal(false)}
+                  onClick={() => {
+                    setShowStockItemModal(false);
+                    setOriginalStockQuoteRefs([]);
+                  }}
                   disabled={stockItemSaving}
                 >
                   Cancelar
@@ -2050,6 +2588,7 @@ export default function Curadoria() {
                       <tr className="text-left text-xs text-white/60 border-b border-white/10">
                         <th className="py-2 pr-4">Orçamento</th>
                         <th className="py-2 pr-4">Projeto</th>
+                        <th className="py-2 pr-4">Fornecedor</th>
                         <th className="py-2 pr-4">Gênero literário</th>
                         <th className="py-2 pr-4 text-right">Qtd</th>
                         <th className="py-2 pr-4 text-right">Valor (R$)</th>
@@ -2066,6 +2605,11 @@ export default function Curadoria() {
                           </td>
                           <td className="py-2 pr-4">
                             <span className="text-white/80">{quote.projetoNome ?? '-'}</span>
+                          </td>
+                          <td className="py-2 pr-4">
+                            <span className="text-white/80">
+                              {quote.fornecedorNome ?? '-'}
+                            </span>
                           </td>
                           <td className="py-2 pr-4">
                             <span className="text-white/80">{quote.categoriaNome ?? '-'}</span>
@@ -2107,12 +2651,24 @@ export default function Curadoria() {
             setShowDeleteModal(false);
             setBudgetToDelete(null);
             setDeleteConfirmName('');
+            setDeleteBudgetAlsoStock(false);
             setDeleteError(null);
           }}
           onConfirm={() => void handleConfirmDeleteBudget()}
           loading={deletingBudgetId === budgetToDelete.id}
           errorMessage={deleteError}
           confirmButtonLabel="Confirmar Remoção"
+          extraContent={
+            <label className="flex items-start gap-2 text-sm text-white/80">
+              <input
+                type="checkbox"
+                checked={deleteBudgetAlsoStock}
+                onChange={(e) => setDeleteBudgetAlsoStock(e.target.checked)}
+                className="mt-0.5 accent-danger"
+              />
+              <span>Apagar também os itens deste orçamento que estão no estoque.</span>
+            </label>
+          }
         />
       )}
 
@@ -2162,13 +2718,23 @@ export default function Curadoria() {
                     if (!stockItemToDelete) return;
                     try {
                       setStockDeleting(true);
-                      await api.delete(
-                        `/curadoria/estoque/${encodeURIComponent(stockItemToDelete.isbn)}${
-                          stockItemToDelete.categoriaId
-                            ? `?categoriaId=${stockItemToDelete.categoriaId}`
-                            : ''
-                        }`,
-                      );
+                      try {
+                        await api.delete(
+                          `/curadoria/estoque/${encodeURIComponent(stockItemToDelete.isbn)}`,
+                          {
+                            params:
+                              stockItemToDelete.categoriaId != null
+                                ? { categoriaId: stockItemToDelete.categoriaId }
+                                : undefined,
+                          },
+                        );
+                      } catch (firstErr: any) {
+                        // Fallback: se a categoria não casar por algum motivo de dados antigos,
+                        // tenta remover pelo ISBN para não bloquear a operação.
+                        const isNotFound = Number(firstErr?.response?.status) === 404;
+                        if (!isNotFound || stockItemToDelete.categoriaId == null) throw firstErr;
+                        await api.delete(`/curadoria/estoque/${encodeURIComponent(stockItemToDelete.isbn)}`);
+                      }
                       toast.success('Estoque do item removido com sucesso.');
                       await loadStock();
                       setShowStockDeleteModal(false);
@@ -2183,6 +2749,136 @@ export default function Curadoria() {
                   {stockDeleting ? 'Removendo...' : 'Remover do estoque'}
                 </button>
               </div>
+        </AppModal>
+      )}
+
+      {showStockReportModal && (
+        <AppModal
+          open={showStockReportModal}
+          onClose={() => {
+            setShowStockReportModal(false);
+            setSelectedStockItemKeys([]);
+          }}
+          title="Relatório de Estoque (Curadoria)"
+          size="xl"
+          stickyHeader={false}
+          bodyClassName="p-6 space-y-6"
+        >
+          {(() => {
+            const reportData = calculateCuradoriaStockReportTotals();
+            const exportDate = new Date().toISOString().split('T')[0];
+
+            return (
+              <>
+                <div className="bg-white/5 rounded-lg p-5 border border-white/10 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="bg-white/5 rounded-lg p-4 border border-white/10">
+                      <div className="text-sm text-white/70 mb-1">Total de Itens</div>
+                      <div className="text-2xl font-bold text-white">{reportData.totalItens}</div>
+                    </div>
+                    <div className="bg-white/5 rounded-lg p-4 border border-white/10">
+                      <div className="text-sm text-white/70 mb-1">Quantidade Total</div>
+                      <div className="text-2xl font-bold text-white">{reportData.totalQuantidade}</div>
+                    </div>
+                    <div className="bg-white/5 rounded-lg p-4 border border-white/10">
+                      <div className="text-sm text-white/70 mb-1">Valor Total</div>
+                      <div className="text-2xl font-bold text-primary">
+                        {reportData.totalValor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {reportData.byCategoria.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-sm font-semibold text-white/90 mb-3">
+                        Distribuição por gênero literário
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                        {reportData.byCategoria.slice(0, 9).map((c) => (
+                          <div key={String(c.categoriaId ?? 'sem-categoria')} className="bg-white/5 rounded p-3 border border-white/10">
+                            <div className="text-xs text-white/70">{c.categoriaNome}</div>
+                            <div className="text-sm font-bold text-white">{c.count} item(ns)</div>
+                            <div className="text-xs text-emerald-200">
+                              Total: {c.totalValor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {reportData.byCategoria.length > 9 && (
+                        <p className="text-xs text-white/60 mt-2">
+                          Mostrando top 9 de {reportData.byCategoria.length}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-white/80 border-b border-white/20 bg-white/10">
+                        <th className="px-4 py-2.5 font-medium">ISBN</th>
+                        <th className="px-4 py-2.5 font-medium">Título</th>
+                        <th className="px-4 py-2.5 font-medium">Gênero</th>
+                        <th className="px-4 py-2.5 font-medium">Autor</th>
+                        <th className="px-4 py-2.5 font-medium w-24 text-right">Qtd</th>
+                        <th className="px-4 py-2.5 font-medium w-32 text-right">Valor total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportData.items.map((item) => (
+                        <tr
+                          key={getStockItemKey(item)}
+                          className="border-b border-white/10"
+                        >
+                          <td className="px-4 py-2.5 font-mono text-xs text-white/90">{item.isbn}</td>
+                          <td className="px-4 py-2.5 whitespace-normal break-words">{item.nome}</td>
+                          <td className="px-4 py-2.5">{item.categoriaNome ?? 'Sem gênero literário'}</td>
+                          <td className="px-4 py-2.5 whitespace-normal break-words">{item.autor ?? '-'}</td>
+                          <td className="px-4 py-2.5 text-right">{item.quantidadeTotal}</td>
+                          <td className="px-4 py-2.5 text-right text-emerald-300">
+                            {item.valorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
+                  <button
+                    type="button"
+                    className={btn.secondaryLg}
+                    onClick={() => {
+                      setShowStockReportModal(false);
+                      setSelectedStockItemKeys([]);
+                    }}
+                  >
+                    Fechar
+                  </button>
+
+                  <ExcelDownloadButton
+                    buildWorkbook={buildCuradoriaStockReportWorkbook}
+                    fileName={`relatorio-estoque-curadoria-${exportDate}.xlsx`}
+                    label="Exportar Excel"
+                    className="px-6 py-2.5 rounded-md bg-green-600 hover:bg-green-700 text-white font-semibold transition-colors flex items-center gap-2"
+                    disabled={reportData.totalItens === 0}
+                  />
+
+                  <button
+                    type="button"
+                    className="px-6 py-2.5 rounded-md bg-primary hover:bg-primary/80 text-white font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={reportData.totalItens === 0}
+                    onClick={() => {
+                      exportCuradoriaStockReportPdf();
+                    }}
+                  >
+                    Exportar PDF
+                  </button>
+                </div>
+              </>
+            );
+          })()}
         </AppModal>
       )}
 
@@ -2840,7 +3536,20 @@ export default function Curadoria() {
       {showImportModal && (
         <AppModal
           open={showImportModal}
-          onClose={() => setShowImportModal(false)}
+          onClose={() => {
+            setShowImportModal(false);
+            setImportFile(null);
+            setImportName('');
+            setImportProjectId(undefined);
+            setImportCategoryId(undefined);
+            setImportSupplierId(undefined);
+            setOverwriteCurrent(true);
+            setImportDiscountMode('ITEM');
+            setImportDiscountTotal(0);
+            setImportDiscountTotalType('VALOR');
+            setImportEstimatedTotalBruto(0);
+            setImportEstimatedBooks(0);
+          }}
           title=""
           showHeader={false}
           size="md"
@@ -2849,7 +3558,24 @@ export default function Curadoria() {
         >
             <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
               <h3 className="text-lg font-semibold">Importar orçamento (.xlsx)</h3>
-              <button type="button" onClick={() => setShowImportModal(false)} className="text-white/50 hover:text-white">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowImportModal(false);
+                  setImportFile(null);
+                  setImportName('');
+                  setImportProjectId(undefined);
+                  setImportCategoryId(undefined);
+                  setImportSupplierId(undefined);
+                  setOverwriteCurrent(true);
+                  setImportDiscountMode('ITEM');
+                  setImportDiscountTotal(0);
+                  setImportDiscountTotalType('VALOR');
+                  setImportEstimatedTotalBruto(0);
+                  setImportEstimatedBooks(0);
+                }}
+                className="text-white/50 hover:text-white"
+              >
                 ✕
               </button>
             </div>
@@ -2912,6 +3638,20 @@ export default function Curadoria() {
                   {categories.map((category) => (
                     <option key={category.id} value={category.id}>
                       {category.nome}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <select
+                  value={importSupplierId ?? ''}
+                  onChange={(event) => setImportSupplierId(event.target.value ? Number(event.target.value) : undefined)}
+                  className="w-full bg-neutral/70 border border-white/10 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Fornecedor (opcional)</option>
+                  {suppliers.map((supplier) => (
+                    <option key={supplier.id} value={supplier.id}>
+                      {supplier.nomeFantasia || supplier.razaoSocial || supplier.cnpj || `Fornecedor #${supplier.id}`}
                     </option>
                   ))}
                 </select>
@@ -2987,7 +3727,25 @@ export default function Curadoria() {
               )}
 
               <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
-                <button type="button" className={btn.secondaryLg} onClick={() => setShowImportModal(false)} disabled={importing}>
+                <button
+                  type="button"
+                  className={btn.secondaryLg}
+                  onClick={() => {
+                    setShowImportModal(false);
+                    setImportFile(null);
+                    setImportName('');
+                    setImportProjectId(undefined);
+                    setImportCategoryId(undefined);
+                    setImportSupplierId(undefined);
+                    setOverwriteCurrent(true);
+                    setImportDiscountMode('ITEM');
+                    setImportDiscountTotal(0);
+                    setImportDiscountTotalType('VALOR');
+                    setImportEstimatedTotalBruto(0);
+                    setImportEstimatedBooks(0);
+                  }}
+                  disabled={importing}
+                >
                   Cancelar
                 </button>
                 <button type="submit" className={btn.primaryLg} disabled={importing}>
